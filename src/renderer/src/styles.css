@@ -144,7 +144,7 @@ button.mode-pill:hover { filter: brightness(0.96); }
 /* Sized to its cards (not the full width) so highlights and the tour ring wrap just the cards. */
 .demo-grid { display: flex; flex-wrap: wrap; gap: 14px; width: fit-content; max-width: 100%; margin-bottom: 28px; }
 .demo-grid .demo-card { width: 300px; }
-.welcome-box { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: fit-content; max-width: 100%; padding: 14px 16px; margin-bottom: 26px; border: 1px solid var(--border); border-radius: var(--radius); }
+.welcome-box { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 760px; padding: 16px 18px; margin-bottom: 26px; border: 1px solid var(--border); border-radius: var(--radius); }
 .welcome-box h3 { font-size: 14.5px; margin-bottom: 2px; }
 .welcome-box p { margin: 0; font-size: 13px; }
 .demo-card { padding: 16px; display: flex; flex-direction: column; gap: 8px; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); }
