@@ -1,7 +1,7 @@
 import type { Account, ContractRecord, ReviewSession, ReviewSummary } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 
-export type View = 'home' | 'demos' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
+export type View = 'home' | 'demos' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
 
 interface Props {
   open: boolean
@@ -88,6 +88,7 @@ export function NavDrawer(p: Props) {
           </button>
         )}
       </div>
+      {item('contracts', 'doc', 'All contracts', undefined, !account)}
       {item('reviews', 'list', 'All reviews', undefined, !account)}
       <div className="nav-section">Knowledge</div>
       {item('library', 'book', 'Library')}

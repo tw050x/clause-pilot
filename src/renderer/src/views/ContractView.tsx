@@ -131,3 +131,76 @@ export function NewContractView({ account, onCreated }: { account: Account; onCr
     </div>
   )
 }
+
+/** Every contract with the active client, with its latest version. */
+export function ContractsListView({
+  account,
+  contracts,
+  reviews,
+  canCreate,
+  onOpen,
+  onNew
+}: {
+  account: Account
+  contracts: ContractRecord[]
+  reviews: ReviewSummary[]
+  canCreate: boolean
+  onOpen: (id: string) => void
+  onNew: () => void
+}) {
+  const latest = (id: string) => reviews.filter((r) => r.contractId === id).sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0]
+  return (
+    <div className="page">
+      <div className="crumbs">{account.name}</div>
+      <div className="row-gap" style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+        <div>
+          <h1>
+            All contracts <span className="faint" style={{ fontWeight: 400 }}>{contracts.length}</span>
+          </h1>
+          <p className="lede" style={{ margin: 0 }}>Every contract with {account.name}. Open one to see its drafts or upload the next.</p>
+        </div>
+        {canCreate && (
+          <button className="btn primary" onClick={onNew}>
+            + New contract
+          </button>
+        )}
+      </div>
+      {!contracts.length ? (
+        <div className="empty-state">No contracts with {account.name} yet.</div>
+      ) : (
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th style={{ width: 120 }}>Type</th>
+                <th style={{ width: 150 }}>Latest version</th>
+                <th style={{ width: 200 }}>Decisions</th>
+                <th style={{ width: 160 }}>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((c) => {
+                const v = latest(c.id)
+                return (
+                  <tr key={c.id} className="clickable" onClick={() => onOpen(c.id)}>
+                    <td>
+                      <strong>{c.title}</strong>
+                    </td>
+                    <td className="muted">{c.contractType === 'nda' ? 'NDA' : c.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
+                    <td className="muted">{v ? `Version ${v.version}` : 'No drafts yet'}</td>
+                    <td className="muted">
+                      {v ? `${v.decided} decided` : '–'}
+                      {v && v.rejected > 0 && <span className="pill rejected" style={{ marginLeft: 6 }}>{v.rejected} rejected</span>}
+                    </td>
+                    <td className="muted">{v ? new Date(v.createdAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

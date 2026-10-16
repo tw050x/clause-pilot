@@ -13,7 +13,7 @@ import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
-import { ContractView, NewContractView } from './views/ContractView'
+import { ContractView, ContractsListView, NewContractView } from './views/ContractView'
 import { DemosView } from './views/DemosView'
 import type { DemoScenario } from '@shared/demoScenarios'
 import { OpenContractModal } from './components/OpenContractModal'
@@ -178,7 +178,7 @@ export function App() {
   const contractPage = contracts.find((c) => c.id === contractPageId)
   // Leaving a client behind: its contract pages and reviews close.
   useEffect(() => {
-    if ((view === 'contract' || view === 'new-contract' || view === 'reviews') && !activeAccountId) setView('home')
+    if ((view === 'contract' || view === 'contracts' || view === 'new-contract' || view === 'reviews') && !activeAccountId) setView('home')
     if (view === 'contract' && contractPage && contractPage.accountId !== activeAccountId) setView('home')
     if (view === 'review' && session?.accountId && session.accountId !== activeAccountId) setView('home')
   }, [activeAccountId])
@@ -329,6 +329,19 @@ export function App() {
               onOpenReview={openSession}
               onUploadDraft={(contractId) => setOpenModal({ contractId })}
               onStartDemo={(path, contractId) => openContract(path, contractId)}
+            />
+          )}
+          {view === 'contracts' && activeAccount && (
+            <ContractsListView
+              account={activeAccount}
+              contracts={accountContracts}
+              reviews={scopedReviews}
+              canCreate={!settings?.demoMode}
+              onOpen={(id) => {
+                setContractPageId(id)
+                setView('contract')
+              }}
+              onNew={() => setView('new-contract')}
             />
           )}
           {view === 'new-contract' && activeAccount && (
