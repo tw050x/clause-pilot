@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Clause, DiffToken, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
+import { Redline } from './Redline'
 import { clauseLabel, isCleared, type ClauseFlags, type Visual } from '@shared/derive'
 import { Icon } from '../lib/icons'
 
@@ -58,6 +59,34 @@ export function ClauseResult({ session, clause, flags, visual, onJump, onChange,
               <div className="skeleton" style={{ width: '70%' }} />
             </>
           )}
+        </div>
+      )}
+
+      {(clause.tracked || clause.comments) && (
+        <div className="result-section">
+          <h4>
+            <Icon name="mail" size={13} /> Their changes
+          </h4>
+          {clause.tracked && (
+            <>
+              <p className="faint" style={{ fontSize: 12.5 }}>
+                {flags.redlined === 'inserted' ? 'Inserted as a tracked change' : 'Changed with Track Changes'}
+                {authorsOf(clause.tracked)}.
+              </p>
+              <div className="diff redline-box">
+                <Redline segments={clause.tracked} />
+              </div>
+            </>
+          )}
+          {clause.comments?.map((c) => (
+            <div key={c.id} className="doc-comment">
+              <div className="faint" style={{ fontSize: 12 }}>
+                <b>{c.author}</b>
+                {c.date && ` · ${new Date(c.date).toLocaleDateString()}`}
+              </div>
+              <div>{c.text}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -470,4 +499,9 @@ function VersionSection({ link, prevVersion }: { link: NonNullable<ClauseFlags['
       )}
     </div>
   )
+}
+
+function authorsOf(segs: NonNullable<Clause['tracked']>): string {
+  const names = [...new Set(segs.filter((s) => s.op !== 'same' && s.author).map((s) => s.author!))]
+  return names.length ? ` by ${names.join(', ')}` : ''
 }

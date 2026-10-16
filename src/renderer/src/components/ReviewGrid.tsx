@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Clause, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
+import { Redline } from './Redline'
 import { clauseLabel, flagsFor, needsAction, visualFor } from '@shared/derive'
 import { ClauseResult } from './ClauseResult'
 import { Chevron, Icon } from '../lib/icons'
@@ -254,8 +255,18 @@ function DocClause(props: {
         data-num={c.number ?? undefined}
       >
         {c.number && <span className="doc-num">{c.number}</span>}
-        {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
-        <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.text}</span>
+        {(props.versionKind && props.versionKind !== 'unchanged') || c.tracked || c.comments ? (
+          <span className="clause-tags">
+            {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
+            {c.tracked && <span className="ver-tag redlined">{c.tracked.every((x) => x.op === 'ins' || !x.text.trim()) ? 'inserted' : 'redlined'}</span>}
+            {c.comments && (
+              <span className="ver-tag commented" title={c.comments.map((x) => `${x.author}: ${x.text}`).join('\n')}>
+                {c.comments.length} comment{c.comments.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </span>
+        ) : null}
+        <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.tracked ? <Redline segments={c.tracked} /> : c.text}</span>
         {props.flagged ? <SecurityBadge /> : <StatusBadge action={props.action} />}
         {selected && <SelectedArrow />}
       </div>

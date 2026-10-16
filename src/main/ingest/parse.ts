@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { extname, basename } from 'node:path'
 import { createHash } from 'node:crypto'
-import type { SourceType } from '@shared/types'
+import type { DocComment, SourceType, TrackedDeletion, TrackedSegment } from '@shared/types'
+import { readDocx } from './docxTracked'
 
 export interface ParsedDocument {
   name: string
@@ -9,6 +10,10 @@ export interface ParsedDocument {
   sha256: string
   /** Logical lines / paragraphs in reading order. */
   lines: string[]
+  /** Word only: the redline and comments for each line (same order as `lines`). */
+  lineMeta?: { tracked?: TrackedSegment[]; comments?: DocComment[] }[]
+  /** Word only: whole paragraphs deleted as tracked changes. */
+  deletions?: TrackedDeletion[]
 }
 
 export class UnsupportedFormatError extends Error {}
@@ -20,7 +25,7 @@ export async function parseFile(path: string): Promise<ParsedDocument> {
   const name = basename(path)
 
   if (ext === '.pdf') return { name, sha256, sourceType: 'pdf', lines: await pdfLines(buf) }
-  if (ext === '.docx') return { name, sha256, sourceType: 'docx', lines: await docxLines(buf) }
+  if (ext === '.docx') return { name, sha256, sourceType: 'docx', ...(await docx(buf)) }
   if (ext === '.txt' || ext === '.md') return { name, sha256, sourceType: 'txt', lines: splitLines(buf.toString('utf8')) }
   if (ext === '.doc') {
     throw new UnsupportedFormatError(
@@ -38,10 +43,33 @@ function splitLines(text: string): string[] {
     .filter(Boolean)
 }
 
-async function docxLines(buf: Buffer): Promise<string[]> {
-  const mammoth = await import('mammoth')
-  const { value } = await mammoth.extractRawText({ buffer: buf })
-  return splitLines(value)
+/**
+ * Word files are read from their XML so tracked changes and comments survive
+ * (a plain-text extract silently accepts every tracked change and drops the
+ * comments). Falls back to mammoth if the XML can't be read.
+ */
+async function docx(buf: Buffer): Promise<Pick<ParsedDocument, 'lines' | 'lineMeta' | 'deletions'>> {
+  try {
+    const paragraphs = await readDocx(buf)
+    const lines: string[] = []
+    const lineMeta: NonNullable<ParsedDocument['lineMeta']> = []
+    const deletions: TrackedDeletion[] = []
+    for (const p of paragraphs) {
+      if (p.deleted) {
+        const m = p.deleted.text.match(/^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(.*)$/)
+        deletions.push({ number: m?.[1] ?? null, text: m?.[2] ?? p.deleted.text, author: p.deleted.author, date: p.deleted.date })
+        continue
+      }
+      if (!p.text) continue
+      lines.push(p.text)
+      lineMeta.push({ tracked: p.segments, comments: p.comments })
+    }
+    return { lines, lineMeta, deletions }
+  } catch {
+    const mammoth = await import('mammoth')
+    const { value } = await mammoth.extractRawText({ buffer: buf })
+    return { lines: splitLines(value) }
+  }
 }
 
 /**

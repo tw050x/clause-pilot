@@ -43,6 +43,22 @@ export function IssuesView({
         </div>
       )}
       {session.previous && <VersionSummary session={session} onOpen={onOpen} />}
+      {!!session.trackedDeletions?.length && (
+        <section className="version-summary deleted-summary">
+          <h3>Deleted by them (tracked)</h3>
+          <div className="removed-list" style={{ marginTop: 0 }}>
+            {session.trackedDeletions.map((d, i) => (
+              <div key={i} className={`removed ${d.libraryTitle ? 'warn' : ''}`}>
+                <div className="removed-head">
+                  <strong>{d.number ? `Clause ${d.number}` : 'Clause'}</strong>
+                  <span>{d.libraryTitle ? `Our pre-approved “${d.libraryTitle}”: ask for it back` : `Deleted${d.author ? ` by ${d.author}` : ''}`}</span>
+                </div>
+                <div className="removed-text">{d.text}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="issues-summary">
         {(['must', 'decide', 'cleared', 'decided'] as Tier[]).map((t) => {

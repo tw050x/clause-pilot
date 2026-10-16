@@ -12,7 +12,7 @@
     "accountId": "ac-acme",
     "contractId": "ct-acme-nda",
     "title": "Acme Corp - Mutual NDA (counterparty redline)",
-    "description": "Acme returned our NDA with edits: residuals, a longer term, a one-way non-solicit and New York law.",
+    "description": "Acme returned our NDA with tracked changes and comments: residuals, a longer term, a one-way non-solicit, New York law, and a deleted clause.",
     "path": "demo/contracts/Acme-Mutual-NDA-redlined.docx"
   },
   {

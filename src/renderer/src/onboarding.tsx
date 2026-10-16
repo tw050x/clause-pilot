@@ -288,9 +288,15 @@ const reviewAcme: Tour = {
     simulateUpload('This is the contract’s page for Acme’s NDA. Uploading their redlined draft creates version 1.'),
     waitForChecks,
     {
-      title: 'Three things to fix, six to decide',
-      body: 'The edits have been sorted for you. Let’s start with the worst one.',
+      title: 'Their redline, sorted',
+      body: 'Every tracked change has been read and sorted: what must change, what needs a decision, and what’s pre-approved. Anything they touched with Track Changes is never accepted automatically.',
       target: () => q('.issues-summary'),
+      placement: 'left'
+    },
+    {
+      title: 'They deleted one of our clauses',
+      body: 'Acme deleted clause 3.3 with Track Changes. It’s our standard “No warranty” wording, so it’s a must-change: the response will ask for it back. Deletions are the easiest edits to miss when reading a redline.',
+      target: () => q('.deleted-summary'),
       placement: 'left'
     },
     {
@@ -300,6 +306,12 @@ const reviewAcme: Tour = {
       placement: 'left',
       action: 'Click the Clause 2.4 issue.',
       done: () => openClause() === 'Clause 2.4'
+    },
+    {
+      title: 'Their redline and their reason',
+      body: 'Acme inserted the whole clause as a tracked change and left a comment explaining it. Both are shown here, as they appear in their Word file.',
+      target: () => section('Their changes'),
+      placement: 'left'
     },
     {
       title: 'We’ve seen this before',

@@ -13,6 +13,9 @@ export interface ClauseFlags {
   docChecksPending: boolean
   /** How this clause relates to the previous version of the contract, if there is one. */
   version: VersionLink | undefined
+  /** They changed this clause with Word's Track Changes (or inserted it). */
+  redlined: 'edited' | 'inserted' | null
+  commentCount: number
 }
 
 export function docChecksPending(s: ReviewSession): boolean {
@@ -35,7 +38,9 @@ export function flagsFor(s: ReviewSession, c: Clause): ClauseFlags {
     injection: s.injection[c.id] ?? [],
     decision: s.decisions[c.id],
     docChecksPending: docChecksPending(s),
-    version: s.versionLinks?.[c.id]
+    version: s.versionLinks?.[c.id],
+    redlined: !c.tracked ? null : c.tracked.every((x) => x.op === 'ins' || !x.text.trim()) ? 'inserted' : 'edited',
+    commentCount: c.comments?.length ?? 0
   }
 }
 
@@ -50,6 +55,8 @@ export function hasConflict(f: ClauseFlags): boolean {
  */
 export function isCleared(f: ClauseFlags): boolean {
   if (f.docChecksPending) return false
+  // Anything they changed with Track Changes is read by a person, even if the result looks standard.
+  if (f.redlined) return false
   // Someone explicitly accepted this exact wording last time, having seen its playbook notes.
   // Only something new (another clause overriding it, an injection flag) reopens it.
   if (acceptedBefore(f)) return !f.overriddenBy.length && !f.overriding.length && !f.injection.length
@@ -171,11 +178,25 @@ export function triage(s: ReviewSession): Issue[] {
     } else if (settledBefore(f) && isCleared(f)) {
       // Settled in the last version and sent back word for word: nothing to read again.
       out.push({ clauseId: c.id, tier: 'cleared', severity: 'low', title: `Settled in version ${prevV}, unchanged`, detail: '', more: 0 })
+    } else if (f.redlined && !hasConflict(f) && (f.match === 'exact' || f.match === 'intent' || settledBefore(f))) {
+      // The result looks standard, but they changed it with Track Changes: someone should see what they did.
+      out.push({
+        clauseId: c.id,
+        tier: 'decide',
+        severity: 'low',
+        title: f.redlined === 'inserted' ? 'Inserted by them (tracked)' : 'Edited by them (tracked)',
+        detail: 'The resulting wording is something we accept, but it arrived as a tracked change. Check their redline.',
+        more: 0
+      })
     } else if (f.match === 'none') {
       // Its own wording isn't approved: a decision, whatever else touches it.
       const m = s.match[c.id]?.data
       const title = f.version?.matchesOurRedline
         ? 'Now matches the wording you proposed'
+        : f.redlined === 'inserted'
+          ? 'New clause inserted by them (tracked)'
+          : f.redlined === 'edited' && c.number
+            ? 'Edited by them (tracked)'
         : !c.number
           ? clauseLabel(c)
           : m?.candidates.length
@@ -196,6 +217,15 @@ export function triage(s: ReviewSession): Issue[] {
     }
   }
   for (const i of rooted.get('__doc') ?? []) out.push({ ...i, more: 0 })
+  for (const d of s.trackedDeletions ?? [])
+    out.push({
+      clauseId: null,
+      tier: d.libraryTitle ? 'must' : 'decide',
+      severity: d.libraryTitle ? 'high' : 'medium',
+      title: `Deleted by them: ${d.number ? `clause ${d.number}` : 'a clause'}${d.libraryTitle ? ` (our “${d.libraryTitle}”)` : ''}`,
+      detail: d.text,
+      more: 0
+    })
   return out.sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || SEV_RANK[a.severity] - SEV_RANK[b.severity])
 }
 

@@ -28,7 +28,7 @@ export interface PipelineDeps {
 }
 
 export function createSession(doc: ParsedDocument, filePath: string, mode: 'live' | 'demo'): ReviewSession {
-  const clauses = splitClauses(doc.lines)
+  const clauses = splitClauses(doc.lines, doc.lineMeta)
   return {
     id: randomUUID(),
     docName: doc.name,
@@ -45,7 +45,8 @@ export function createSession(doc: ParsedDocument, filePath: string, mode: 'live
     playbook: {},
     injection: {},
     aiInjectionReports: [],
-    decisions: {}
+    decisions: {},
+    trackedDeletions: doc.deletions?.length ? doc.deletions : undefined
   }
 }
 
@@ -75,10 +76,15 @@ function pool(limit: number) {
 const pct = (n: number) => `${Math.round(n * 100)}%`
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+/** The library entries relevant to a contract type (all of them when the type is unknown). */
+function libraryIndex(deps: Pick<PipelineDeps, 'library'>, type: ContractType = 'general'): LibraryIndex {
+  return new LibraryIndex(deps.library.filter((c) => type === 'general' || c.contractType === 'general' || c.contractType === type))
+}
+
 export async function runPipeline(s: ReviewSession, deps: PipelineDeps): Promise<void> {
   const { ai, emit, audit } = deps
   const run = pool(deps.concurrency ?? 4)
-  const lib = new LibraryIndex(deps.library.filter((c) => s.contractType === 'general' || c.contractType === 'general' || c.contractType === s.contractType))
+  const lib = libraryIndex(deps, s.contractType)
   const prec = new PrecedentIndex(deps.precedents)
   const update = () => emit(s)
   const noteInjection = (suspected: boolean, notes: string, where: string) => {
@@ -86,6 +92,15 @@ export async function runPipeline(s: ReviewSession, deps: PipelineDeps): Promise
   }
 
   audit('pipeline.started', { clauses: s.clauses.length, contractType: s.contractType, provider: ai.kind })
+
+  // Whole clauses they deleted as tracked changes: was any of them our pre-approved wording?
+  for (const d of s.trackedDeletions ?? []) {
+    const lib = libraryIndex(deps, s.contractType).exact({ id: '', index: 0, number: d.number, heading: null, text: d.text })
+    if (lib) d.libraryTitle = lib.title
+  }
+  if (s.trackedDeletions?.length) audit('redline.deletions', { clauses: s.trackedDeletions.map((d) => d.number ?? d.text.slice(0, 40)) })
+  const edited = s.clauses.filter((c) => c.tracked)
+  if (edited.length) audit('redline.read', { editedClauses: edited.map((c) => c.number ?? c.id), comments: s.clauses.reduce((n, c) => n + (c.comments?.length ?? 0), 0) })
 
   // Local, model-independent prompt-injection screen.
   for (const c of s.clauses) {

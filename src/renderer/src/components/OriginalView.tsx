@@ -125,6 +125,7 @@ async function renderDocx(host: HTMLElement, path: string): Promise<number> {
     renderHeaders: true,
     renderFooters: true,
     renderComments: false,
+    renderChanges: true, // show their redline as tracked insertions and deletions
     className: 'docx'
   })
   host.querySelectorAll('a').forEach((a) => a.removeAttribute('href'))

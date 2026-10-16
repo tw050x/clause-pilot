@@ -3,6 +3,16 @@ import { clauseLabel } from '@shared/derive'
 
 /** Everything the email needs, in a form that is both the AI prompt and the template's input. */
 export function emailBrief(s: ReviewSession, reviewer: string): { points: EmailPoint[]; prompt: string } {
+  // Our standard clauses they deleted with Track Changes: ask for them back.
+  const reinstate: EmailPoint[] = (s.trackedDeletions ?? [])
+    .filter((d) => d.libraryTitle)
+    .map((d) => ({
+      label: d.number ? `Clause ${d.number}` : 'A deleted clause',
+      heading: d.libraryTitle ?? null,
+      text: d.text,
+      note: 'This clause was deleted. It is part of our standard terms and needs to be reinstated.',
+      redline: d.text
+    }))
   const points: EmailPoint[] = s.clauses
     .filter((c) => s.decisions[c.id]?.decision === 'rejected')
     .map((c) => {
@@ -18,6 +28,7 @@ export function emailBrief(s: ReviewSession, reviewer: string): { points: EmailP
         redline: d.redline || positions.find((p) => p?.suggestedRedline)?.suggestedRedline || ''
       }
     })
+    .concat(reinstate)
 
   const prompt = `Draft an email to the counterparty for contract "${s.docName}".
 The reviewer is ${reviewer} (PortSwigger Legal). Everything not listed below is accepted.

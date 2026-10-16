@@ -3,12 +3,43 @@
 export type SourceType = 'pdf' | 'docx' | 'txt'
 export type ContractType = 'nda' | 'order-form' | 'general'
 
+/** A run of a Word redline: unchanged, or a tracked insertion/deletion by someone. */
+export interface TrackedSegment {
+  op: 'same' | 'ins' | 'del'
+  text: string
+  author?: string
+  date?: string
+}
+
+/** A margin comment in a Word document. */
+export interface DocComment {
+  id: string
+  author: string
+  date?: string
+  text: string
+}
+
 export interface Clause {
   id: string // stable within a session: "c0", "c1", ...
   index: number
   number: string | null // "4.2" as printed in the document
   heading: string | null // nearest heading, e.g. "CONFIDENTIALITY"
+  /** The text as proposed: tracked insertions in, tracked deletions out. */
   text: string
+  /** The Word redline for this clause, if it has tracked changes. */
+  tracked?: TrackedSegment[]
+  /** Margin comments anchored on this clause. */
+  comments?: DocComment[]
+}
+
+/** A whole clause deleted as a tracked change. */
+export interface TrackedDeletion {
+  number: string | null
+  text: string
+  author?: string
+  date?: string
+  /** Set when the deleted text was word for word one of our pre-approved clauses. */
+  libraryTitle?: string
 }
 
 export type StepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped'
@@ -205,6 +236,8 @@ export interface ReviewSession {
   previous?: { sessionId: string; version: number }
   versionLinks?: Record<string, VersionLink>
   removed?: RemovedClause[]
+  /** Clauses deleted as tracked changes in this draft (Word redlines). */
+  trackedDeletions?: TrackedDeletion[]
   docName: string
   filePath: string
   sourceType: SourceType

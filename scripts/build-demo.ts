@@ -12,7 +12,8 @@
  */
 import { mkdirSync, writeFileSync, createWriteStream } from 'node:fs'
 import { join } from 'node:path'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, InsertedTextRun, DeletedTextRun, CommentRangeStart, CommentRangeEnd, CommentReference } from 'docx'
+import { wordDiff } from '../src/main/engine/text'
 import PDFDocument from 'pdfkit'
 import { LIBRARY } from './seed-library'
 import { PLAYBOOK, PRECEDENTS } from './seed-playbook'
@@ -43,18 +44,57 @@ const lineFor = (b: Block): string =>
   b.kind === 'heading' ? `${b.number ? b.number + '. ' : ''}${b.text}` : b.kind === 'clause' ? `${b.number} ${b.text}` : b.text
 
 function writeTxt(def: DemoContractDef, path: string) {
-  writeFileSync(path, def.blocks.map(lineFor).join('\n\n') + '\n')
+  writeFileSync(path, def.blocks.filter((b) => !(b.kind === 'clause' && b.redline?.deleted)).map(lineFor).join('\n\n') + '\n')
 }
 
+const REDLINE = { author: 'Acme Legal', date: '2026-10-12T14:30:00Z' }
+
+/**
+ * Word output. Clauses with `redline` are written as real Track Changes
+ * (w:ins / w:del, attributed to the counterparty) and `comment` as margin
+ * comments, which is how a negotiated draft actually arrives.
+ */
 async function writeDocx(def: DemoContractDef, path: string) {
+  let changeId = 100
+  const comments: { id: number; author: string; date: Date; children: Paragraph[] }[] = []
+  const ins = (text: string) => new InsertedTextRun({ text, id: changeId++, ...REDLINE })
+  const del = (text: string) => new DeletedTextRun({ text, id: changeId++, ...REDLINE })
+
+  const clauseRuns = (b: Extract<Block, { kind: 'clause' }>): (TextRun | InsertedTextRun | DeletedTextRun)[] => {
+    if (b.redline?.inserted) return [ins(`${b.number} ${b.text}`)]
+    if (b.redline?.deleted) return [del(`${b.number} ${b.text}`)]
+    const runs: (TextRun | InsertedTextRun | DeletedTextRun)[] = [new TextRun({ text: `${b.number} `, bold: true })]
+    if (!b.redline?.base) return [...runs, new TextRun(b.text)]
+    wordDiff(b.redline.base, b.text).forEach((t, k) => {
+      if (k > 0) runs.push(new TextRun(' '))
+      runs.push(t.op === 'same' ? new TextRun(t.text) : t.op === 'add' ? ins(t.text) : del(t.text))
+    })
+    return runs
+  }
+
   const children = def.blocks.map((b) => {
     if (b.kind === 'title') return new Paragraph({ text: b.text, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER })
-    if (b.kind === 'heading') return new Paragraph({ text: lineFor(b), heading: HeadingLevel.HEADING_2, spacing: { before: 240 } })
-    if (b.kind === 'clause')
-      return new Paragraph({ children: [new TextRun({ text: `${b.number} `, bold: true }), new TextRun(b.text)], spacing: { after: 120 } })
+    if (b.kind === 'heading')
+      return b.inserted
+        ? new Paragraph({ children: [ins(lineFor(b))], heading: HeadingLevel.HEADING_2, spacing: { before: 240 } })
+        : new Paragraph({ text: lineFor(b), heading: HeadingLevel.HEADING_2, spacing: { before: 240 } })
+    if (b.kind === 'clause') {
+      const runs = clauseRuns(b)
+      if (!b.comment) return new Paragraph({ children: runs, spacing: { after: 120 } })
+      const id = comments.length
+      comments.push({ id, author: REDLINE.author, date: new Date(REDLINE.date), children: [new Paragraph({ children: [new TextRun(b.comment)] })] })
+      return new Paragraph({
+        children: [new CommentRangeStart(id), ...runs, new CommentRangeEnd(id), new TextRun({ children: [new CommentReference(id)] })],
+        spacing: { after: 120 }
+      })
+    }
     return new Paragraph({ text: b.text, spacing: { after: 160 } })
   })
-  const doc = new Document({ sections: [{ children }], styles: { default: { document: { run: { font: 'Calibri', size: 22 } } } } })
+  const doc = new Document({
+    comments: { children: comments },
+    sections: [{ children }],
+    styles: { default: { document: { run: { font: 'Calibri', size: 22 } } } }
+  })
   writeFileSync(path, await Packer.toBuffer(doc))
 }
 

@@ -418,7 +418,8 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .crumbs { font-size: 13px; margin-bottom: 10px; color: var(--text-2); }
 .rp-version { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
 /* Sits on the clause's top-left edge (like the status badge on the right), so it never overlaps the text. */
-.ver-tag { position: absolute; top: -8px; left: 10px; z-index: 2; font: 700 9.5px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 6px; border-radius: 99px; border: 1px solid currentColor; background: var(--surface); }
+.clause-tags { position: absolute; top: -8px; left: 10px; z-index: 2; display: flex; gap: 4px; }
+.ver-tag { position: relative; font: 700 9.5px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 6px; border-radius: 99px; border: 1px solid currentColor; background: var(--surface); }
 .ver-tag.changed { color: var(--review); }
 .ver-tag.new { color: var(--processing); }
 .version-section p { margin: 0 0 6px; }
@@ -492,3 +493,11 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .demo-upload h3 { font-size: 15px; margin-bottom: 2px; }
 .demo-upload p { margin: 0 0 12px; font-size: 13px; }
 .demo-tag { position: absolute; top: -9px; left: 14px; font: 700 10px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 7px; border-radius: 99px; background: var(--processing); color: #fff; }
+
+/* ---- their Word redline ---- */
+ins.rl-ins { color: #1d4ed8; text-decoration: underline; text-decoration-color: #1d4ed8; background: color-mix(in srgb, #1d4ed8 8%, transparent); }
+del.rl-del { color: #b91c1c; text-decoration: line-through; text-decoration-color: #b91c1c; }
+.ver-tag.redlined { color: #1d4ed8; }
+.ver-tag.commented { color: var(--text-2); }
+.redline-box { margin-top: 4px; }
+.doc-comment { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 0 6px 6px 0; font-size: 13px; }

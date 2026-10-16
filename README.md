@@ -52,6 +52,16 @@ The **Demos** page (linked from Start; opening it switches to demo mode) has sho
 | Add to the library | Accept and nominate wording, approve it, and it's accepted automatically from then on |
 | Add to the playbook | Propose a standard position and approve it as the owner |
 
+## Word redlines (Track Changes and comments)
+
+Negotiated drafts usually arrive as Word files with Track Changes and margin comments. Clause Pilot reads `.docx` files from their XML so that these survive (a plain-text extract silently accepts every tracked change and drops the comments):
+
+- Each clause keeps the counterparty's **redline** (insertions and deletions, with author and date) and the **comments** anchored on it. Both are shown on the clause and in its analysis; the original-document view renders the tracked changes too.
+- The clause is reviewed as **proposed** (their insertions in, deletions out), and anything they changed with Track Changes is **never accepted automatically**, even if the result looks standard.
+- **Whole clauses they deleted** are listed. If the deleted text was our pre-approved wording it is a must-change issue, and the response email asks for it to be reinstated.
+
+Not yet built: exporting our response as a redlined `.docx`, and comparing a new draft against the version we sent (to catch untracked edits).
+
 ## Accounts, contracts and versions
 
 You work on **one client account at a time**, chosen with the switcher at the top left (⌘K). The sidebar lists that client's **contracts**; each has its own page with every draft reviewed so far and an upload button for the next. Until an account is chosen, opening contracts and the account's reviews are unavailable; the library, playbook, precedents, approvals, security and audit are shared across clients.

@@ -4,9 +4,17 @@ import { lib } from './seed-library'
 
 export type Block =
   | { kind: 'title'; text: string }
-  | { kind: 'heading'; number?: string; text: string }
   | { kind: 'para'; text: string }
-  | { kind: 'clause'; number: string; text: string }
+  | {
+      kind: 'clause'
+      number: string
+      text: string
+      /** Word Track Changes against our template: `base` is the text they edited from. */
+      redline?: { base?: string; inserted?: boolean; deleted?: boolean }
+      /** A margin comment from the counterparty on this clause. */
+      comment?: string
+    }
+  | { kind: 'heading'; number?: string; text: string; inserted?: boolean }
 
 export interface DemoContractDef {
   file: string
@@ -22,6 +30,12 @@ export interface DemoContractDef {
 
 const h = (number: string, text: string): Block => ({ kind: 'heading', number, text })
 const cl = (number: string, text: string): Block => ({ kind: 'clause', number, text })
+/** A clause they edited with Track Changes, from our template wording. */
+const edited = (number: string, base: string, text: string, comment?: string): Block => ({ kind: 'clause', number, text, redline: { base }, comment })
+/** A clause they inserted with Track Changes. */
+const inserted = (number: string, text: string, comment?: string): Block => ({ kind: 'clause', number, text, redline: { inserted: true }, comment })
+/** One of our clauses they deleted with Track Changes. */
+const deleted = (number: string, text: string): Block => ({ kind: 'clause', number, text, redline: { deleted: true } })
 const para = (text: string): Block => ({ kind: 'para', text })
 
 // ---------------------------------------------------------------------------
@@ -75,7 +89,7 @@ const acme: DemoContractDef = {
   contractId: 'ct-acme-nda',
   format: 'docx',
   title: 'Acme Corp - Mutual NDA (counterparty redline)',
-  description: 'Acme returned our NDA with edits: residuals, a longer term, a one-way non-solicit and New York law.',
+  description: 'Acme returned our NDA with tracked changes and comments: residuals, a longer term, a one-way non-solicit, New York law, and a deleted clause.',
   blocks: [
     { kind: 'title', text: 'MUTUAL NON-DISCLOSURE AGREEMENT' },
     para('This Agreement is made between PortSwigger Ltd, a company registered in England and Wales ("PortSwigger"), and Acme Corporation, a New York corporation whose principal office is at 1 Road Runner Way, New York, NY ("Acme").'),
@@ -83,23 +97,27 @@ const acme: DemoContractDef = {
     cl('1.1', lib('nda-purpose')),
     cl('1.2', lib('nda-definition')),
     // Reworded, same effect.
-    cl('1.3', 'Information shall not be Confidential Information if it: (a) is or becomes public other than as a result of a breach of this Agreement; (b) was already lawfully held by the Recipient prior to disclosure; (c) is lawfully obtained from a third party who is free to disclose it; or (d) is developed independently by the Recipient without reference to the Discloser\'s Confidential Information.'),
+    edited('1.3', lib('nda-exclusions'), 'Information shall not be Confidential Information if it: (a) is or becomes public other than as a result of a breach of this Agreement; (b) was already lawfully held by the Recipient prior to disclosure; (c) is lawfully obtained from a third party who is free to disclose it; or (d) is developed independently by the Recipient without reference to the Discloser\'s Confidential Information.'),
     h('2', 'OBLIGATIONS'),
     // Adds Affiliates: broadens permitted disclosure.
-    cl('2.1', 'The Recipient shall: (a) keep the Discloser\'s Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its and its Affiliates\' employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement.'),
+    edited('2.1', lib('nda-obligations'), 'The Recipient shall: (a) keep the Discloser\'s Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its and its Affiliates\' employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement.'),
     cl('2.2', lib('nda-care')),
     cl('2.3', lib('nda-compelled')),
     // New: residuals - also overrides 2.1(b).
-    cl('2.4', 'Notwithstanding clause 2.1, either party shall be free to use for any purpose the Residuals resulting from access to or work with the Confidential Information of the other party. "Residuals" means information in non-tangible form which may be retained in the unaided memory of persons who have had access to the Confidential Information.'),
+    inserted(
+      '2.4',
+      'Notwithstanding clause 2.1, either party shall be free to use for any purpose the Residuals resulting from access to or work with the Confidential Information of the other party. "Residuals" means information in non-tangible form which may be retained in the unaided memory of persons who have had access to the Confidential Information.',
+      'Standard in all Acme NDAs: our engineers cannot unlearn what they have seen.'
+    ),
     h('3', 'RETURN AND OWNERSHIP'),
     cl('3.1', lib('nda-return')),
     cl('3.2', lib('nda-ownership')),
-    cl('3.3', lib('nda-no-warranty')),
+    deleted('3.3', lib('nda-no-warranty')),
     h('4', 'TERM'),
     // 3 years -> 5 years.
-    cl('4.1', 'This Agreement starts on the date of last signature and continues for two (2) years. The obligations in this Agreement shall continue for five (5) years from the date of termination or expiry, except in relation to trade secrets, which shall be protected for as long as they remain trade secrets.'),
-    h('5', 'NON-SOLICITATION'),
-    cl('5.1', 'During the term of this Agreement and for twenty-four (24) months thereafter, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Acme with whom it has had contact in connection with the Purpose.'),
+    edited('4.1', lib('nda-term'), 'This Agreement starts on the date of last signature and continues for two (2) years. The obligations in this Agreement shall continue for five (5) years from the date of termination or expiry, except in relation to trade secrets, which shall be protected for as long as they remain trade secrets.', 'Our board requires a five-year term for all supplier NDAs.'),
+    { kind: 'heading', number: '5', text: 'NON-SOLICITATION', inserted: true },
+    inserted('5.1', 'During the term of this Agreement and for twenty-four (24) months thereafter, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Acme with whom it has had contact in connection with the Purpose.'),
     h('6', 'GENERAL'),
     cl('6.1', lib('nda-remedies')),
     cl('6.2', lib('nda-no-commitment')),
@@ -108,8 +126,8 @@ const acme: DemoContractDef = {
     cl('6.5', lib('gen-notices')),
     cl('6.6', lib('gen-third-parties')),
     cl('6.7', lib('gen-counterparts')),
-    cl('6.8', 'This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the laws of the State of New York.'),
-    cl('6.9', 'The state and federal courts located in New York County, New York shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.'),
+    edited('6.8', lib('gen-law'), 'This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the laws of the State of New York.'),
+    edited('6.9', lib('gen-jurisdiction'), 'The state and federal courts located in New York County, New York shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.'),
     para('Signed for and on behalf of PortSwigger Ltd by [Authorised Signatory], Director. Signed for and on behalf of Acme Corporation by Wile E. Coyote, General Counsel.')
   ]
 }
@@ -181,7 +199,10 @@ const acmeV2: DemoContractDef = {
   format: 'docx',
   title: 'Acme Corp - Mutual NDA, version 2 (their reply)',
   description: 'Acme’s reply to our comments.',
+  // Clean (their earlier changes accepted), and they reinstated clause 3.3 as we asked.
   blocks: acme.blocks
+    .map((b): Block => (b.kind === 'clause' && b.redline?.deleted ? cl(b.number, b.text) : b))
+    .map((b): Block => (b.kind === 'clause' ? cl(b.number, b.text) : b.kind === 'heading' ? { kind: 'heading', number: b.number, text: b.text } : b))
     .filter((b) => !(b.kind === 'clause' && b.number === '2.4'))
     .map((b) => {
       if (b.kind !== 'clause') return b

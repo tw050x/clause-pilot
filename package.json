@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",
+    "@xmldom/xmldom": "0.9.12",
     "docx-preview": "0.4.1",
+    "jszip": "3.10.2",
     "mammoth": "1.13.0",
     "minisearch": "7.2.0",
     "pdfjs-dist": "6.4.299",
