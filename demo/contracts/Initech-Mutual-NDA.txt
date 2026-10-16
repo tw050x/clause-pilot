@@ -1,0 +1,53 @@
+MUTUAL NON-DISCLOSURE AGREEMENT
+
+This Agreement is made between PortSwigger Ltd, a company registered in England and Wales ("PortSwigger"), and Initech Inc., a Delaware corporation whose principal office is at 4120 Freidrich Lane, Austin, Texas ("Initech").
+
+1. DEFINITIONS AND PURPOSE
+
+1.1 Each party wishes to disclose Confidential Information to the other for the purpose of evaluating and discussing a potential business relationship between them (the "Purpose").
+
+1.2 "Confidential Information" means all information of a confidential nature disclosed by or on behalf of one party (the "Discloser") to the other party (the "Recipient"), whether before or after the date of this Agreement, in any form, including business, technical, financial and product information, and any information that is marked as confidential or would reasonably be regarded as confidential.
+
+1.3 Confidential Information does not include information that: (a) is or becomes publicly available other than through a breach of this Agreement; (b) was lawfully in the Recipient's possession before disclosure; (c) is lawfully received from a third party without restriction; or (d) is independently developed by the Recipient without use of the Discloser's Confidential Information.
+
+2. OBLIGATIONS
+
+2.1 The Recipient shall: (a) keep the Discloser's Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement.
+
+2.2 The Recipient must protect the Confidential Information of the Discloser with no less than the degree of care it applies to its own confidential information and, in any event, with at least reasonable care.
+
+2.3 The Recipient may disclose Confidential Information to the extent required by law, regulation or a court of competent jurisdiction, provided that, where legally permitted, it gives the Discloser prompt written notice and reasonable assistance to seek a protective order.
+
+3. RETURN AND OWNERSHIP
+
+3.1 On the Discloser's written request, the Recipient shall promptly return or destroy all Confidential Information of the Discloser in its possession, save that the Recipient may retain copies held in routine backups or as required by law, which shall remain subject to this Agreement.
+
+3.2 All Confidential Information remains the property of the Discloser. Nothing in this Agreement grants the Recipient any licence or right in respect of the Discloser's Confidential Information or intellectual property, other than to use it for the Purpose.
+
+3.3 Confidential Information is provided "as is". The Discloser gives no warranty as to its accuracy or completeness.
+
+4. TERM
+
+4.1 This Agreement starts on the date of last signature and continues for two (2) years. The obligations in this Agreement shall continue for three (3) years from the date of termination or expiry, except in relation to trade secrets, which shall be protected for as long as they remain trade secrets.
+
+5. GENERAL
+
+5.1 Each party acknowledges that damages alone may not be an adequate remedy for breach of this Agreement and that the Discloser shall be entitled to seek injunctive relief or specific performance.
+
+5.2 Nothing in this Agreement obliges either party to enter into any further agreement or transaction.
+
+5.3 This Agreement constitutes the entire agreement between the parties relating to its subject matter and supersedes all prior agreements, arrangements and understandings between them relating to that subject matter.
+
+5.4 Neither party may assign or transfer this Agreement without the prior written consent of the other party, such consent not to be unreasonably withheld, except that either party may assign this Agreement to a member of its group or to a successor to all or substantially all of its business.
+
+5.5 Any notice under this Agreement shall be in writing and delivered by hand, by pre-paid recorded post or by email to the address set out at the top of this Agreement, or such other address as a party notifies to the other.
+
+5.6 A person who is not a party to this Agreement has no right under the Contracts (Rights of Third Parties) Act 1999 to enforce any of its terms.
+
+5.7 This Agreement may be executed in any number of counterparts, each of which is an original and all of which together constitute one agreement. Electronic signatures are valid and binding.
+
+5.8 This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the law of England and Wales.
+
+5.9 The courts of England and Wales shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.
+
+Signed for and on behalf of PortSwigger Ltd by [Authorised Signatory], Director. Signed for and on behalf of Initech Inc. by Bill Lumbergh, Vice President.

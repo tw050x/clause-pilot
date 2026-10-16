@@ -1,0 +1,46 @@
+# Builds installers for macOS, Windows and Linux and attaches them to a draft
+# GitHub release. Triggered by pushing a version tag (e.g. `git tag v0.2.0 && git push --tags`)
+# or manually from the Actions tab.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # electron-builder creates the draft release and uploads assets
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest # .dmg for Apple silicon and Intel
+          - os: windows-latest # NSIS installer (.exe)
+          - os: ubuntu-latest # AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package and publish
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned builds until signing certificates are configured.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

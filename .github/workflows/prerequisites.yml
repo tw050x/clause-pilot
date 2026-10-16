@@ -1,0 +1,37 @@
+# Runs on every push, to every branch: the checks any change has to pass.
+name: Prerequisites
+
+on:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # Typecheck/build don't need the Electron binary.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # Runs the real pipeline over the demo contracts and fails if any AI step
+      # the demo needs has no authored answer (i.e. demo mode would break).
+      - name: Demo data and recordings are consistent
+        run: npm run demo:build

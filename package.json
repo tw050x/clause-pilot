@@ -1,0 +1,44 @@
+{
+  "name": "clause-pilot",
+  "version": "0.1.0",
+  "description": "AI-assisted commercial contract review - desktop app",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "demo:build": "tsx --tsconfig tsconfig.node.json scripts/build-demo.ts",
+    "release": "electron-vite build && electron-builder",
+    "pack": "electron-vite build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "mammoth": "1.13.0",
+    "minisearch": "7.2.0",
+    "pdfjs-dist": "6.4.299",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/pdfkit": "0.17.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "docx": "9.11.0",
+    "electron": "44.8.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "6.0.0",
+    "pdfkit": "0.20.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  },
+  "productName": "Clause Pilot",
+  "author": {
+    "name": "Richard Kielty"
+  }
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "file": "Initech-Mutual-NDA.txt",
+    "title": "Initech - Mutual NDA",
+    "description": "Our template, signed back with one cosmetic rewording. Should clear almost entirely without a human reading it.",
+    "path": "demo/contracts/Initech-Mutual-NDA.txt"
+  },
+  {
+    "file": "Acme-Mutual-NDA-redlined.docx",
+    "title": "Acme Corp - Mutual NDA (counterparty redline)",
+    "description": "Acme returned our NDA with edits: residuals, a longer term, a one-way non-solicit and New York law.",
+    "path": "demo/contracts/Acme-Mutual-NDA-redlined.docx"
+  },
+  {
+    "file": "Globex-Order-Form-Burp-Suite-DAST.pdf",
+    "title": "Globex - Order Form, Burp Suite DAST",
+    "description": "Our order form with the main body almost untouched. The special conditions at the back quietly undo the liability cap, and one tries to talk to the AI.",
+    "path": "demo/contracts/Globex-Order-Form-Burp-Suite-DAST.pdf"
+  }
+]
