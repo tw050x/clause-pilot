@@ -12,7 +12,7 @@ export interface Api {
     save(patch: Partial<Omit<Settings, 'hasApiKey'>>): Promise<Settings>
     setApiKey(key: string | null): Promise<Settings>
   }
-  demo: { list(): Promise<DemoContract[]>; reset(): Promise<boolean> }
+  demo: { list(): Promise<DemoContract[]>; reset(): Promise<boolean>; prepare(scenarioId: string): Promise<boolean> }
   workspace: { summary(): Promise<{ mode: 'demo' | 'live'; library: number; playbook: number; precedents: number; reviews: number; nominations: number }> }
   accounts: {
     list(): Promise<Account[]>

@@ -16,7 +16,7 @@ const api: Api = {
     save: (patch) => invoke('settings:save', patch),
     setApiKey: (key) => invoke('settings:setApiKey', key)
   },
-  demo: { list: () => invoke('demo:list'), reset: () => invoke('demo:reset') },
+  demo: { list: () => invoke('demo:list'), reset: () => invoke('demo:reset'), prepare: (id) => invoke('demo:prepare', id) },
   workspace: { summary: () => invoke('workspace:summary') },
   accounts: {
     list: () => invoke('accounts:list'),

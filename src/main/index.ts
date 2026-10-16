@@ -11,6 +11,7 @@ import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
 import { createSession, runPipeline } from './pipeline'
 import { compareVersions } from './engine/versions'
+import { DEMO_SCENARIOS } from '@shared/demoScenarios'
 import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
 import { emailBrief, templateEmail } from './email'
 import { chatSystem, offlineAnswer } from './chat'
@@ -185,6 +186,51 @@ ipcMain.handle('demo:reset', () => {
   if (ws.mode === 'demo') sessions.clear()
   rmSync(join(userDir, 'workspaces', 'demo'), { recursive: true, force: true })
   if (ws.mode === 'demo') ws = openWorkspace('demo')
+  return true
+})
+
+/**
+ * Set up a demo from a clean slate: reset the demo workspace, then review any
+ * earlier drafts the scenario needs (instant replay, scripted decisions) so the
+ * demo starts exactly where its story begins.
+ */
+ipcMain.handle('demo:prepare', async (_e, scenarioId: string) => {
+  const scenario = DEMO_SCENARIOS.find((d) => d.id === scenarioId)
+  if (!scenario) throw new Error('Unknown demo.')
+  if (!loadSettings().demoMode) throw new Error('Switch demo mode on to run a demo.')
+  sessions.clear()
+  rmSync(join(userDir, 'workspaces', 'demo'), { recursive: true, force: true })
+  ws = openWorkspace('demo')
+  const w = ws
+  const instant = new ReplayProvider(w.recordings, [0, 0])
+  for (const step of scenario.history) {
+    const demo = demoContracts().find((d) => d.file === step.file)!
+    const s = createSession(await parseFile(resolvePath(demo.path)), demo.path, 'demo')
+    const versions = w.store.versionsOf(scenario.contractId)
+    const prev = versions[versions.length - 1]
+    Object.assign(s, { accountId: scenario.accountId, contractId: scenario.contractId, version: (prev?.version ?? 0) + 1 })
+    if (prev) {
+      const { links, removed } = compareVersions(prev, s.clauses)
+      Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 }, versionLinks: links, removed })
+    }
+    sessions.set(s.id, s)
+    sessionWs.set(s.id, w)
+    await runPipeline(s, {
+      ai: instant,
+      library: w.store.library(),
+      precedents: w.store.precedents(),
+      playbook: w.store.playbook(),
+      emit: () => {},
+      audit: (type, payload) => w.audit.append('system', type, s.id, payload)
+    })
+    for (const d of step.decisions) {
+      const c =
+        d.clause === 'parties' ? s.clauses.find((x) => !x.number && x.heading !== 'EXECUTION') : d.clause === 'signature' ? s.clauses.find((x) => x.heading === 'EXECUTION') : s.clauses.find((x) => x.number === d.clause)
+      if (c) decide(s, { clauseId: c.id, decision: d.decision, note: d.note, redline: d.redline ?? '', nominate: false }, 'demo-setup')
+    }
+    w.store.saveSession(s)
+  }
+  w.audit.append(actor(), 'demo.prepared', null, { scenario: scenario.id, earlierDrafts: scenario.history.length })
   return true
 })
 

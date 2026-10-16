@@ -227,6 +227,7 @@ function DocClause(props: {
         className={`doc-clause s-${visual} ${selected ? 'selected' : ''} ${c.number ? '' : 'unnumbered'}`}
         onClick={props.onClick}
         title={clauseLabel(c)}
+        data-num={c.number ?? undefined}
       >
         {c.number && (
           <span className="doc-num">

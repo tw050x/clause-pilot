@@ -195,7 +195,33 @@ const acmeV2: DemoContractDef = {
     })
 }
 
-export const DEMO_CONTRACTS: DemoContractDef[] = [initech, acme, globex, acmeV2]
+// ---------------------------------------------------------------------------
+// 2c. Acme's second reply: version 3. English courts at last (the wording we
+// proposed), but a new one-sided publicity clause has appeared.
+// ---------------------------------------------------------------------------
+const acmeV3: DemoContractDef = {
+  file: 'Acme-Mutual-NDA-v3.docx',
+  accountId: 'ac-acme',
+  contractId: 'ct-acme-nda',
+  followUpOf: 'Acme-Mutual-NDA-v2.docx',
+  format: 'docx',
+  title: 'Acme Corp - Mutual NDA, version 3 (their second reply)',
+  description: 'Acme’s second reply.',
+  blocks: acmeV2.blocks.flatMap((b) => {
+    if (b.kind !== 'clause') return [b]
+    if (b.number === '6.9')
+      return [
+        cl('6.9', lib('gen-jurisdiction')),
+        cl(
+          '6.10',
+          'Acme may announce that it is evaluating PortSwigger as a prospective supplier and may refer to PortSwigger by name in its investor materials and customer communications without further consent.'
+        )
+      ]
+    return [b]
+  })
+}
+
+export const DEMO_CONTRACTS: DemoContractDef[] = [initech, acme, globex, acmeV2, acmeV3]
 
 export const DEMO_ACCOUNTS = [
   { id: 'ac-acme', name: 'Acme Corporation', createdAt: '2026-09-01T09:00:00.000Z' },

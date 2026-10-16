@@ -38,13 +38,19 @@ Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example 
 
 Builds are not code-signed yet. On macOS, right-click the app and choose Open the first time; on Windows, choose "More info → Run anyway".
 
-## The demo contracts
+## Demos
 
-| Contract | Format | What it shows |
-|---|---|---|
-| Initech, mutual NDA | .txt | The fast lane. Every clause is either word-for-word ours or an AI-verified paraphrase. Only the party details and signature block need a human. |
-| Acme, mutual NDA (redlined) | .docx | Counterparty edits. Residuals, a longer term, a one-way non-solicit and New York law, each shown with what we agreed in past negotiations. |
-| Globex, order form | .pdf | The trap. The liability clauses match our standard exactly, but a special condition at the back makes liability unlimited, and another clause tries to instruct the AI. |
+The **Demos** page (linked from Start; opening it switches to demo mode) has short, focused guided demos. Each starts from a freshly reset demo workspace, with earlier drafts reviewed for you where the story needs them, so they can be run in any order. **Simulate upload** skips the tour and goes straight to the result.
+
+| Demo | Shows |
+|---|---|
+| Initech: the fast lane | Our NDA signed back with one rewording; three decisions instead of twenty-one |
+| Acme: a redlined NDA | Counterparty edits decided against precedent |
+| Globex: the hidden trap | A special condition that undoes the liability cap, and a prompt-injection attempt that puts the review on security hold |
+| Second draft | Acme's reply: settled clauses skipped, removed clauses listed, an ignored rejection flagged |
+| Third draft | The last fix arrives as the wording we proposed, but a new one-sided publicity clause appears |
+| Add to the library | Accept and nominate wording, approve it, and it's accepted automatically from then on |
+| Add to the playbook | Propose a standard position and approve it as the owner |
 
 ## Accounts, contracts and versions
 

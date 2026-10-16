@@ -14,10 +14,12 @@ import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
 import { ContractView, NewContractView } from './views/ContractView'
+import { DemosView } from './views/DemosView'
+import type { DemoScenario } from '@shared/demoScenarios'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
 import { TourOverlay, type Tour } from './lib/tour'
-import { CONTRACT_TOURS, WELCOME_TOUR } from './onboarding'
+import { DEMO_TOURS, WELCOME_TOUR } from './onboarding'
 
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -98,9 +100,11 @@ export function App() {
 
   // Demo and live are separate workspaces: when the mode changes, drop everything on screen
   // and reload from the newly selected workspace.
+  const afterSwitchView = useRef<View | null>(null)
   const reloadWorkspace = useCallback(() => {
     setSession(null)
-    setView('home')
+    setView(afterSwitchView.current ?? 'home')
+    afterSwitchView.current = null
     setContractPageId(null)
     window.api.kb.nominations().then(setNominations)
     window.api.kb.playbookProposals().then(setProposals)
@@ -179,6 +183,34 @@ export function App() {
     if (view === 'review' && session?.accountId && session.accountId !== activeAccountId) setView('home')
   }, [activeAccountId])
 
+  // ---- demos: reset the demo workspace to the scenario's starting point, then go ----
+  const startDemo = async (d: DemoScenario, guided: boolean) => {
+    setError(null)
+    setTour(null)
+    try {
+      await window.api.demo.prepare(d.id)
+      setSession(null)
+      window.api.kb.nominations().then(setNominations)
+      window.api.kb.playbookProposals().then(setProposals)
+      refreshAlerts()
+      await Promise.all([refreshReviews(), refreshAccounts()])
+      setActiveAccountId(d.accountId)
+      if (!guided && d.upload) {
+        const file = (await window.api.demo.list()).find((x) => x.file === d.upload)!
+        return openContract(file.path, d.contractId)
+      }
+      if (d.startAt === 'playbook') setView('playbook')
+      else {
+        setContractPageId(d.contractId)
+        setView('contract')
+      }
+      const t = DEMO_TOURS[d.id]
+      if (t) setTour({ ...t })
+    } catch (e) {
+      setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+    }
+  }
+
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
 
@@ -247,6 +279,7 @@ export function App() {
           }}
           onNewContract={() => setView('new-contract')}
           onChooseAccount={() => setPickerOpen(true)}
+          demoMode={!!settings?.demoMode}
         />
         <main className="main">
           {error && (
@@ -257,12 +290,13 @@ export function App() {
           {view === 'home' && (
             <Home
               demoMode={!!settings?.demoMode}
-              onOpen={openContract}
               onOpenLive={() => (activeAccount ? setOpenModal({}) : setPickerOpen(true))}
-              onGuided={async (file, path, contractId) => {
-                await openContract(path, contractId)
-                const t = CONTRACT_TOURS[file]
-                if (t) setTour({ ...t })
+              onOpenDemos={async () => {
+                if (!settings?.demoMode) {
+                  // The mode switch reloads the workspace; land on Demos rather than Start.
+                  afterSwitchView.current = 'demos'
+                  setSettings(await window.api.settings.save({ demoMode: true }))
+                } else setView('demos')
               }}
               onWelcome={() => setTour({ ...WELCOME_TOUR })}
               onNavigate={setView}
@@ -305,6 +339,14 @@ export function App() {
                 setContractPageId(c.id)
                 setView('contract')
               }}
+            />
+          )}
+          {view === 'demos' && settings && (
+            <DemosView
+              demoMode={settings.demoMode}
+              onEnableDemo={async () => setSettings(await window.api.settings.save({ demoMode: true }))}
+              onGuided={(d) => startDemo(d, true)}
+              onSimulate={(d) => startDemo(d, false)}
             />
           )}
           {view === 'library' && <LibraryView />}

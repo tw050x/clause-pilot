@@ -9,7 +9,7 @@ const withText = (sel: string, text: string) => all(sel).find((e) => e.textConte
 /** The issue row for a clause label in the triage list, e.g. "Clause 11.1". */
 const issue = (label: string) => all('.issue').find((e) => e.querySelector('.issue-where')?.textContent === label) ?? null
 /** A clause in the document pane by its printed number. */
-const clause = (num: string) => all('.doc-clause').find((e) => e.querySelector('.doc-num')?.textContent === num) ?? null
+const clause = (num: string) => q(`.doc-clause[data-num="${num}"]`)
 /** The clause currently open on the right. */
 const openClause = () => q('.right-nav .faint')?.textContent?.split(' · ')[0] ?? null
 /** A section of the open clause's analysis by its heading. */
@@ -61,16 +61,100 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
   }
 ]
 
-// ---- Globex: the hidden trap ------------------------------------------------------
 
-const globex: Tour = {
-  id: 'globex',
-  name: 'Guided demo · Globex order form',
+/** First action in every contract demo: the demo's own "upload". */
+const simulateUpload = (body: string): TourStep => ({
+  title: 'Simulate the upload',
+  body,
+  target: () => q('.upload-draft'),
+  placement: 'left',
+  action: 'Click Simulate upload.',
+  done: () => !!q('.review-wrap')
+})
+
+// ---- Review a contract: Initech, the fast lane ---------------------------------------
+
+const reviewInitech: Tour = {
+  id: 'review-initech',
+  name: 'Demo · Initech NDA',
+  steps: [
+    {
+      title: 'How much of this needs reading?',
+      body: 'Initech has signed our standard NDA back. This is the most common case, and the one that fills the queue at quarter end. Let’s see how much of it actually needs a lawyer.'
+    },
+    simulateUpload('This is Initech’s contract page. Simulate uploading their signed-back NDA.'),
+    waitForChecks,
+    {
+      title: 'Almost nothing',
+      body: '18 of 21 clauses are word for word our approved wording and accepted automatically. Three need a person: the parties and the signature block (different in every deal), and one clause the AI says means the same as ours.',
+      target: () => q('.issues-summary'),
+      placement: 'left'
+    },
+    {
+      title: 'One clause was reworded',
+      body: 'Clause 2.2 isn’t word for word our standard. Let’s see why it was still accepted.',
+      target: () => clause('2.2'),
+      placement: 'right',
+      action: 'Click clause 2.2.',
+      done: () => openClause() === 'Clause 2.2'
+    },
+    {
+      title: 'Same meaning, different words',
+      body: 'It was close to our approved “Standard of care” clause, so Claude was asked whether the legal effect is the same. It says yes, and shows its reasoning and the exact word changes so you can check them in seconds.',
+      target: () => section('Library match'),
+      placement: 'left'
+    },
+    {
+      title: 'You make the call',
+      body: 'An AI opinion never accepts a clause on its own, so this one carries a “needs your decision” badge. If you agree, accept it. Tick “Nominate this wording…” if it should be pre-approved next time.',
+      target: () => q('.result-box .decision'),
+      placement: 'top',
+      action: 'Click Accept, then Confirm accept.',
+      done: () => isDecided(clause('2.2'), 'accepted')
+    },
+    {
+      title: 'Now the party details',
+      body: 'Check the company names and details against the deal.',
+      target: parties,
+      placement: 'right',
+      action: 'Click the parties paragraph at the top of the contract.',
+      done: () => openClause() === 'Parties and details'
+    },
+    {
+      title: 'Accept them',
+      body: 'Names, addresses and entity types look right.',
+      target: () => q('.result-box .decision .btn.accept'),
+      placement: 'top',
+      action: 'Click Accept, then Confirm accept.',
+      done: () => isDecided(parties(), 'accepted')
+    },
+    {
+      title: 'And the signature block',
+      body: 'Last one.',
+      target: signature,
+      placement: 'right',
+      action: 'Click the signature block at the end, then Accept and Confirm accept.',
+      done: () => isDecided(signature(), 'accepted')
+    },
+    ...draftEmail('Nothing was rejected, so the response is a simple “happy to proceed”.'),
+    {
+      title: 'Three decisions, not twenty-one',
+      body: 'This NDA needed three quick checks instead of a full read, and the review record shows why each of the other clauses was accepted.'
+    }
+  ]
+}
+
+// ---- Review a contract: Globex, the hidden trap ------------------------------------
+
+const reviewGlobex: Tour = {
+  id: 'review-globex',
+  name: 'Demo · Globex order form',
   steps: [
     {
       title: 'An order form that looks standard',
       body: 'Globex has sent back our Burp Suite order form. Most of it matches our terms word for word, so it looks safe to sign. It isn’t, and the problem is hidden at the back. Let’s find it.'
     },
+    simulateUpload('This is Globex’s contract page. In real use you’d upload their file here; in the demo, the upload is simulated.'),
     waitForChecks,
     {
       title: 'Triage, not reading',
@@ -185,53 +269,23 @@ const globex: Tour = {
     },
     ...draftEmail('Once the blockers are rejected, the response to Globex can be drafted.'),
     {
-      title: 'Ask about the contract',
-      body: 'The assistant can see the contract and everything the checks found, but it can’t make decisions.',
-      target: () => withText('.rightbar-switch button', 'Ask AI'),
-      placement: 'left',
-      action: 'Click Ask AI.',
-      done: () => (q('.rightbar-chat') as HTMLElement | null)?.style.display !== 'none' && !!q('.rightbar-chat')
-    },
-    {
-      title: 'Ask a question',
-      body: 'In demo mode, answers come from the analysis on screen; live, Claude answers.',
-      target: () => q('.suggestions'),
-      placement: 'left',
-      action: 'Click “What are the biggest risks?”',
-      done: () => !!q('.msg.assistant')
-    },
-    {
-      title: 'Everything is recorded',
-      body: 'Every AI result and every decision is written to a tamper-evident audit log.',
-      target: () => navItem('Audit'),
-      placement: 'right',
-      action: 'Click Audit.',
-      done: () => pageTitle() === 'Audit',
-      prepare: (ctx) => ctx.setRightTab('review')
-    },
-    {
-      title: 'Tamper-evident',
-      body: 'Each entry includes the hash of the one before, so editing or deleting history breaks the chain, and the app tells you. Your rejection of 11.1 is in here, with who and when.',
-      target: () => q('.page .card'),
-      placement: 'top'
-    },
-    {
       title: 'That’s the trap',
-      body: 'A contract that looked like our standard terms, with one clause at the back that undid the liability cap and another trying to talk the AI round. Both were found without reading every clause. Try the Acme NDA next to see how past negotiations help you decide.'
+      body: 'A contract that looked like our standard terms, with one clause at the back that undid the liability cap and another trying to talk the AI round. Both were found without reading every clause, and the security team was brought in.'
     }
   ]
 }
 
-// ---- Acme: learning from past negotiations -----------------------------------------
+// ---- Review a contract: Acme, a redlined NDA -----------------------------------------
 
-const acme: Tour = {
-  id: 'acme',
-  name: 'Guided demo · Acme NDA',
+const reviewAcme: Tour = {
+  id: 'review-acme',
+  name: 'Demo · Acme NDA',
   steps: [
     {
       title: 'An NDA with edits',
       body: 'Acme has returned our mutual NDA with changes. Some are fine, some aren’t. This demo shows how earlier negotiations help you decide quickly and consistently, and how the system learns from your decisions.'
     },
+    simulateUpload('This is the contract’s page for Acme’s NDA. Uploading their redlined draft creates version 1.'),
     waitForChecks,
     {
       title: 'Three things to fix, six to decide',
@@ -296,16 +350,182 @@ const acme: Tour = {
       body: 'It’s within the fallback and there’s a precedent.',
       target: () => q('.result-box .decision .btn.accept'),
       placement: 'top',
-      action: 'Click Accept.',
-      done: () => !!q('.result-box .decision textarea')
+      action: 'Click Accept, then Confirm accept.',
+      done: () => isDecided(clause('4.1'), 'accepted')
+    },
+    ...draftEmail('Your rejections, reasons and proposed wording become the response to Acme.'),
+    {
+      title: 'A redline, decided on precedent',
+      body: 'Each change was shown against our approved wording and against what we agreed before, so you could decide in seconds and consistently. Try “Second draft” to see what happens when Acme replies.'
+    }
+  ]
+}
+
+// ---- Second draft ----------------------------------------------------------------------------
+
+const secondDraft: Tour = {
+  id: 'second-draft',
+  name: 'Demo · Second draft',
+  steps: [
+    {
+      title: 'Acme has replied',
+      body: 'You reviewed Acme’s first draft and sent your comments (we’ve done that part for you). Version 1 is listed here with your decisions. Today, their reply means reading the whole contract again.',
+      target: () => q('.version-row'),
+      placement: 'bottom'
+    },
+    simulateUpload('Uploading their reply makes it version 2, compared clause by clause with version 1.'),
+    {
+      ...waitForChecks,
+      title: 'Version 2, checked',
+      body: 'All the usual checks run on the new draft, and every clause is matched to its counterpart in version 1.'
     },
     {
-      title: 'Teach the system',
-      body: 'If this wording is acceptable every time, nominate it for the library. Once approved, future contracts with this wording are accepted automatically.',
-      target: () => q('.result-box .decision'),
+      title: 'Only what changed',
+      body: 'Clauses you settled in version 1 that came back word for word are skipped: you don’t read them again. That includes the five-year term you accepted. What’s left is what changed, what’s new and anything they ignored.',
+      target: () => q('.version-summary'),
+      placement: 'left'
+    },
+    {
+      title: 'They removed the residuals clause',
+      body: 'You rejected it in version 1, and it’s gone. Removed clauses are listed so nothing disappears silently, including clauses you had accepted.',
+      target: () => q('.removed-list'),
+      placement: 'left'
+    },
+    {
+      title: 'And moved to our fallback',
+      body: 'The non-solicitation clause has changed. You can see exactly what changed since version 1, and it is now within our playbook fallback: mutual, 12 months, with an advertising carve-out.',
+      target: () => issue('Clause 5.1'),
       placement: 'left',
-      action: 'Tick “Nominate this wording…” and click Confirm accept.',
-      done: () => openClause() === 'Clause 4.1' && !!withText('.result-box .decision .who', 'nominated for library')
+      action: 'Click the Clause 5.1 issue.',
+      done: () => openClause() === 'Clause 5.1'
+    },
+    {
+      title: 'What changed, at a glance',
+      body: 'The comparison with version 1 shows their edit word by word, so you don’t have to work it out.',
+      target: () => q('.version-section'),
+      placement: 'left'
+    },
+    {
+      title: 'Back to the list',
+      body: 'One more thing to check.',
+      target: () => q('.right-nav .link-btn'),
+      placement: 'bottom',
+      action: 'Click ← All issues.',
+      done: () => !!q('.issues')
+    },
+    {
+      title: 'They ignored one',
+      body: 'You rejected the exclusive New York courts clause in version 1 and they sent it back word for word. That’s flagged as must-change, with your original note, so it can’t slip through.',
+      target: () => issue('Clause 6.9'),
+      placement: 'left'
+    },
+    {
+      title: 'A second draft in minutes',
+      body: 'Instead of re-reading 22 clauses, you check what changed, what was removed and what they ignored. Try “Third draft” to see the next round.'
+    }
+  ]
+}
+
+// ---- Third draft ----------------------------------------------------------------------------
+
+const thirdDraft: Tour = {
+  id: 'third-draft',
+  name: 'Demo · Third draft',
+  steps: [
+    {
+      title: 'Round three',
+      body: 'Two drafts are already reviewed (done for you). After version 2, only one issue was open: Acme still wanted the New York courts. Here comes their next reply.',
+      target: () => q('.page .card'),
+      placement: 'bottom'
+    },
+    simulateUpload('Upload version 3. It’s compared with version 2.'),
+    {
+      ...waitForChecks,
+      title: 'Version 3, checked',
+      body: 'The checks run again, and every clause is matched to version 2.'
+    },
+    {
+      title: 'Almost everything is settled',
+      body: 'Nearly every clause was settled in an earlier round and came back unchanged, so it’s skipped. Two things need a look: one changed clause, and one new one.',
+      target: () => q('.version-summary'),
+      placement: 'left'
+    },
+    {
+      title: 'The last fix landed',
+      body: 'Clause 6.9 changed. Open it to see how.',
+      target: () => clause('6.9'),
+      placement: 'right',
+      action: 'Click clause 6.9 in the contract.',
+      done: () => openClause() === 'Clause 6.9'
+    },
+    {
+      title: 'Exactly the wording you proposed',
+      body: 'The new 6.9 is the English-courts wording you proposed in version 2, word for word, so it is accepted automatically.',
+      target: () => q('.version-section'),
+      placement: 'left'
+    },
+    {
+      title: 'But something new appeared',
+      body: 'A clause that wasn’t in version 2. New clauses always get a full review.',
+      target: () => clause('6.10'),
+      placement: 'right',
+      action: 'Click clause 6.10 in the contract.',
+      done: () => openClause() === 'Clause 6.10'
+    },
+    {
+      title: 'One-sided publicity',
+      body: 'Acme could name PortSwigger in investor materials without consent, with no equivalent right for us. Easy to miss in a late round, when everyone assumes the contract is done.',
+      target: () => section('Standard positions'),
+      placement: 'left'
+    },
+    {
+      title: 'Reject it',
+      body: 'The suggested wording (no publicity without consent, both ways) is pre-filled.',
+      target: () => q('.result-box .decision .btn.reject'),
+      placement: 'top',
+      action: 'Click Reject, then Confirm reject.',
+      done: () => isDecided(clause('6.10'), 'rejected')
+    },
+    {
+      title: 'One clause to read in round three',
+      body: 'In the third round you read one new clause, not the whole contract, and nothing settled earlier could quietly come back.'
+    }
+  ]
+}
+
+// ---- Add to the library ------------------------------------------------------------------------
+
+const libraryDemo: Tour = {
+  id: 'library',
+  name: 'Demo · Add to the library',
+  steps: [
+    {
+      title: 'Teach it your wording',
+      body: 'The library is the wording we’ve already approved: a clause that matches it word for word is accepted without anyone reading it. This demo adds a clause to it.'
+    },
+    simulateUpload('Upload Initech’s NDA. It’s almost all our standard wording.'),
+    waitForChecks,
+    {
+      title: 'One clause was reworded',
+      body: 'Clause 2.2 isn’t word for word our standard. Let’s see why it was still accepted.',
+      target: () => clause('2.2'),
+      placement: 'right',
+      action: 'Click clause 2.2.',
+      done: () => openClause() === 'Clause 2.2'
+    },
+    {
+      title: 'Same meaning, different words',
+      body: 'It was close to our approved “Standard of care” clause, so Claude was asked whether the legal effect is the same. It says yes, and shows its reasoning and the exact word changes so you can check them in seconds.',
+      target: () => section('Library match'),
+      placement: 'left'
+    },
+    {
+      title: 'Accept it, and nominate it',
+      body: 'If this wording is fine every time, nominate it. A reviewer accepting it in one deal isn’t the same as approving it for every deal, so it goes to the owner for approval.',
+      target: () => q('.result-box .decision'),
+      placement: 'top',
+      action: 'Click Accept, tick “Nominate this wording…”, then Confirm accept.',
+      done: () => isDecided(clause('2.2'), 'accepted') && !!withText('.result-box .decision .who', 'nominated for library')
     },
     {
       title: 'Approvals',
@@ -338,152 +558,84 @@ const acme: Tour = {
       placement: 'top'
     },
     {
-      title: 'And your decisions became precedent',
-      body: 'Both decisions you made, the rejected residuals clause and the accepted five-year term, are now precedents the next reviewer will see.',
-      target: () => navItem('Precedents'),
-      placement: 'right',
-      action: 'Click Precedents.',
-      done: () => pageTitle().startsWith('Precedents')
-    },
-    {
-      title: 'Learning from every review',
-      body: 'Entries tagged “from a review” came from your decisions. The library, the precedents and the playbook improve with each contract, and every change is approved and audited.',
-      target: () => withText('.page table.t tbody tr', 'from a review'),
-      placement: 'top'
-    },
-    {
-      title: 'Acme has replied',
-      body: 'You sent Acme your comments. A few days later they send back a new draft. This is where most of the time goes today: reading the whole contract again to find what changed. Let’s upload their reply.'
-    },
-    {
-      title: 'Every contract has its own page',
-      body: 'You’re working on Acme, so the sidebar lists Acme’s contracts. Each one has a page with every draft you’ve reviewed and an upload button for the next.',
-      target: () => withText('.contract-item', 'Mutual NDA'),
-      placement: 'right',
-      action: 'Click Mutual NDA in the sidebar.',
-      done: () => pageTitle() === 'Mutual NDA'
-    },
-    {
-      title: 'Upload their reply',
-      body: 'Version 1 is the draft you just reviewed. Uploading the reply makes it version 2, compared clause by clause with version 1.',
-      target: () => q('.upload-draft'),
-      placement: 'left',
-      action: 'Click Upload new draft.',
-      done: () => !!q('.review-wrap') && !!withText('.rp-version', 'Version 2')
-    },
-    {
-      ...waitForChecks,
-      title: 'Version 2, checked',
-      body: 'All the usual checks run on the new draft, and every clause is also matched to its counterpart in version 1.'
-    },
-    {
-      title: 'Only what changed',
-      body: 'Clauses you settled in version 1 that came back word for word are skipped: you don’t read them again. That includes the five-year term you accepted. What’s left is what changed, what’s new and anything they ignored.',
-      target: () => q('.version-summary'),
-      placement: 'left'
-    },
-    {
-      title: 'They removed the residuals clause',
-      body: 'You rejected it in version 1, and it’s gone. Removed clauses are listed so nothing disappears silently, including clauses you had accepted.',
-      target: () => q('.removed-list'),
-      placement: 'left'
-    },
-    {
-      title: 'And moved to our fallback',
-      body: 'The non-solicitation clause has changed. You can see exactly what changed since version 1, and it is now within our playbook fallback: mutual, 12 months, with an advertising carve-out.',
-      target: () => issue('Clause 5.1'),
-      placement: 'left',
-      action: 'Click the Clause 5.1 issue.',
-      done: () => openClause() === 'Clause 5.1'
-    },
-    {
-      title: 'What changed, at a glance',
-      body: 'The comparison with version 1 shows their edit word by word, so you don’t have to work it out.',
-      target: () => q('.version-section'),
-      placement: 'left'
-    },
-    {
-      title: 'A second draft in minutes',
-      body: 'Instead of re-reading 22 clauses, you check a handful: what changed, what’s new, and what they didn’t fix (here, the New York courts in 6.9 are still exclusive). Try the Initech NDA to see the fast lane, or Globex to see a hidden trap.'
+      title: 'Accepted automatically from now on',
+      body: 'Any future contract with this exact wording clears without an AI check or a reader. The library grows from real decisions, one approval at a time.'
     }
   ]
 }
 
-// ---- Initech: the fast lane --------------------------------------------------------------
+// ---- Add to the playbook ------------------------------------------------------------------------
 
-const initech: Tour = {
-  id: 'initech',
-  name: 'Guided demo · Initech NDA',
+const playbookDemo: Tour = {
+  id: 'playbook',
+  name: 'Demo · Add to the playbook',
   steps: [
     {
-      title: 'How much of this needs reading?',
-      body: 'Initech has signed our standard NDA back. This is the most common case, and the one that fills the queue at quarter end. Let’s see how much of it actually needs a lawyer.'
-    },
-    waitForChecks,
-    {
-      title: 'Almost nothing',
-      body: '18 of 21 clauses are word for word our approved wording and accepted automatically. Three need a person: the parties and the signature block (different in every deal), and one clause the AI says means the same as ours.',
-      target: () => q('.issues-summary'),
-      placement: 'left'
+      title: 'Our standard positions',
+      body: 'The playbook is what we accept on each topic, the fallback, and the red flags. Every contract is checked against each position in its own AI check. Let’s add one.',
+      target: () => q('.page h1'),
+      placement: 'bottom'
     },
     {
-      title: 'One clause was reworded',
-      body: 'Clause 2.2 isn’t word for word our standard. Let’s see why it was still accepted.',
-      target: () => clause('2.2'),
+      title: 'Propose a position',
+      body: 'Anyone can propose a change. It only takes effect once the playbook owner approves it.',
+      target: () => withText('.page .btn', 'Propose new position'),
+      placement: 'left',
+      action: 'Click Propose new position.',
+      done: () => !!q('.position-form')
+    },
+    {
+      title: 'Describe it',
+      body: (
+        <>
+          For example: topic <b>Publicity</b>; standard <b>No public announcements without both parties’ written consent</b>; fallback <b>Customer may name us in a customer list</b>; red
+          flags <b>One-sided publicity rights</b>, <b>Use in investor materials</b>. Add a reason, then send it for approval.
+        </>
+      ),
+      target: () => q('.position-form'),
+      placement: 'left',
+      action: 'Fill in the form and click Send for approval.',
+      done: () => !q('.position-form') && !!withText('.page p', 'awaiting approval')
+    },
+    {
+      title: 'Approvals',
+      body: 'Playbook changes wait here for the owner. In this demo you are the owner too.',
+      target: () => navItem('Approvals'),
       placement: 'right',
-      action: 'Click clause 2.2.',
-      done: () => openClause() === 'Clause 2.2'
+      action: 'Click Approvals.',
+      done: () => pageTitle() === 'Approvals'
     },
     {
-      title: 'Same meaning, different words',
-      body: 'It was close to our approved “Standard of care” clause, so Claude was asked whether the legal effect is the same. It says yes, and shows its reasoning and the exact word changes so you can check them in seconds.',
-      target: () => section('Library match'),
-      placement: 'left'
-    },
-    {
-      title: 'You make the call',
-      body: 'An AI opinion never accepts a clause on its own, so this one carries a “needs your decision” badge. If you agree, accept it. Tick “Nominate this wording…” if it should be pre-approved next time.',
-      target: () => q('.result-box .decision'),
+      title: 'Approve it',
+      body: 'The owner sees exactly what would change and why it was proposed.',
+      target: () => q('.page .card'),
       placement: 'top',
-      action: 'Click Accept, then Confirm accept.',
-      done: () => isDecided(clause('2.2'), 'accepted')
+      action: 'Click Approve.',
+      done: () => !!withText('.page .pill', 'approved')
     },
     {
-      title: 'Now the party details',
-      body: 'Check the company names and details against the deal.',
-      target: parties,
+      title: 'It’s in the playbook',
+      body: 'Open the Playbook to see it, at version 1, with who approved it.',
+      target: () => navItem('Playbook'),
       placement: 'right',
-      action: 'Click the parties paragraph at the top of the contract.',
-      done: () => openClause() === 'Parties and details'
+      action: 'Click Playbook.',
+      done: () => pageTitle().startsWith('Playbook')
     },
     {
-      title: 'Accept them',
-      body: 'Names, addresses and entity types look right.',
-      target: () => q('.result-box .decision .btn.accept'),
-      placement: 'top',
-      action: 'Click Accept, then Confirm accept.',
-      done: () => isDecided(parties(), 'accepted')
-    },
-    {
-      title: 'And the signature block',
-      body: 'Last one.',
-      target: signature,
-      placement: 'right',
-      action: 'Click the signature block at the end, then Accept and Confirm accept.',
-      done: () => isDecided(signature(), 'accepted')
-    },
-    ...draftEmail('Nothing was rejected, so the response is a simple “happy to proceed”.'),
-    {
-      title: 'Three decisions, not twenty-one',
-      body: 'This NDA needed three quick checks instead of a full read, and the review record shows why each of the other clauses was accepted. That’s where the time goes back to the legal team. Try the Globex order form to see what happens when a contract only looks standard.'
+      title: 'Checked in every review',
+      body: 'From the next contract on, this position gets its own AI check. Every change to the playbook is approved and recorded in the audit log.'
     }
   ]
 }
 
-export const CONTRACT_TOURS: Record<string, Tour> = {
-  'Globex-Order-Form-Burp-Suite-DAST.pdf': globex,
-  'Acme-Mutual-NDA-redlined.docx': acme,
-  'Initech-Mutual-NDA.txt': initech
+export const DEMO_TOURS: Record<string, Tour> = {
+  'review-initech': reviewInitech,
+  'review-acme': reviewAcme,
+  'review-globex': reviewGlobex,
+  'second-draft': secondDraft,
+  'third-draft': thirdDraft,
+  library: libraryDemo,
+  playbook: playbookDemo
 }
 
 export const WELCOME_TOUR: Tour = {
@@ -534,8 +686,8 @@ export const WELCOME_TOUR: Tour = {
     },
     {
       title: 'Guided demos',
-      body: 'Each demo client shows a different part of the workflow: the fast lane (Initech), learning from past negotiations and a second draft (Acme), and finding a hidden trap (Globex). Click Guided demo on any of them.',
-      target: () => q('.demo-grid'),
+      body: 'Short demos, each on one thing: reviewing a contract, the second and third drafts of a contract, adding to the library and adding to the playbook. Open the Demos page to start one.',
+      target: () => q('.demos-link'),
       placement: 'bottom'
     }
   ]

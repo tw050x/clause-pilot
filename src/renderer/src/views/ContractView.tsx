@@ -50,7 +50,7 @@ export function ContractView({
           </button>
         ) : demoNext ? (
           <button className="btn primary upload-draft" onClick={() => onStartDemo(demoNext.path, contract.id)}>
-            <Icon name="upload" /> {versions.length ? `Upload new draft: ${demoNext.title.split(', ').pop()}` : 'Upload first draft'}
+            <Icon name="upload" /> Simulate upload: {versions.length ? `version ${versions.length + 1}` : 'first draft'}
           </button>
         ) : null}
       </div>

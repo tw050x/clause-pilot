@@ -282,5 +282,41 @@ export const AUTHORED: Record<string, AuthoredContract> = {
         within_fallback: true
       }
     }
+  },
+
+  // -------------------------------------------------------------------------
+  'Acme-Mutual-NDA-v3.docx': {
+    get intent() {
+      return AUTHORED[ACME].intent
+    },
+    overrides: [],
+    positions: {
+      'pb-governing-law': compliant(['6.8', '6.9'], 'English law and the exclusive jurisdiction of the English courts.'),
+      'pb-confidentiality-term': {
+        status: 'deviation',
+        clauses: ['4.1'],
+        deviation: 'Obligations survive for 5 years rather than 3. That is within the 2 to 5 year fallback, and because the NDA is mutual it also protects our information for longer.',
+        severity: 'low',
+        suggested_redline: '',
+        within_fallback: true
+      },
+      'pb-mutuality': {
+        status: 'deviation',
+        clauses: ['6.10'],
+        deviation: 'New clause 6.10 lets Acme, and only Acme, publicise the relationship and name PortSwigger in investor materials and customer communications without consent. PortSwigger gets no equivalent right, and it goes beyond evaluating a relationship.',
+        severity: 'medium',
+        suggested_redline: 'Neither party shall make any public announcement about the Purpose or refer to the other party by name in any publicity without the other party’s prior written consent.',
+        within_fallback: false
+      },
+      'pb-residuals': compliant([], 'No residuals clause.'),
+      'pb-non-solicit': {
+        status: 'deviation',
+        clauses: ['5.1'],
+        deviation: 'Mutual, 12 months, limited to staff with direct contact, with a carve-out for general advertising: exactly our fallback.',
+        severity: 'low',
+        suggested_redline: '',
+        within_fallback: true
+      }
+    }
   }
 }

@@ -5,8 +5,7 @@ import type { View } from '../components/NavDrawer'
 
 export function Home({
   demoMode,
-  onOpen,
-  onGuided,
+  onOpenDemos,
   onWelcome,
   onNavigate,
   onOpenLive,
@@ -19,9 +18,7 @@ export function Home({
   account: Account | null
   accounts: Account[]
   onChooseAccount: () => void
-  /** Demo contracts: open straight into their demo account and contract. */
-  onOpen: (path: string, contractId?: string) => void
-  onGuided: (file: string, path: string, contractId: string) => void
+  onOpenDemos: () => void
   /** Live mode: ask which account and contract, then pick the file. */
   onOpenLive: () => void
   onWelcome: () => void
@@ -32,9 +29,6 @@ export function Home({
   const [hasKey, setHasKey] = useState(true)
   // Until the first live review, the setup checklist is the way in: it explains what opening a contract involves.
   const needsFirstReview = !demoMode && !!ws && ws.reviews === 0
-  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? ''
-  // With a client chosen, only its demos; with none, every demo (starting one makes its client active).
-  const shownDemos = demos.filter((d) => !d.followUpOf && (!account || d.accountId === account.id))
 
   useEffect(() => {
     window.api.demo.list().then(setDemos)
@@ -61,38 +55,21 @@ export function Home({
         </button>
       </section>
 
-      {demoMode ? (
-        <>
-
-          <h3 style={{ marginBottom: 6 }}>{account ? `Demo contracts for ${account.name}` : 'Demo contracts'}</h3>
-          <p className="faint" style={{ marginTop: 0 }}>
-            {account
-              ? 'You’re working on this client. Choose a different account at the top left to see its demos.'
-              : 'Each demo belongs to a client account; starting one makes that client the active account.'}{' '}
-            Demo mode uses sample contracts and recorded AI responses. Switch demo mode off (top right) to open your own contracts.
+      <section className="demos-link">
+        <Icon name="bolt" size={20} />
+        <div>
+          <h3>Demos</h3>
+          <p className="faint">
+            Short guided demos with sample contracts: reviewing a contract, the second and third drafts of a contract, adding to the library and adding to the playbook.
+            {!demoMode && ' Opening them switches to demo mode; your own data is kept separately.'}
           </p>
-          <div className="demo-grid">
-            {shownDemos.map((d) => (
-              <div key={d.file} className="demo-card">
-                <span className="ext">
-                  {d.file.split('.').pop()?.toUpperCase()}
-                  {!account && <span className="demo-client"> · {accountName(d.accountId)}</span>}
-                </span>
-                <strong>{d.title}</strong>
-                <p>{d.description}</p>
-                <div className="row-gap" style={{ marginTop: 'auto', paddingTop: 6 }}>
-                  <button className="btn sm primary" onClick={() => onGuided(d.file, d.path, d.contractId)}>
-                    Guided demo <Chevron />
-                  </button>
-                  <button className="btn sm" onClick={() => onOpen(d.path, d.contractId)}>
-                    Open <Chevron />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : !account && !needsFirstReview ? (
+        </div>
+        <button className={`btn ${demoMode ? 'primary' : ''}`} onClick={onOpenDemos}>
+          Open demos <Chevron />
+        </button>
+      </section>
+
+      {demoMode ? null : !account && !needsFirstReview ? (
         <ChooseAccount onChoose={onChooseAccount} />
       ) : !needsFirstReview ? (
         <div className="home-upload-block" style={{ marginBottom: 28, width: 'fit-content', maxWidth: 640 }}>

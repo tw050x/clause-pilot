@@ -31,5 +31,14 @@
     "title": "Acme Corp - Mutual NDA, version 2 (their reply)",
     "description": "Acme’s reply to our comments.",
     "path": "demo/contracts/Acme-Mutual-NDA-v2.docx"
+  },
+  {
+    "file": "Acme-Mutual-NDA-v3.docx",
+    "accountId": "ac-acme",
+    "contractId": "ct-acme-nda",
+    "followUpOf": "Acme-Mutual-NDA-v2.docx",
+    "title": "Acme Corp - Mutual NDA, version 3 (their second reply)",
+    "description": "Acme’s second reply.",
+    "path": "demo/contracts/Acme-Mutual-NDA-v3.docx"
   }
 ]
