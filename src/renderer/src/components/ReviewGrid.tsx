@@ -133,13 +133,12 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
                 setRef={(el) => void (el ? clauseRefs.current.set(c.id, el) : clauseRefs.current.delete(c.id))}
                 onClick={() => open(c.id)}
                 tools={
-                  // Space is reserved under every clause so selecting one never shifts the layout.
-                  <div className={`clause-tools ${isSel ? '' : 'hidden'}`} aria-hidden={!isSel}>
+                  <span className={`clause-tools ${isSel ? '' : 'hidden'}`} aria-hidden={!isSel}>
                     <button className="btn sm" tabIndex={isSel ? 0 : -1} onClick={() => onMode('original')}>
                       Check in original
                       <Chevron />
                     </button>
-                  </div>
+                  </span>
                 }
               />
             )
@@ -255,6 +254,13 @@ function DocClause(props: {
         data-num={c.number ?? undefined}
       >
         {c.number && <span className="doc-num">{c.number}</span>}
+        <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.tracked ? <Redline segments={c.tracked} /> : c.text}</span>
+        {props.flagged ? <SecurityBadge /> : <StatusBadge action={props.action} />}
+        {selected && <SelectedArrow />}
+      </div>
+      {/* Under every clause: its tags on the left, the selected clause's action on the right.
+          The row is always there, so selecting a clause never shifts the layout. */}
+      <div className="clause-foot">
         {(props.versionKind && props.versionKind !== 'unchanged') || c.tracked || c.comments ? (
           <span className="clause-tags">
             {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
@@ -266,11 +272,9 @@ function DocClause(props: {
             )}
           </span>
         ) : null}
-        <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.tracked ? <Redline segments={c.tracked} /> : c.text}</span>
-        {props.flagged ? <SecurityBadge /> : <StatusBadge action={props.action} />}
-        {selected && <SelectedArrow />}
+        <span style={{ flex: 1 }} />
+        {props.tools}
       </div>
-      {props.tools}
     </>
   )
 }

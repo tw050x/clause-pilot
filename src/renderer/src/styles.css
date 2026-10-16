@@ -209,8 +209,9 @@ table.t td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical
 .doc-clause:hover { background: var(--s-tint); }
 .doc-clause.selected { background: color-mix(in srgb, var(--s-tint) 70%, var(--s) 12%); }
 .sel-arrow { position: absolute; right: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px; color: var(--s); }
-/* Room for the button between clauses, clear of the next clause's corner badge. */
-.clause-tools { display: flex; justify-content: flex-end; align-items: center; min-height: 32px; padding: 6px 16px 14px 0; font: 13px var(--ui-font); }
+/* Row under each clause: tags left, action right; generous space before the next clause's corner badge. */
+.clause-foot { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 16px 26px 0; margin-left: -12px; font: 13px var(--ui-font); }
+.clause-tools { display: inline-flex; }
 .clause-tools.hidden { visibility: hidden; }
 .chevron { flex-shrink: 0; margin-left: 2px; }
 .nav-chevron { margin-left: auto; padding-left: 6px; display: inline-flex; color: var(--text-3); flex-shrink: 0; }
@@ -417,8 +418,8 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 /* ---- accounts, contracts, versions ---- */
 .crumbs { font-size: 13px; margin-bottom: 10px; color: var(--text-2); }
 .rp-version { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
-/* Sits on the clause's top-left edge (like the status badge on the right), so it never overlaps the text. */
-.clause-tags { position: absolute; top: -8px; left: 10px; z-index: 2; display: flex; gap: 4px; }
+/* Small outlined pills in the row under a clause. */
+.clause-tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .ver-tag { position: relative; font: 700 9.5px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 6px; border-radius: 99px; border: 1px solid currentColor; background: var(--surface); }
 .ver-tag.changed { color: var(--review); }
 .ver-tag.new { color: var(--processing); }
