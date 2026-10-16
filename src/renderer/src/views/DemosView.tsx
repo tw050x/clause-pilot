@@ -1,3 +1,4 @@
+import type { Account } from '@shared/types'
 import { DEMO_SCENARIOS, type DemoScenario } from '@shared/demoScenarios'
 import { Chevron, Icon } from '../lib/icons'
 
@@ -12,8 +13,10 @@ const GROUPS: { id: DemoScenario['group']; title: string; lede: string }[] = [
  * drafts are reviewed for you where the story needs them), so they can be run
  * in any order, any number of times.
  */
-export function DemosView({ demoMode, onGuided, onSimulate, onEnableDemo }: {
+export function DemosView({ demoMode, account, onGuided, onSimulate, onEnableDemo }: {
   demoMode: boolean
+  /** With a client selected, only its contract demos are shown (library and playbook demos are shared). */
+  account: Account | null
   onGuided: (s: DemoScenario) => void
   onSimulate: (s: DemoScenario) => void
   onEnableDemo: () => void
@@ -34,12 +37,19 @@ export function DemosView({ demoMode, onGuided, onSimulate, onEnableDemo }: {
           </button>
         </div>
       )}
-      {GROUPS.map((g) => (
+      {account && (
+        <p className="faint" style={{ marginTop: -8 }}>
+          Showing the contract demos for <b>{account.name}</b>. Choose another account at the top left to see its demos.
+        </p>
+      )}
+      {GROUPS.map((g) => ({ g, list: DEMO_SCENARIOS.filter((d) => d.group === g.id && (!account || g.id === 'knowledge' || d.accountId === account.id)) }))
+        .filter(({ list }) => list.length > 0)
+        .map(({ g, list }) => (
         <section key={g.id} className="demo-group">
           <h3>{g.title}</h3>
           <p className="faint">{g.lede}</p>
           <div className="demo-grid">
-            {DEMO_SCENARIOS.filter((d) => d.group === g.id).map((d) => (
+            {list.map((d) => (
               <div key={d.id} className="demo-card" data-demo={d.id}>
                 <strong>{d.title}</strong>
                 <p>{d.description}</p>

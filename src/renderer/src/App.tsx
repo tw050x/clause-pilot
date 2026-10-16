@@ -357,6 +357,7 @@ export function App() {
           {view === 'demos' && settings && (
             <DemosView
               demoMode={settings.demoMode}
+              account={activeAccount}
               onEnableDemo={async () => setSettings(await window.api.settings.save({ demoMode: true }))}
               onGuided={(d) => startDemo(d, true)}
               onSimulate={(d) => startDemo(d, false)}
