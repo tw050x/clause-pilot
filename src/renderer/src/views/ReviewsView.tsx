@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ReviewSummary } from '@shared/types'
 
 /** Every review on this machine, newest first. */
-export function ReviewsView({ reviews, onOpen }: { reviews: ReviewSummary[]; onOpen: (id: string) => void }) {
+export function ReviewsView({ reviews, accountName, onOpen }: { reviews: ReviewSummary[]; accountName?: string; onOpen: (id: string) => void }) {
   const [q, setQ] = useState('')
   const shown = reviews.filter((r) => !q || r.docName.toLowerCase().includes(q.toLowerCase()))
   return (
@@ -12,7 +12,10 @@ export function ReviewsView({ reviews, onOpen }: { reviews: ReviewSummary[]; onO
           <h1>
             All reviews <span className="faint" style={{ fontWeight: 400 }}>{reviews.length}</span>
           </h1>
-          <p className="lede" style={{ margin: 0 }}>Every contract reviewed on this machine. Open one to see its analysis and decisions as they were recorded.</p>
+          <p className="lede" style={{ margin: 0 }}>
+            {accountName ? `Every review for ${accountName}. Choose “All accounts” at the top left to see everyone’s.` : 'Every contract reviewed on this machine.'} Open one to see its
+            analysis and decisions as they were recorded.
+          </p>
         </div>
         <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -34,7 +37,8 @@ export function ReviewsView({ reviews, onOpen }: { reviews: ReviewSummary[]; onO
               {shown.map((r) => (
                 <tr key={r.id} className="clickable" onClick={() => onOpen(r.id)}>
                   <td>
-                    <strong>{r.docName}</strong>
+                    <strong>{r.accountName ? `${r.accountName} · ${r.contractTitle} · v${r.version}` : r.docName}</strong>
+                    {r.accountName && <div className="faint">{r.docName}</div>}
                   </td>
                   <td className="muted">{r.contractType === 'nda' ? 'NDA' : r.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
                   <td className="muted">

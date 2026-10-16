@@ -9,10 +9,13 @@ import { Icon } from '../lib/icons'
  */
 export function OpenContractModal({
   initialContractId,
+  initialAccountId,
   onOpen,
   onClose
 }: {
   initialContractId?: string
+  /** Pre-selects this account (the active account) when no contract is given. */
+  initialAccountId?: string | null
   onOpen: (path: string, contractId: string) => void
   onClose: () => void
 }) {
@@ -29,7 +32,8 @@ export function OpenContractModal({
       setAccounts(a)
       setContracts(c)
       const initial = c.find((x) => x.id === initialContractId)
-      setAccountId(initial?.accountId ?? a[0]?.id ?? 'new')
+      const preferred = a.find((x) => x.id === initialAccountId)?.id
+      setAccountId(initial?.accountId ?? preferred ?? a[0]?.id ?? 'new')
       setContractId(initial?.id ?? 'new')
     })
   }, [initialContractId])

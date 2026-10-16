@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Nomination, PlaybookProposal, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
+import type { Account, Nomination, PlaybookProposal, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
@@ -15,6 +15,7 @@ import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
 import { AccountsView } from './views/AccountsView'
 import { OpenContractModal } from './components/OpenContractModal'
+import { AccountPicker } from './components/AccountPicker'
 import { TourOverlay, type Tour } from './lib/tour'
 import { CONTRACT_TOURS, WELCOME_TOUR } from './onboarding'
 
@@ -35,6 +36,9 @@ export function App() {
   const online = useOnline()
   const [tour, setTour] = useState<Tour | null>(null)
   const [openModal, setOpenModal] = useState<{ contractId?: string } | null>(null)
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [activeAccountId, setActiveAccountIdState] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [accountsAt, setAccountsAt] = useState<{ accountId?: string; contractId?: string }>({})
   const [reviews, setReviews] = useState<ReviewSummary[]>([])
   const [alerts, setAlerts] = useState<SecurityAlert[]>([])
@@ -107,6 +111,51 @@ export function App() {
     reloadWorkspace()
   }, [mode])
 
+  // ---- active account (remembered per workspace) ----
+  const accountKey = `clausepilot.activeAccount.${settings?.demoMode ? 'demo' : 'live'}`
+  const refreshAccounts = useCallback(() => window.api.accounts.list().then(setAccounts), [])
+  const setActiveAccountId = (id: string | null) => {
+    setActiveAccountIdState(id)
+    try {
+      if (id) localStorage.setItem(accountKey, id)
+      else localStorage.removeItem(accountKey)
+    } catch {
+      /* not remembered, still works for this session */
+    }
+  }
+  useEffect(() => {
+    if (!settings) return
+    refreshAccounts().then(() => {
+      let saved: string | null = null
+      try {
+        saved = localStorage.getItem(accountKey)
+      } catch {
+        saved = null
+      }
+      setActiveAccountIdState(saved)
+    })
+  }, [settings?.demoMode])
+  // Forget an active account that no longer exists in this workspace.
+  const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? null
+  useEffect(() => {
+    if (activeAccountId && accounts.length && !activeAccount) setActiveAccountId(null)
+  }, [accounts, activeAccountId])
+  // Accounts can be created elsewhere (Accounts page, open-contract dialog).
+  useEffect(() => {
+    refreshAccounts()
+  }, [view, reviews.length])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPickerOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  const scopedReviews = activeAccountId ? reviews.filter((r) => r.accountId === activeAccountId) : reviews
+
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
 
@@ -115,6 +164,13 @@ export function App() {
       <header className="titlebar">
         <button className="icon-btn" onClick={() => setNavOpen((o) => !o)} title={navOpen ? 'Hide menu' : 'Show menu'}>
           <SidebarIcon side="left" open={navOpen} />
+        </button>
+        <button className="account-switch" onClick={() => setPickerOpen(true)} title="Choose the active account (⌘K)">
+          <Icon name="users" size={15} />
+          <span>{activeAccount?.name ?? 'All accounts'}</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         <div className="spacer" />
         {!online && (
@@ -154,13 +210,14 @@ export function App() {
           open={navOpen}
           view={view}
           setView={(v) => {
-            if (v === 'accounts') setAccountsAt({}) // the sidebar item always goes to the top level
+            // The sidebar item goes to the active account, or the list of all accounts.
+            if (v === 'accounts') setAccountsAt(activeAccountId ? { accountId: activeAccountId } : {})
             setView(v)
           }}
           session={session}
           pendingNominations={pending}
           openAlerts={alerts.filter((a) => a.status === 'open').length}
-          reviews={reviews}
+          reviews={scopedReviews}
           onOpenReview={openSession}
         />
         <main className="main">
@@ -197,7 +254,7 @@ export function App() {
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
-          {view === 'reviews' && <ReviewsView reviews={reviews} onOpen={openSession} />}
+          {view === 'reviews' && <ReviewsView reviews={scopedReviews} accountName={activeAccount?.name} onOpen={openSession} />}
           {view === 'accounts' && (
             <AccountsView
               demoMode={!!settings?.demoMode}
@@ -256,9 +313,28 @@ export function App() {
           </div>
         </aside>
       </div>
+      {pickerOpen && (
+        <AccountPicker
+          accounts={accounts}
+          activeId={activeAccountId}
+          canCreate={!settings?.demoMode}
+          onClose={() => setPickerOpen(false)}
+          onPick={(id) => {
+            setActiveAccountId(id)
+            setPickerOpen(false)
+          }}
+          onCreate={async (name) => {
+            const a = await window.api.accounts.create(name)
+            await refreshAccounts()
+            setActiveAccountId(a.id)
+            setPickerOpen(false)
+          }}
+        />
+      )}
       {openModal && (
         <OpenContractModal
           initialContractId={openModal.contractId}
+          initialAccountId={activeAccountId}
           onClose={() => setOpenModal(null)}
           onOpen={(path, contractId) => {
             setOpenModal(null)
