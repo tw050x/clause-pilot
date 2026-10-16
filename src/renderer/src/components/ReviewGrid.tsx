@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Clause, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
 import { clauseLabel, flagsFor, needsAction, visualFor } from '@shared/derive'
@@ -45,15 +45,35 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
   const clauseRefs = useRef(new Map<string, HTMLDivElement>())
 
   // Scale both panes with the space available (sidebars open/closed, window size).
+  // When a contract opens, the right sidebar slides in and the space shrinks frame by
+  // frame; rather than show the content resizing, it stays hidden until the sidebars
+  // have settled, then takes its final size and fades in.
+  const [ready, setReady] = useState(false)
   useEffect(() => {
     const wrap = wrapRef.current
     if (!wrap) return
     const apply = () => wrap.style.setProperty('--rs', Math.min(1, Math.max(MIN_SCALE, wrap.clientWidth / DESIGN_WIDTH)).toFixed(3))
-    apply()
-    const ro = new ResizeObserver(apply)
+    setReady(false)
+    let done = false
+    const reveal = () => {
+      if (done) return
+      done = true
+      apply()
+      setReady(true)
+    }
+    const bar = document.querySelector('.rightbar')
+    const onEnd = (e: Event) => (e as TransitionEvent).propertyName.startsWith('margin') && reveal()
+    bar?.addEventListener('transitionend', onEnd)
+    // If nothing is sliding (sidebar already open, or closed), reveal on the next frames.
+    const fallback = window.setTimeout(reveal, 320)
+    const ro = new ResizeObserver(() => done && apply())
     ro.observe(wrap)
-    return () => ro.disconnect()
-  }, [])
+    return () => {
+      bar?.removeEventListener('transitionend', onEnd)
+      window.clearTimeout(fallback)
+      ro.disconnect()
+    }
+  }, [session.id])
 
   // New thing on the right: start it at the top.
   useEffect(() => {
@@ -88,7 +108,7 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
   let lastHeading: string | null = null
 
   return (
-    <div className={`review-wrap s-${selVisual}`} ref={wrapRef}>
+    <div className={`review-wrap s-${selVisual} ${ready ? 'ready' : ''}`} ref={wrapRef}>
       <div className="doc-pane" ref={docPane} tabIndex={-1}>
         <div className="doc-paper">
           {session.clauses.map((c) => {

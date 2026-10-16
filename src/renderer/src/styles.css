@@ -468,3 +468,7 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .demo-group { margin-bottom: 26px; }
 .demo-group h3 { font-size: 15px; margin-bottom: 2px; }
 .demo-group > p { margin: 0 0 10px; font-size: 13px; }
+
+/* Hidden until it has its final size (see ReviewGrid), then fades in. */
+.review-wrap { opacity: 0; }
+.review-wrap.ready { opacity: 1; transition: opacity 0.2s ease; }
