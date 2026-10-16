@@ -44,17 +44,31 @@ export function ContractView({
             {contract.contractType !== 'general' && ` · ${contract.contractType === 'nda' ? 'NDA' : 'Order form'}`}
           </p>
         </div>
-        {!demoMode ? (
+        {!demoMode && (
           <button className="btn primary upload-draft" onClick={() => onUploadDraft(contract.id)}>
             <Icon name="upload" /> {versions.length ? 'Upload new draft' : 'Upload first draft'}
           </button>
-        ) : demoNext ? (
-          <button className="btn primary upload-draft" onClick={() => onStartDemo(demoNext.path, contract.id)}>
-            <Icon name="upload" /> Simulate upload: {versions.length ? `version ${versions.length + 1}` : 'first draft'}
-          </button>
-        ) : null}
+        )}
       </div>
-      {demoMode && versions.length > 0 && !demoNext && <p className="faint">There are no more demo drafts for this contract.</p>}
+      {/* Demo mode: the "upload" is simulated, so it lives in a marked demo card, not the product's own controls. */}
+      {demoMode && (
+        <section className="demo-upload">
+          <span className="demo-tag">Demo</span>
+          {demoNext ? (
+            <>
+              <h3>{versions.length ? `Next draft: version ${versions.length + 1}` : 'First draft'}</h3>
+              <p className="faint">
+                {demoNext.title}. In real use you’d upload the file {account.name} sent you; here the upload is simulated with a sample file.
+              </p>
+              <button className="btn primary upload-draft" onClick={() => onStartDemo(demoNext.path, contract.id)}>
+                <Icon name="upload" /> Simulate upload
+              </button>
+            </>
+          ) : (
+            <p className="faint" style={{ margin: 0 }}>There are no more demo drafts for this contract.</p>
+          )}
+        </section>
+      )}
       {versions.length > 0 && (
         <p className="faint" style={{ marginTop: 0 }}>
           Each new draft is compared with the version before it: clauses you settled are skipped, and anything you rejected that comes back unchanged is flagged.

@@ -66,8 +66,8 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
 const simulateUpload = (body: string): TourStep => ({
   title: 'Simulate the upload',
   body,
-  target: () => q('.upload-draft'),
-  placement: 'left',
+  target: () => q('.demo-upload'),
+  placement: 'bottom',
   action: 'Click Simulate upload.',
   done: () => !!q('.review-wrap')
 })

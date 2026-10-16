@@ -486,3 +486,9 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 /* Start page cards: the action sits under the text. */
 .welcome-box, .demos-link, .choose-account { align-items: flex-start; }
 .welcome-box > div > .btn, .demos-link > div > .btn, .choose-account > div > .btn { margin-top: 12px; }
+
+/* Demo-only controls live in a dashed, labelled card so they never look like product UI. */
+.demo-upload { position: relative; max-width: 760px; padding: 18px 18px 16px; margin-bottom: 20px; border: 1.5px dashed var(--processing); border-radius: var(--radius); background: color-mix(in srgb, var(--processing-tint) 50%, var(--surface)); }
+.demo-upload h3 { font-size: 15px; margin-bottom: 2px; }
+.demo-upload p { margin: 0 0 12px; font-size: 13px; }
+.demo-tag { position: absolute; top: -9px; left: 14px; font: 700 10px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 7px; border-radius: 99px; background: var(--processing); color: #fff; }
