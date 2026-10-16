@@ -53,6 +53,8 @@ const compliant = (clauses: string[], note = ''): AuthoredPosition => ({
 const ENGLISH_LAW =
   'This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the law of England and Wales. The courts of England and Wales shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.'
 
+const ACME = 'Acme-Mutual-NDA-redlined.docx'
+
 export const AUTHORED: Record<string, AuthoredContract> = {
   // -------------------------------------------------------------------------
   'Initech-Mutual-NDA.txt': {
@@ -241,6 +243,43 @@ export const AUTHORED: Record<string, AuthoredContract> = {
         severity: 'high',
         suggested_redline: 'See the liability-cap redline for clause 11.1.',
         within_fallback: false
+      }
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Acme's reply. Unchanged clauses ask the same questions as version 1, so they reuse its answers.
+  'Acme-Mutual-NDA-v2.docx': {
+    get intent() {
+      return AUTHORED[ACME].intent
+    },
+    overrides: [],
+    positions: {
+      'pb-governing-law': {
+        status: 'deviation',
+        clauses: ['6.9'],
+        deviation: 'Governing law is now English law (6.8), but clause 6.9 still gives the New York courts exclusive jurisdiction. We would have to litigate English law in a New York court. Our fallback allows non-exclusive jurisdiction at most.',
+        severity: 'medium',
+        suggested_redline: 'The courts of England and Wales shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.',
+        within_fallback: false
+      },
+      'pb-confidentiality-term': {
+        status: 'deviation',
+        clauses: ['4.1'],
+        deviation: 'Obligations survive for 5 years rather than 3. That is within the 2 to 5 year fallback, and because the NDA is mutual it also protects our information for longer.',
+        severity: 'low',
+        suggested_redline: '',
+        within_fallback: true
+      },
+      'pb-mutuality': compliant(['2.1', '5.1'], 'The non-solicitation clause is now mutual.'),
+      'pb-residuals': compliant([], 'The residuals clause has been removed.'),
+      'pb-non-solicit': {
+        status: 'deviation',
+        clauses: ['5.1'],
+        deviation: 'Mutual, 12 months, limited to staff with direct contact, with a carve-out for general advertising: exactly our fallback.',
+        severity: 'low',
+        suggested_redline: '',
+        within_fallback: true
       }
     }
   }

@@ -1,5 +1,5 @@
 import type { ReviewSession, SecurityAlert } from '@shared/types'
-import { analysisComplete, clauseLabel, triage, type Issue, type Tier } from '@shared/derive'
+import { analysisComplete, clauseLabel, flagsFor, isCleared, settledBefore, triage, type Issue, type Tier } from '@shared/derive'
 import { Icon } from '../lib/icons'
 
 const GROUPS: { tier: Tier; title: string; hint: string }[] = [
@@ -42,6 +42,8 @@ export function IssuesView({
           </p>
         </div>
       )}
+      {session.previous && <VersionSummary session={session} onOpen={onOpen} />}
+
       <div className="issues-summary">
         {(['must', 'decide', 'cleared', 'decided'] as Tier[]).map((t) => {
           const n = issues.filter((i) => i.tier === t).length
@@ -154,5 +156,76 @@ function IssuesLoading({ done, total }: { done: number; total: number }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** What changed since the previous draft of this contract, and what that saves. */
+function VersionSummary({ session, onOpen }: { session: ReviewSession; onOpen: (id: string) => void }) {
+  const prev = session.previous!.version
+  const links = session.clauses.map((c) => ({ c, f: flagsFor(session, c), v: session.versionLinks?.[c.id] }))
+  const skipped = links.filter(({ f }) => !f.decision && settledBefore(f) && isCleared(f)).length
+  const changed = links.filter(({ v }) => v?.kind === 'changed')
+  const added = links.filter(({ v, c }) => v?.kind === 'new' && c.number)
+  const ignored = links.filter(({ v }) => v?.kind === 'unchanged' && v.prevStatus === 'rejected')
+  const removed = session.removed ?? []
+  return (
+    <section className="version-summary">
+      <h3>Changes since version {prev}</h3>
+      <div className="version-stats">
+        <div>
+          <strong>{skipped}</strong>
+          <span>settled in v{prev} and unchanged: skipped</span>
+        </div>
+        <div>
+          <strong>{changed.length}</strong>
+          <span>changed</span>
+        </div>
+        <div>
+          <strong>{added.length}</strong>
+          <span>new</span>
+        </div>
+        <div>
+          <strong>{removed.length}</strong>
+          <span>removed</span>
+        </div>
+        <div className={ignored.length ? 'bad' : ''}>
+          <strong>{ignored.length}</strong>
+          <span>rejected in v{prev}, not changed</span>
+        </div>
+      </div>
+      {changed.length > 0 && (
+        <p className="version-line">
+          Changed:{' '}
+          {changed.map(({ c }, i) => (
+            <span key={c.id}>
+              {i > 0 && ', '}
+              <button className="link-btn" onClick={() => onOpen(c.id)}>
+                {clauseLabel(c)}
+              </button>
+            </span>
+          ))}
+        </p>
+      )}
+      {removed.length > 0 && (
+        <div className="removed-list">
+          <h4>Removed since version {prev}</h4>
+          {removed.map((r) => (
+            <div key={r.prevClauseId} className={`removed ${r.prevStatus === 'rejected' ? 'good' : r.prevStatus === 'open' ? '' : 'warn'}`}>
+              <div className="removed-head">
+                <strong>{r.label}</strong>
+                <span>
+                  {r.prevStatus === 'rejected'
+                    ? '✓ Removed, as you asked'
+                    : r.prevStatus === 'open'
+                      ? 'Removed (it wasn’t decided)'
+                      : 'Removed, but you had accepted it: check nothing we relied on went with it'}
+                </span>
+              </div>
+              <div className="removed-text">{r.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

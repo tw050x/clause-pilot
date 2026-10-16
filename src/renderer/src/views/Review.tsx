@@ -15,6 +15,9 @@ interface Props {
   /** The security alert for this review, if text addressed to an AI reviewer was found. */
   alert: SecurityAlert | null
   onOpenSecurity: () => void
+  accountName?: string
+  contractTitle?: string
+  onOpenReview: (id: string) => void
 }
 
 const STATUSES: { key: Visual; label: string }[] = [
@@ -27,7 +30,7 @@ const STATUSES: { key: Visual; label: string }[] = [
   { key: 'rejected', label: 'Rejected' }
 ]
 
-export function Review({ session, panel, onChange, onNominationsChanged, alert, onOpenSecurity }: Props) {
+export function Review({ session, panel, onChange, onNominationsChanged, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
   const [mode, setMode] = useState<RightMode>('issues')
   const [selected, setSelected] = useState<string | null>(null)
   const [emailOpen, setEmailOpen] = useState(false)
@@ -85,7 +88,30 @@ export function Review({ session, panel, onChange, onNominationsChanged, alert, 
         <div className="rp-doc">
           <Icon name="doc" size={18} />
           <div style={{ minWidth: 0 }}>
-            <div className="rp-docname">{session.docName}</div>
+            {session.version ? (
+              <>
+                <div className="rp-docname">
+                  {accountName} · {contractTitle}
+                </div>
+                <div className="rp-version">
+                  Version {session.version}
+                  {session.previous && (
+                    <>
+                      {' '}
+                      · compared with{' '}
+                      <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
+                        version {session.previous.version}
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="faint" style={{ fontSize: 12, wordBreak: 'break-word' }}>
+                  {session.docName}
+                </div>
+              </>
+            ) : (
+              <div className="rp-docname">{session.docName}</div>
+            )}
             <div className="row-gap" style={{ marginTop: 4 }}>
               <span className="pill neutral">{session.contractType === 'nda' ? 'NDA' : session.contractType === 'order-form' ? 'Order form' : 'Contract'}</span>
               <span className="pill neutral">{session.sourceType.toUpperCase()}</span>

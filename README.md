@@ -46,6 +46,18 @@ Builds are not code-signed yet. On macOS, right-click the app and choose Open th
 | Acme, mutual NDA (redlined) | .docx | Counterparty edits. Residuals, a longer term, a one-way non-solicit and New York law, each shown with what we agreed in past negotiations. |
 | Globex, order form | .pdf | The trap. The liability clauses match our standard exactly, but a special condition at the back makes liability unlimited, and another clause tries to instruct the AI. |
 
+## Accounts, contracts and versions
+
+Every review belongs to a client **account** and a **contract**, and each uploaded draft becomes a new **version**. A new draft is compared clause by clause with the previous version:
+
+- **Settled and unchanged** (accepted, or pre-approved wording, and word for word the same): skipped, accepted by default, unless something new in this draft now affects it.
+- **Rejected last time and sent back unchanged:** a must-change issue ("Not changed: you rejected this in version 1").
+- **Changed:** shown with a word diff against the previous version and what you decided last time; flagged if it now matches the wording you proposed. All the usual checks run on it.
+- **New:** reviewed in full.
+- **Removed:** listed, so nothing disappears silently ("✓ Removed, as you asked", or a warning if you had accepted it).
+
+In demo mode, Acme has a second draft (`Acme-Mutual-NDA-v2.docx`): their reply to our comments. The Acme guided demo continues into it.
+
 ## How a review works
 
 ```

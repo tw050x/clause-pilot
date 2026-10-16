@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import type { LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
+import type { Account, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
 
-const SEEDED = ['library.json', 'precedents.json', 'playbook.json']
+const SEEDED = ['library.json', 'precedents.json', 'playbook.json', 'accounts.json', 'contracts.json']
 
 /**
  * Plain JSON files on local disk. The data volume for a small legal team is tiny,
@@ -34,6 +34,25 @@ export class Store {
   nominations = () => this.read<Nomination[]>('nominations.json')
   playbookProposals = () => this.read<PlaybookProposal[]>('playbook-proposals.json')
   securityAlerts = () => this.read<SecurityAlert[]>('security-alerts.json')
+  accounts = () => this.read<Account[]>('accounts.json')
+  contracts = () => this.read<ContractRecord[]>('contracts.json')
+
+  saveAccounts(a: Account[]): void {
+    this.write('accounts.json', a)
+  }
+
+  saveContracts(c: ContractRecord[]): void {
+    this.write('contracts.json', c)
+  }
+
+  /** All reviews (versions) of one contract, oldest first. */
+  versionsOf(contractId: string): ReviewSession[] {
+    return readdirSync(join(this.dir, 'sessions'))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(readFileSync(join(this.dir, 'sessions', f), 'utf8')) as ReviewSession)
+      .filter((s) => s.contractId === contractId)
+      .sort((a, b) => (a.version ?? 0) - (b.version ?? 0))
+  }
 
   saveSecurityAlerts(a: SecurityAlert[]): void {
     this.write('security-alerts.json', a)
@@ -73,6 +92,8 @@ export class Store {
   }
 
   listSessions(): ReviewSummary[] {
+    const accounts = new Map(this.accounts().map((a) => [a.id, a.name]))
+    const contracts = new Map(this.contracts().map((c) => [c.id, c.title]))
     return readdirSync(join(this.dir, 'sessions'))
       .filter((f) => f.endsWith('.json'))
       .map((f) => {
@@ -80,6 +101,11 @@ export class Store {
         const decisions = Object.values(s.decisions)
         return {
           id: s.id,
+          accountId: s.accountId,
+          accountName: s.accountId ? accounts.get(s.accountId) : undefined,
+          contractId: s.contractId,
+          contractTitle: s.contractId ? contracts.get(s.contractId) : undefined,
+          version: s.version,
           docName: s.docName,
           createdAt: s.createdAt,
           mode: s.mode,

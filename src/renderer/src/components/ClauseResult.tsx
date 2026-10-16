@@ -61,6 +61,8 @@ export function ClauseResult({ session, clause, flags, visual, onJump, onChange,
         </div>
       )}
 
+      {flags.version && session.previous && <VersionSection link={flags.version} prevVersion={session.previous.version} />}
+
       {flags.docChecksPending && !flags.decision && (
         <div className="result-section">
           <h4>
@@ -340,7 +342,7 @@ function DecisionPanel({
       <div className="decision">
         <div className="row-gap">
           <span className="pill accepted">accepted</span>
-          <span className="who">Pre-approved wording. No action needed.</span>
+          <span className="who">{flags.match === 'exact' ? 'Pre-approved wording.' : `Settled in version ${session.previous?.version}, unchanged.`} No action needed.</span>
           <div style={{ flex: 1 }} />
           <button
             className="btn sm reject"
@@ -410,6 +412,60 @@ function DecisionPanel({
               Cancel
             </button>
           </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+const PREV_STATUS: Record<string, string> = {
+  accepted: 'you accepted it',
+  'pre-approved': 'it was pre-approved wording',
+  rejected: 'you rejected it',
+  open: 'it was not decided'
+}
+
+/** How this clause compares with the previous draft of the same contract. */
+function VersionSection({ link, prevVersion }: { link: NonNullable<ClauseFlags['version']>; prevVersion: number }) {
+  if (link.kind === 'new')
+    return (
+      <div className="result-section version-section">
+        <h4>
+          <Icon name="history" size={13} /> Since version {prevVersion}
+        </h4>
+        <p>
+          <span className="pill review">new</span> This clause wasn’t in version {prevVersion}.
+        </p>
+      </div>
+    )
+  const before = `In version ${prevVersion}${link.prevLabel ? ` (${link.prevLabel})` : ''} ${PREV_STATUS[link.prevStatus ?? 'open']}`
+  return (
+    <div className="result-section version-section">
+      <h4>
+        <Icon name="history" size={13} /> Since version {prevVersion}
+      </h4>
+      {link.kind === 'unchanged' ? (
+        <p>
+          <span className="pill neutral">unchanged</span> {before}
+          {link.prevStatus === 'rejected' ? ', and they sent it back without changes.' : '.'}
+          {link.prevNote && <span className="muted"> Your note: “{link.prevNote}”</span>}
+        </p>
+      ) : (
+        <>
+          <p>
+            <span className="pill review">changed</span> {before}.{link.prevNote && <span className="muted"> Your note: “{link.prevNote}”</span>}
+          </p>
+          {link.matchesOurRedline && (
+            <p>
+              <span className="pill accepted">✓ matches your proposed wording</span>
+            </p>
+          )}
+          <details open>
+            <summary>What changed since version {prevVersion}</summary>
+            <div className="diff" style={{ marginTop: 6 }}>
+              <Diff tokens={link.diff ?? []} />
+            </div>
+          </details>
         </>
       )}
     </div>

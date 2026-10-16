@@ -13,6 +13,8 @@ import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
+import { AccountsView } from './views/AccountsView'
+import { OpenContractModal } from './components/OpenContractModal'
 import { TourOverlay, type Tour } from './lib/tour'
 import { CONTRACT_TOURS, WELCOME_TOUR } from './onboarding'
 
@@ -32,6 +34,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const online = useOnline()
   const [tour, setTour] = useState<Tour | null>(null)
+  const [openModal, setOpenModal] = useState<{ contractId?: string } | null>(null)
+  const [accountsAt, setAccountsAt] = useState<{ accountId?: string; contractId?: string }>({})
   const [reviews, setReviews] = useState<ReviewSummary[]>([])
   const [alerts, setAlerts] = useState<SecurityAlert[]>([])
   const refreshAlerts = useCallback(() => window.api.security.list().then(setAlerts), [])
@@ -63,10 +67,10 @@ export function App() {
     refreshReviews()
   }, [decisionCount, session?.id])
 
-  const openContract = useCallback(async (path: string) => {
+  const openContract = useCallback(async (path: string, contractId?: string) => {
     setError(null)
     try {
-      const s = await window.api.review.start(path)
+      const s = await window.api.review.start(path, contractId)
       setSession(s)
       refreshReviews()
       setView('review')
@@ -86,6 +90,7 @@ export function App() {
   const reloadWorkspace = useCallback(() => {
     setSession(null)
     setView('home')
+    setAccountsAt({})
     window.api.kb.nominations().then(setNominations)
     window.api.kb.playbookProposals().then(setProposals)
     refreshReviews()
@@ -148,7 +153,10 @@ export function App() {
         <NavDrawer
           open={navOpen}
           view={view}
-          setView={setView}
+          setView={(v) => {
+            if (v === 'accounts') setAccountsAt({}) // the sidebar item always goes to the top level
+            setView(v)
+          }}
           session={session}
           pendingNominations={pending}
           openAlerts={alerts.filter((a) => a.status === 'open').length}
@@ -165,8 +173,9 @@ export function App() {
             <Home
               demoMode={!!settings?.demoMode}
               onOpen={openContract}
-              onGuided={async (file, path) => {
-                await openContract(path)
+              onOpenLive={() => setOpenModal({})}
+              onGuided={async (file, path, contractId) => {
+                await openContract(path, contractId)
                 const t = CONTRACT_TOURS[file]
                 if (t) setTour({ ...t })
               }}
@@ -182,10 +191,24 @@ export function App() {
               onNominationsChanged={refreshNominations}
               alert={alerts.find((a) => a.sessionId === session.id) ?? null}
               onOpenSecurity={() => setView('security')}
+              accountName={reviews.find((r) => r.id === session.id)?.accountName}
+              contractTitle={reviews.find((r) => r.id === session.id)?.contractTitle}
+              onOpenReview={openSession}
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
           {view === 'reviews' && <ReviewsView reviews={reviews} onOpen={openSession} />}
+          {view === 'accounts' && (
+            <AccountsView
+              demoMode={!!settings?.demoMode}
+              reviews={reviews}
+              at={accountsAt}
+              onNavigate={setAccountsAt}
+              onOpenReview={openSession}
+              onUploadDraft={(contractId) => setOpenModal({ contractId })}
+              onStartDemo={(path, contractId) => openContract(path, contractId)}
+            />
+          )}
           {view === 'library' && <LibraryView />}
           {view === 'playbook' && <PlaybookView onProposalsChanged={() => window.api.kb.playbookProposals().then(setProposals)} />}
           {view === 'history' && <HistoryView />}
@@ -233,6 +256,16 @@ export function App() {
           </div>
         </aside>
       </div>
+      {openModal && (
+        <OpenContractModal
+          initialContractId={openModal.contractId}
+          onClose={() => setOpenModal(null)}
+          onOpen={(path, contractId) => {
+            setOpenModal(null)
+            openContract(path, contractId)
+          }}
+        />
+      )}
       {tour && (
         <TourOverlay
           key={tour.id}

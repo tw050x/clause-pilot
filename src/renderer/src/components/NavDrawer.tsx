@@ -1,7 +1,7 @@
 import type { ReviewSession, ReviewSummary } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 
-export type View = 'home' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
+export type View = 'home' | 'accounts' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
 
 interface Props {
   open: boolean
@@ -30,6 +30,7 @@ export function NavDrawer({ open, view, setView, session, pendingNominations, op
   return (
     <nav className={`nav ${open ? '' : 'closed'}`} aria-hidden={!open}>
       {item('home', 'home', 'Start')}
+      {item('accounts', 'users', 'Accounts')}
       <div className="nav-section">Recent reviews</div>
       {/* Fills the space between the top items and Knowledge; scrolls when there are many. */}
       <div className="nav-recent">
@@ -42,8 +43,9 @@ export function NavDrawer({ open, view, setView, session, pendingNominations, op
             title={r.docName}
           >
             <span style={{ minWidth: 0 }}>
-              <span className="recent-name">{r.docName.replace(/\.[a-z]+$/i, '')}</span>
+              <span className="recent-name">{r.accountName ? `${r.accountName} · ${r.contractTitle}` : r.docName.replace(/\.[a-z]+$/i, '')}</span>
               <span className="sub">
+                {r.version ? `Version ${r.version} · ` : ''}
                 {new Date(r.createdAt).toLocaleDateString()}
                 {r.rejected > 0 && ` · ${r.rejected} rejected`}
               </span>

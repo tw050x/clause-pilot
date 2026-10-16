@@ -1,4 +1,4 @@
-import type { Clause, Decision, MatchKind, OverrideFinding, PlaybookFinding, ReviewSession } from './types'
+import type { Clause, Decision, MatchKind, OverrideFinding, PlaybookFinding, ReviewSession, VersionLink } from './types'
 
 export type Visual = 'processing' | 'exact' | 'intent' | 'review' | 'conflict' | 'accepted' | 'rejected'
 
@@ -11,6 +11,8 @@ export interface ClauseFlags {
   injection: string[]
   decision: Decision | undefined
   docChecksPending: boolean
+  /** How this clause relates to the previous version of the contract, if there is one. */
+  version: VersionLink | undefined
 }
 
 export function docChecksPending(s: ReviewSession): boolean {
@@ -32,7 +34,8 @@ export function flagsFor(s: ReviewSession, c: Clause): ClauseFlags {
     playbook,
     injection: s.injection[c.id] ?? [],
     decision: s.decisions[c.id],
-    docChecksPending: docChecksPending(s)
+    docChecksPending: docChecksPending(s),
+    version: s.versionLinks?.[c.id]
   }
 }
 
@@ -46,12 +49,27 @@ export function hasConflict(f: ClauseFlags): boolean {
  * a person confirms those (and can nominate the wording so it is exact next time).
  */
 export function isCleared(f: ClauseFlags): boolean {
-  return f.match === 'exact' && !hasConflict(f) && !f.docChecksPending
+  if (f.docChecksPending) return false
+  // Someone explicitly accepted this exact wording last time, having seen its playbook notes.
+  // Only something new (another clause overriding it, an injection flag) reopens it.
+  if (acceptedBefore(f)) return !f.overriddenBy.length && !f.overriding.length && !f.injection.length
+  return (f.match === 'exact' || settledBefore(f)) && !hasConflict(f)
+}
+
+/** Explicitly accepted in the last version, and sent back word for word. */
+export function acceptedBefore(f: ClauseFlags): boolean {
+  return f.version?.kind === 'unchanged' && f.version.prevStatus === 'accepted'
+}
+
+/** Word for word what was in the last version, where it was accepted or pre-approved. */
+export function settledBefore(f: ClauseFlags): boolean {
+  return f.version?.kind === 'unchanged' && (f.version.prevStatus === 'accepted' || f.version.prevStatus === 'pre-approved')
 }
 
 export function visualFor(f: ClauseFlags): Visual {
   if (f.decision) return f.decision.decision
   if (f.processing) return 'processing'
+  if (acceptedBefore(f) && isCleared(f)) return 'exact'
   if (hasConflict(f)) return 'conflict'
   if (f.match === 'exact') return 'exact'
   if (f.match === 'intent') return 'intent'
@@ -102,8 +120,8 @@ export function triage(s: ReviewSession): Issue[] {
   const label = (id: string) => clauseLabel(s.clauses.find((c) => c.id === id)!)
   const overrides = s.overrides.data ?? []
   const overriding = new Set(overrides.map((o) => o.overridingClauseId))
-  const rooted = new Map<string, Omit<Issue, 'more'>[]>()
-  const add = (i: Omit<Issue, 'more'>) => {
+  const rooted = new Map<string, (Omit<Issue, 'more'> & { fromPlaybook?: boolean })[]>()
+  const add = (i: Omit<Issue, 'more'> & { fromPlaybook?: boolean }) => {
     const k = i.clauseId ?? '__doc'
     rooted.set(k, [...(rooted.get(k) ?? []), i])
   }
@@ -112,6 +130,13 @@ export function triage(s: ReviewSession): Issue[] {
   for (const c of s.clauses) {
     const hits = s.injection[c.id]
     if (hits?.length) add({ clauseId: c.id, tier: 'must', severity: 'critical', title: 'Prompt injection: security review required', detail: 'Text addressed to an AI reviewer: ' + hits.join(', ') })
+  }
+  // Something we rejected last time that comes back word for word: they haven't addressed it.
+  const prevV = s.previous?.version
+  for (const c of s.clauses) {
+    const v = s.versionLinks?.[c.id]
+    if (v?.kind === 'unchanged' && v.prevStatus === 'rejected')
+      add({ clauseId: c.id, tier: 'must', severity: 'high', title: `Not changed: you rejected this in version ${prevV}`, detail: v.prevNote ? `Your note: ${v.prevNote}` : 'They sent it back without changes.' })
   }
   for (const o of overrides)
     add({ clauseId: o.overridingClauseId, tier: tierFor(o.severity), severity: o.severity, title: `Overrides ${o.overriddenClauseIds.map(label).join(', ')}`, detail: o.summary })
@@ -125,7 +150,8 @@ export function triage(s: ReviewSession): Issue[] {
       tier: tierFor(d.severity, d.withinFallback),
       severity: sev,
       title: d.status === 'missing' ? `Missing: ${d.positionTitle}` : `${d.positionTitle}${d.withinFallback ? ' (within fallback)' : ''}`,
-      detail: d.deviation
+      detail: d.deviation,
+      fromPlaybook: true
     })
   }
 
@@ -139,15 +165,25 @@ export function triage(s: ReviewSession): Issue[] {
       out.push({ clauseId: c.id, tier: 'decided', severity: 'low', title: f.decision.decision === 'accepted' ? 'Accepted' : 'Rejected', detail: f.decision.note, more: 0 })
     } else if (f.processing) {
       out.push({ clauseId: c.id, tier: 'pending', severity: 'low', title: 'Analysing', detail: s.match[c.id]?.reason ?? '', more: 0 })
-    } else if (own.length) {
+    } else if (own.length && !(acceptedBefore(f) && isCleared(f) && own.every((i) => i.fromPlaybook))) {
       const [top, ...rest] = worst(own)
       out.push({ ...top, more: rest.length })
+    } else if (settledBefore(f) && isCleared(f)) {
+      // Settled in the last version and sent back word for word: nothing to read again.
+      out.push({ clauseId: c.id, tier: 'cleared', severity: 'low', title: `Settled in version ${prevV}, unchanged`, detail: '', more: 0 })
     } else if (f.match === 'none') {
       // Its own wording isn't approved: a decision, whatever else touches it.
       const m = s.match[c.id]?.data
-      const title = !c.number ? clauseLabel(c) : m?.candidates.length ? 'Differs from pre-approved wording' : 'No pre-approved match'
+      const title = f.version?.matchesOurRedline
+        ? 'Now matches the wording you proposed'
+        : !c.number
+          ? clauseLabel(c)
+          : m?.candidates.length
+            ? 'Differs from pre-approved wording'
+            : 'No pre-approved match'
       const also = hasConflict(f) ? ` Also affected by ${f.overriddenBy[0] ? label(f.overriddenBy[0].overridingClauseId) : f.playbook[0]?.positionTitle}.` : ''
-      out.push({ clauseId: c.id, tier: 'decide', severity: 'low', title, detail: (m?.verdict?.reasoning ?? s.match[c.id]?.reason ?? '') + also, more: 0 })
+      const changed = f.version?.kind === 'changed' ? `Changed since version ${prevV}. ` : f.version?.kind === 'new' && prevV ? `New in this version. ` : ''
+      out.push({ clauseId: c.id, tier: 'decide', severity: 'low', title, detail: changed + (m?.verdict?.reasoning ?? s.match[c.id]?.reason ?? '') + also, more: 0 })
     } else if (f.match === 'intent' && !hasConflict(f)) {
       const m = s.match[c.id]?.data
       out.push({ clauseId: c.id, tier: 'decide', severity: 'low', title: 'Same meaning as approved wording (AI): confirm', detail: m?.verdict?.reasoning ?? '', more: 0 })
@@ -156,7 +192,7 @@ export function triage(s: ReviewSession): Issue[] {
       const cause = f.overriddenBy[0] ? label(f.overriddenBy[0].overridingClauseId) : f.playbook[0]?.positionTitle ?? 'another clause'
       out.push({ clauseId: c.id, tier: 'affected', severity: 'low', title: `Affected by ${cause}`, detail: '', more: 0 })
     } else {
-      out.push({ clauseId: c.id, tier: 'cleared', severity: 'low', title: 'Exact match', detail: '', more: 0 })
+      out.push({ clauseId: c.id, tier: 'cleared', severity: 'low', title: f.match === 'exact' ? 'Exact match' : `Settled in version ${prevV}, unchanged`, detail: '', more: 0 })
     }
   }
   for (const i of rooted.get('__doc') ?? []) out.push({ ...i, more: 0 })
@@ -168,7 +204,7 @@ export function needsAction(f: ClauseFlags): 'pending' | 'action' | 'none' | 're
   if (f.decision) return f.decision.decision === 'rejected' ? 'rejected' : 'none'
   if (f.processing) return 'pending'
   // Word-for-word match waiting only on the whole-contract checks: not yet known, not yet an action.
-  if (f.docChecksPending && f.match === 'exact' && !hasConflict(f)) return 'pending'
+  if (f.docChecksPending && (f.match === 'exact' || settledBefore(f)) && !hasConflict(f)) return 'pending'
   return isCleared(f) ? 'none' : 'action'
 }
 

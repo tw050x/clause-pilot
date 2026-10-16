@@ -154,8 +154,57 @@ export interface Decision {
   at: string
 }
 
+// ---- Accounts, contracts and versions ----------------------------------------
+
+/** A client we contract with. */
+export interface Account {
+  id: string
+  name: string
+  createdAt: string
+}
+
+/** A contract with an account. Each uploaded draft is a version (a review). */
+export interface ContractRecord {
+  id: string
+  accountId: string
+  title: string
+  contractType: ContractType
+  createdAt: string
+}
+
+/** How a clause relates to the previous version of the same contract. */
+export interface VersionLink {
+  kind: 'unchanged' | 'changed' | 'new'
+  prevClauseId?: string
+  prevLabel?: string
+  prevText?: string
+  /** What happened to it in the previous version. */
+  prevStatus?: 'accepted' | 'pre-approved' | 'rejected' | 'open'
+  prevNote?: string
+  prevRedline?: string
+  /** Word diff from the previous version's text to this one (changed clauses). */
+  diff?: DiffToken[]
+  /** The new text is the wording we proposed last time. */
+  matchesOurRedline?: boolean
+}
+
+export interface RemovedClause {
+  prevClauseId: string
+  label: string
+  text: string
+  prevStatus: 'accepted' | 'pre-approved' | 'rejected' | 'open'
+  prevNote?: string
+}
+
 export interface ReviewSession {
   id: string
+  accountId?: string
+  contractId?: string
+  version?: number
+  /** The review of the previous version this one was compared with. */
+  previous?: { sessionId: string; version: number }
+  versionLinks?: Record<string, VersionLink>
+  removed?: RemovedClause[]
   docName: string
   filePath: string
   sourceType: SourceType
@@ -175,6 +224,11 @@ export interface ReviewSession {
 
 export interface ReviewSummary {
   id: string
+  accountId?: string
+  accountName?: string
+  contractId?: string
+  contractTitle?: string
+  version?: number
   docName: string
   createdAt: string
   mode: 'live' | 'demo'
@@ -240,6 +294,10 @@ export interface Settings {
 
 export interface DemoContract {
   file: string
+  accountId: string
+  contractId: string
+  /** A later draft of another demo contract (offered as "Upload new draft", not on the Start page). */
+  followUpOf?: string
   title: string
   description: string
   path: string

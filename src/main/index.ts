@@ -4,12 +4,13 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
-import type { ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
 import { clauseLabel, flagsFor, isCleared } from '@shared/derive'
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
 import { createSession, runPipeline } from './pipeline'
+import { compareVersions } from './engine/versions'
 import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
 import { emailBrief, templateEmail } from './email'
 import { chatSystem, offlineAnswer } from './chat'
@@ -231,16 +232,61 @@ ipcMain.handle('file:docxHtml', async (_e, path: string) => {
   return value
 })
 
-ipcMain.handle('review:start', async (_e, path: string) => {
+// ---- IPC: accounts and contracts -------------------------------------------------------------
+
+ipcMain.handle('accounts:list', () => ws.store.accounts())
+ipcMain.handle('accounts:create', (_e, name: string) => {
+  if (!name.trim()) throw new Error('Give the account a name.')
+  const account: Account = { id: `ac-${Date.now().toString(36)}`, name: name.trim(), createdAt: new Date().toISOString() }
+  ws.store.saveAccounts([...ws.store.accounts(), account])
+  ws.audit.append(actor(), 'account.created', null, { accountId: account.id, name: account.name })
+  return account
+})
+ipcMain.handle('contracts:list', () => ws.store.contracts())
+ipcMain.handle('contracts:create', (_e, accountId: string, title: string) => {
+  if (!ws.store.accounts().some((a) => a.id === accountId)) throw new Error('Unknown account.')
+  if (!title.trim()) throw new Error('Give the contract a name.')
+  const contract: ContractRecord = { id: `ct-${Date.now().toString(36)}`, accountId, title: title.trim(), contractType: 'general', createdAt: new Date().toISOString() }
+  ws.store.saveContracts([...ws.store.contracts(), contract])
+  ws.audit.append(actor(), 'contract.created', null, { contractId: contract.id, accountId, title: contract.title })
+  return contract
+})
+ipcMain.handle('contracts:versions', (_e, contractId: string) => ws.store.listSessions().filter((s) => s.contractId === contractId))
+
+ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => {
   if (loadSettings().demoMode && !demoContracts().some((d) => d.path === path))
     throw new Error('Demo mode can only review the demo contracts. Switch demo mode off to review your own.')
   const doc = await parseFile(resolvePath(path))
   const ai = provider()
   const s = createSession(doc, path, ai.kind === 'replay' ? 'demo' : 'live')
   const w = ws
+  // A draft of a known contract becomes its next version, compared with the one before.
+  const contract = contractId ? w.store.contracts().find((c) => c.id === contractId) : undefined
+  if (contractId && !contract) throw new Error('Unknown contract.')
+  if (contract) {
+    const versions = w.store.versionsOf(contract.id)
+    const prev = versions[versions.length - 1]
+    Object.assign(s, { accountId: contract.accountId, contractId: contract.id, version: (prev?.version ?? 0) + 1 })
+    if (prev) {
+      const { links, removed } = compareVersions(sessions.get(prev.id) ?? prev, s.clauses)
+      Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 }, versionLinks: links, removed })
+    }
+    if (contract.contractType === 'general' && s.contractType !== 'general') {
+      contract.contractType = s.contractType
+      w.store.saveContracts(w.store.contracts().map((c) => (c.id === contract.id ? contract : c)))
+    }
+  }
   sessions.set(s.id, s)
   sessionWs.set(s.id, w)
-  w.audit.append(actor(), 'session.created', s.id, { docName: s.docName, sha256: s.fileSha256, clauses: s.clauses.length, mode: s.mode })
+  w.audit.append(actor(), 'session.created', s.id, {
+    docName: s.docName,
+    sha256: s.fileSha256,
+    clauses: s.clauses.length,
+    mode: s.mode,
+    contractId: s.contractId ?? null,
+    version: s.version ?? null,
+    comparedWith: s.previous?.sessionId ?? null
+  })
   persist(s)
   runPipeline(s, {
     ai,

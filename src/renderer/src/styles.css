@@ -404,3 +404,29 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .security-panel.s-false-positive .security-panel-head, .security-banner.s-false-positive .security-panel-head { color: var(--exact); }
 .alert-card { padding: 16px; border-color: color-mix(in srgb, var(--conflict) 45%, var(--border)); }
 .alert-clause { margin-top: 8px; }
+
+/* ---- accounts, contracts, versions ---- */
+.crumbs { font-size: 13px; margin-bottom: 10px; color: var(--text-2); }
+.rp-version { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+.ver-tag { display: block; margin-top: 2px; font: 700 9.5px/1.4 var(--ui-font); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 4px; border-radius: 4px; width: fit-content; }
+.ver-tag.changed { background: var(--review-tint); color: var(--review); }
+.ver-tag.new { background: var(--processing-tint); color: var(--processing); }
+.version-section p { margin: 0 0 6px; }
+.version-summary { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
+.version-summary h3 { font-size: 14px; margin-bottom: 8px; }
+.version-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.version-stats > div { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; }
+.version-stats strong { font-size: 18px; line-height: 1.2; }
+.version-stats span { font-size: 11.5px; color: var(--text-2); line-height: 1.3; }
+.version-stats .bad { border-color: var(--conflict); background: var(--conflict-tint); }
+.version-stats .bad strong { color: var(--conflict); }
+.version-line { font-size: 13px; margin: 10px 0 0; }
+.removed-list { margin-top: 10px; }
+.removed-list h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 6px; }
+.removed { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+.removed.good { border-left-color: var(--exact); }
+.removed.warn { border-left-color: var(--review); }
+.removed-head { display: flex; gap: 10px; justify-content: space-between; font-size: 13px; }
+.removed.good .removed-head span { color: var(--exact); font-weight: 600; }
+.removed.warn .removed-head span { color: var(--review); font-weight: 600; }
+.removed-text { font: 13px/1.5 var(--doc-font); color: var(--text-2); text-decoration: line-through; margin-top: 4px; }

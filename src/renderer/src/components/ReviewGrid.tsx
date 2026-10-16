@@ -105,6 +105,7 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
                 visual={v}
                 action={needsAction(f)}
                 flagged={!!session.injection[c.id]}
+                versionKind={session.previous ? session.versionLinks?.[c.id]?.kind : undefined}
                 selected={isSel}
                 title={isTitle ? c.heading : null}
                 heading={showHeading ? c.heading : null}
@@ -204,6 +205,7 @@ function DocClause(props: {
   visual: string
   action: 'pending' | 'action' | 'none' | 'rejected'
   flagged: boolean
+  versionKind?: 'unchanged' | 'changed' | 'new'
   selected: boolean
   title: string | null
   heading: string | null
@@ -226,7 +228,12 @@ function DocClause(props: {
         onClick={props.onClick}
         title={clauseLabel(c)}
       >
-        {c.number && <span className="doc-num">{c.number}</span>}
+        {c.number && (
+          <span className="doc-num">
+            {c.number}
+            {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
+          </span>
+        )}
         <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.text}</span>
         {props.flagged ? <SecurityBadge /> : <StatusBadge action={props.action} />}
         {selected && <SelectedArrow />}

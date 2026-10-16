@@ -8,11 +8,15 @@ export function Home({
   onOpen,
   onGuided,
   onWelcome,
-  onNavigate
+  onNavigate,
+  onOpenLive
 }: {
   demoMode: boolean
-  onOpen: (path: string) => void
-  onGuided: (file: string, path: string) => void
+  /** Demo contracts: open straight into their demo account and contract. */
+  onOpen: (path: string, contractId?: string) => void
+  onGuided: (file: string, path: string, contractId: string) => void
+  /** Live mode: ask which account and contract, then pick the file. */
+  onOpenLive: () => void
   onWelcome: () => void
   onNavigate: (v: View) => void
 }) {
@@ -28,10 +32,7 @@ export function Home({
     window.api.settings.get().then((st) => setHasKey(st.hasApiKey))
   }, [demoMode])
 
-  const browse = async () => {
-    const p = await window.api.file.open()
-    if (p) onOpen(p)
-  }
+  const browse = onOpenLive
 
   return (
     <div className="page">
@@ -58,16 +59,16 @@ export function Home({
             Demo mode uses these sample contracts and recorded AI responses. Switch demo mode off (top right) to open your own contracts.
           </p>
           <div className="demo-grid">
-            {demos.map((d) => (
+            {demos.filter((d) => !d.followUpOf).map((d) => (
               <div key={d.file} className="demo-card">
                 <span className="ext">{d.file.split('.').pop()?.toUpperCase()}</span>
                 <strong>{d.title}</strong>
                 <p>{d.description}</p>
                 <div className="row-gap" style={{ marginTop: 'auto', paddingTop: 6 }}>
-                  <button className="btn sm primary" onClick={() => onGuided(d.file, d.path)}>
+                  <button className="btn sm primary" onClick={() => onGuided(d.file, d.path, d.contractId)}>
                     Guided demo <Chevron />
                   </button>
-                  <button className="btn sm" onClick={() => onOpen(d.path)}>
+                  <button className="btn sm" onClick={() => onOpen(d.path, d.contractId)}>
                     Open <Chevron />
                   </button>
                 </div>

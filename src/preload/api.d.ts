@@ -1,4 +1,5 @@
 import type {
+  Account, ContractRecord,
   AuditEntry, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
@@ -13,6 +14,15 @@ export interface Api {
   }
   demo: { list(): Promise<DemoContract[]>; reset(): Promise<boolean> }
   workspace: { summary(): Promise<{ mode: 'demo' | 'live'; library: number; playbook: number; precedents: number; reviews: number; nominations: number }> }
+  accounts: {
+    list(): Promise<Account[]>
+    create(name: string): Promise<Account>
+  }
+  contracts: {
+    list(): Promise<ContractRecord[]>
+    create(accountId: string, title: string): Promise<ContractRecord>
+    versions(contractId: string): Promise<ReviewSummary[]>
+  }
   security: {
     list(): Promise<SecurityAlert[]>
     resolve(id: string, outcome: 'malicious' | 'false-positive', note: string): Promise<SecurityAlert[]>
@@ -20,7 +30,7 @@ export interface Api {
   }
   file: { open(): Promise<string | null>; bytes(path: string): Promise<Uint8Array>; docxHtml(path: string): Promise<string> }
   review: {
-    start(path: string): Promise<ReviewSession>
+    start(path: string, contractId?: string): Promise<ReviewSession>
     get(id: string): Promise<ReviewSession>
     list(): Promise<ReviewSummary[]>
     decide(id: string, d: Omit<Decision, 'by' | 'at'>): Promise<ReviewSession>

@@ -18,6 +18,15 @@ const api: Api = {
   },
   demo: { list: () => invoke('demo:list'), reset: () => invoke('demo:reset') },
   workspace: { summary: () => invoke('workspace:summary') },
+  accounts: {
+    list: () => invoke('accounts:list'),
+    create: (name) => invoke('accounts:create', name)
+  },
+  contracts: {
+    list: () => invoke('contracts:list'),
+    create: (accountId, title) => invoke('contracts:create', accountId, title),
+    versions: (contractId) => invoke('contracts:versions', contractId)
+  },
   security: {
     list: () => invoke('security:list'),
     resolve: (id, outcome, note) => invoke('security:resolve', id, outcome, note),
@@ -25,7 +34,7 @@ const api: Api = {
   },
   file: { open: () => invoke('file:open'), bytes: (path) => invoke('file:bytes', path), docxHtml: (path) => invoke('file:docxHtml', path) },
   review: {
-    start: (path) => invoke('review:start', path),
+    start: (path, contractId) => invoke('review:start', path, contractId),
     get: (id) => invoke('review:get', id),
     list: () => invoke('review:list'),
     decide: (id, d) => invoke('review:decide', id, d),

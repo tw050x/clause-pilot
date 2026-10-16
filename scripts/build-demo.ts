@@ -16,7 +16,7 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } fro
 import PDFDocument from 'pdfkit'
 import { LIBRARY } from './seed-library'
 import { PLAYBOOK, PRECEDENTS } from './seed-playbook'
-import { DEMO_CONTRACTS, type DemoContractDef, type Block } from './demo-contracts'
+import { DEMO_ACCOUNTS, DEMO_CONTRACT_RECORDS, DEMO_CONTRACTS, type DemoContractDef, type Block } from './demo-contracts'
 import { AUTHORED } from '../demo/authored/answers'
 import { parseFile } from '../src/main/ingest/parse'
 import { createSession, runPipeline } from '../src/main/pipeline'
@@ -34,6 +34,8 @@ for (const d of [seedDir, contractsDir, recordingsDir]) mkdirSync(d, { recursive
 writeFileSync(join(seedDir, 'library.json'), JSON.stringify(LIBRARY, null, 2))
 writeFileSync(join(seedDir, 'playbook.json'), JSON.stringify(PLAYBOOK, null, 2))
 writeFileSync(join(seedDir, 'precedents.json'), JSON.stringify(PRECEDENTS, null, 2))
+writeFileSync(join(seedDir, 'accounts.json'), JSON.stringify(DEMO_ACCOUNTS, null, 2))
+writeFileSync(join(seedDir, 'contracts.json'), JSON.stringify(DEMO_CONTRACT_RECORDS, null, 2))
 console.log(`seed: ${LIBRARY.length} library clauses, ${PLAYBOOK.length} positions, ${PRECEDENTS.length} precedents`)
 
 // ---- 2. contract files ---------------------------------------------------------------
@@ -89,7 +91,7 @@ async function main() {
     if (def.format === 'txt') writeTxt(def, path)
     if (def.format === 'docx') await writeDocx(def, path)
     if (def.format === 'pdf') await writePdf(def, path)
-    index.push({ file: def.file, title: def.title, description: def.description, path: `demo/contracts/${def.file}` })
+    index.push({ file: def.file, accountId: def.accountId, contractId: def.contractId, followUpOf: def.followUpOf, title: def.title, description: def.description, path: `demo/contracts/${def.file}` })
   }
   writeFileSync(join(contractsDir, 'index.json'), JSON.stringify(index, null, 2))
   console.log(`contracts: ${index.map((c) => c.file).join(', ')}`)

@@ -10,6 +10,10 @@ export type Block =
 
 export interface DemoContractDef {
   file: string
+  accountId: string
+  contractId: string
+  /** A later draft of another demo contract. */
+  followUpOf?: string
   format: 'docx' | 'pdf' | 'txt'
   title: string
   description: string
@@ -25,6 +29,8 @@ const para = (text: string): Block => ({ kind: 'para', text })
 // ---------------------------------------------------------------------------
 const initech: DemoContractDef = {
   file: 'Initech-Mutual-NDA.txt',
+  accountId: 'ac-initech',
+  contractId: 'ct-initech-nda',
   format: 'txt',
   title: 'Initech - Mutual NDA',
   description: 'Our template, signed back with one cosmetic rewording. Should clear almost entirely without a human reading it.',
@@ -65,6 +71,8 @@ const initech: DemoContractDef = {
 // ---------------------------------------------------------------------------
 const acme: DemoContractDef = {
   file: 'Acme-Mutual-NDA-redlined.docx',
+  accountId: 'ac-acme',
+  contractId: 'ct-acme-nda',
   format: 'docx',
   title: 'Acme Corp - Mutual NDA (counterparty redline)',
   description: 'Acme returned our NDA with edits: residuals, a longer term, a one-way non-solicit and New York law.',
@@ -111,6 +119,8 @@ const acme: DemoContractDef = {
 // ---------------------------------------------------------------------------
 const globex: DemoContractDef = {
   file: 'Globex-Order-Form-Burp-Suite-DAST.pdf',
+  accountId: 'ac-globex',
+  contractId: 'ct-globex-order',
   format: 'pdf',
   title: 'Globex - Order Form, Burp Suite DAST',
   description: 'Our order form with the main body almost untouched. The special conditions at the back quietly undo the liability cap, and one tries to talk to the AI.',
@@ -158,4 +168,43 @@ const globex: DemoContractDef = {
   ]
 }
 
-export const DEMO_CONTRACTS: DemoContractDef[] = [initech, acme, globex]
+// ---------------------------------------------------------------------------
+// 2b. Acme's reply: version 2 of the same NDA, after our response.
+// Residuals removed, non-solicit moved to our fallback, governing law fixed,
+// but the New York courts are still exclusive.
+// ---------------------------------------------------------------------------
+const acmeV2: DemoContractDef = {
+  file: 'Acme-Mutual-NDA-v2.docx',
+  accountId: 'ac-acme',
+  contractId: 'ct-acme-nda',
+  followUpOf: 'Acme-Mutual-NDA-redlined.docx',
+  format: 'docx',
+  title: 'Acme Corp - Mutual NDA, version 2 (their reply)',
+  description: 'Acme’s reply to our comments.',
+  blocks: acme.blocks
+    .filter((b) => !(b.kind === 'clause' && b.number === '2.4'))
+    .map((b) => {
+      if (b.kind !== 'clause') return b
+      if (b.number === '5.1')
+        return cl(
+          '5.1',
+          'For twelve (12) months after the date of this Agreement neither party shall solicit any employee of the other party with whom it had direct contact in connection with the Purpose, save that general advertisements not targeted at such employees shall not breach this clause.'
+        )
+      if (b.number === '6.8') return cl('6.8', lib('gen-law'))
+      return b
+    })
+}
+
+export const DEMO_CONTRACTS: DemoContractDef[] = [initech, acme, globex, acmeV2]
+
+export const DEMO_ACCOUNTS = [
+  { id: 'ac-acme', name: 'Acme Corporation', createdAt: '2026-09-01T09:00:00.000Z' },
+  { id: 'ac-globex', name: 'Globex Corporation', createdAt: '2026-09-01T09:00:00.000Z' },
+  { id: 'ac-initech', name: 'Initech', createdAt: '2026-09-01T09:00:00.000Z' }
+]
+
+export const DEMO_CONTRACT_RECORDS = [
+  { id: 'ct-acme-nda', accountId: 'ac-acme', title: 'Mutual NDA', contractType: 'nda', createdAt: '2026-09-01T09:00:00.000Z' },
+  { id: 'ct-globex-order', accountId: 'ac-globex', title: 'Burp Suite DAST order form', contractType: 'order-form', createdAt: '2026-09-01T09:00:00.000Z' },
+  { id: 'ct-initech-nda', accountId: 'ac-initech', title: 'Mutual NDA', contractType: 'nda', createdAt: '2026-09-01T09:00:00.000Z' }
+]

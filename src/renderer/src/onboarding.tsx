@@ -347,9 +347,80 @@ const acme: Tour = {
     },
     {
       title: 'Learning from every review',
-      body: 'Entries tagged “from a review” came from your decisions. The library, the history and the playbook improve with each contract, and every change is approved and audited. Try the Initech NDA to see the fast lane.',
+      body: 'Entries tagged “from a review” came from your decisions. The library, the precedents and the playbook improve with each contract, and every change is approved and audited.',
       target: () => withText('.page table.t tbody tr', 'from a review'),
       placement: 'top'
+    },
+    {
+      title: 'Acme has replied',
+      body: 'You sent Acme your comments. A few days later they send back a new draft. This is where most of the time goes today: reading the whole contract again to find what changed. Let’s upload their reply.'
+    },
+    {
+      title: 'Contracts live under accounts',
+      body: 'Every review belongs to a client account and a contract, and each uploaded draft becomes a new version.',
+      target: () => navItem('Accounts'),
+      placement: 'right',
+      action: 'Click Accounts.',
+      done: () => pageTitle() === 'Accounts'
+    },
+    {
+      title: 'Acme Corporation',
+      body: 'Open the account.',
+      target: () => withText('.account-row', 'Acme'),
+      placement: 'bottom',
+      action: 'Click Acme Corporation.',
+      done: () => pageTitle() === 'Acme Corporation'
+    },
+    {
+      title: 'The Mutual NDA',
+      body: 'Open the contract to see its versions.',
+      target: () => withText('.contract-row', 'Mutual NDA'),
+      placement: 'bottom',
+      action: 'Click Mutual NDA.',
+      done: () => pageTitle() === 'Mutual NDA'
+    },
+    {
+      title: 'Upload their reply',
+      body: 'Version 1 is the draft you just reviewed. Uploading the reply makes it version 2, compared clause by clause with version 1.',
+      target: () => q('.upload-draft'),
+      placement: 'left',
+      action: 'Click Upload new draft.',
+      done: () => !!q('.review-wrap') && !!withText('.rp-version', 'Version 2')
+    },
+    {
+      ...waitForChecks,
+      title: 'Version 2, checked',
+      body: 'All the usual checks run on the new draft, and every clause is also matched to its counterpart in version 1.'
+    },
+    {
+      title: 'Only what changed',
+      body: 'Clauses you settled in version 1 that came back word for word are skipped: you don’t read them again. That includes the five-year term you accepted. What’s left is what changed, what’s new and anything they ignored.',
+      target: () => q('.version-summary'),
+      placement: 'left'
+    },
+    {
+      title: 'They removed the residuals clause',
+      body: 'You rejected it in version 1, and it’s gone. Removed clauses are listed so nothing disappears silently, including clauses you had accepted.',
+      target: () => q('.removed-list'),
+      placement: 'left'
+    },
+    {
+      title: 'And moved to our fallback',
+      body: 'The non-solicitation clause has changed. You can see exactly what changed since version 1, and it is now within our playbook fallback: mutual, 12 months, with an advertising carve-out.',
+      target: () => issue('Clause 5.1'),
+      placement: 'left',
+      action: 'Click the Clause 5.1 issue.',
+      done: () => openClause() === 'Clause 5.1'
+    },
+    {
+      title: 'What changed, at a glance',
+      body: 'The comparison with version 1 shows their edit word by word, so you don’t have to work it out.',
+      target: () => q('.version-section'),
+      placement: 'left'
+    },
+    {
+      title: 'A second draft in minutes',
+      body: 'Instead of re-reading 22 clauses, you check a handful: what changed, what’s new, and what they didn’t fix (here, the New York courts in 6.9 are still exclusive). Try the Initech NDA to see the fast lane, or Globex to see a hidden trap.'
     }
   ]
 }
