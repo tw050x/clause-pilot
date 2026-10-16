@@ -49,10 +49,10 @@ export function Home({
         <div>
           <h3>New here?</h3>
           <p className="faint">A one-minute introduction to the app, demo mode and reviewing your own contracts.</p>
+          <button className="btn" onClick={onWelcome}>
+            Show the welcome tour
+          </button>
         </div>
-        <button className="btn" onClick={onWelcome}>
-          Show the welcome tour
-        </button>
       </section>
 
       <section className="demos-link">
@@ -63,10 +63,10 @@ export function Home({
             Short guided demos with sample contracts: reviewing a contract, the second and third drafts of a contract, adding to the library and adding to the playbook.
             {!demoMode && ' Opening them switches to demo mode; your own data is kept separately.'}
           </p>
+          <button className={`btn ${demoMode ? 'primary' : ''}`} onClick={onOpenDemos}>
+            Open demos <Chevron />
+          </button>
         </div>
-        <button className={`btn ${demoMode ? 'primary' : ''}`} onClick={onOpenDemos}>
-          Open demos <Chevron />
-        </button>
       </section>
 
       {demoMode ? null : !account && !needsFirstReview ? (
@@ -194,10 +194,10 @@ function ChooseAccount({ onChoose }: { onChoose: () => void }) {
       <div>
         <h3>Choose a client to work on</h3>
         <p className="faint">Contracts, drafts and reviews belong to a client account. Pick one (or create one) to open contracts and see its reviews.</p>
-      </div>
-      <button className="btn primary" onClick={onChoose}>
-        Choose account <Chevron />
-      </button>
+        <button className="btn primary" onClick={onChoose}>
+          Choose account <Chevron />
+        </button>
+        </div>
     </section>
   )
 }
