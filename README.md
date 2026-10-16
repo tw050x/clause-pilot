@@ -48,7 +48,9 @@ Builds are not code-signed yet. On macOS, right-click the app and choose Open th
 
 ## Accounts, contracts and versions
 
-Every review belongs to a client **account** and a **contract**, and each uploaded draft becomes a new **version**. A new draft is compared clause by clause with the previous version:
+You work on **one client account at a time**, chosen with the switcher at the top left (⌘K). The sidebar lists that client's **contracts**; each has its own page with every draft reviewed so far and an upload button for the next. Until an account is chosen, opening contracts and the account's reviews are unavailable; the library, playbook, precedents, approvals, security and audit are shared across clients.
+
+Each uploaded draft becomes a new **version** of its contract, compared clause by clause with the previous version:
 
 - **Settled and unchanged** (accepted, or pre-approved wording, and word for word the same): skipped, accepted by default, unless something new in this draft now affects it.
 - **Rejected last time and sent back unchanged:** a must-change issue ("Not changed: you rejected this in version 1").

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Account, Nomination, PlaybookProposal, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, Nomination, PlaybookProposal, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
@@ -13,7 +13,7 @@ import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
-import { AccountsView } from './views/AccountsView'
+import { ContractView, NewContractView } from './views/ContractView'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
 import { TourOverlay, type Tour } from './lib/tour'
@@ -39,7 +39,9 @@ export function App() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeAccountId, setActiveAccountIdState] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [accountsAt, setAccountsAt] = useState<{ accountId?: string; contractId?: string }>({})
+  const [contracts, setContracts] = useState<ContractRecord[]>([])
+  /** The contract whose page is showing (view 'contract'). */
+  const [contractPageId, setContractPageId] = useState<string | null>(null)
   const [reviews, setReviews] = useState<ReviewSummary[]>([])
   const [alerts, setAlerts] = useState<SecurityAlert[]>([])
   const refreshAlerts = useCallback(() => window.api.security.list().then(setAlerts), [])
@@ -76,7 +78,9 @@ export function App() {
     try {
       const s = await window.api.review.start(path, contractId)
       setSession(s)
+      if (s.accountId) setActiveAccountId(s.accountId) // e.g. starting a demo for another client
       refreshReviews()
+      refreshAccounts()
       setView('review')
       setRightTab('review')
     } catch (e) {
@@ -85,16 +89,19 @@ export function App() {
   }, [])
 
   const openSession = useCallback(async (id: string) => {
-    setSession(await window.api.review.get(id))
+    const s = await window.api.review.get(id)
+    setSession(s)
+    // Opening another client's review (e.g. from Security or Audit) switches to that client.
+    if (s.accountId) setActiveAccountId(s.accountId)
     setView('review')
-  }, [])
+  }, [settings?.demoMode])
 
   // Demo and live are separate workspaces: when the mode changes, drop everything on screen
   // and reload from the newly selected workspace.
   const reloadWorkspace = useCallback(() => {
     setSession(null)
     setView('home')
-    setAccountsAt({})
+    setContractPageId(null)
     window.api.kb.nominations().then(setNominations)
     window.api.kb.playbookProposals().then(setProposals)
     refreshReviews()
@@ -113,12 +120,18 @@ export function App() {
 
   // ---- active account (remembered per workspace) ----
   const accountKey = `clausepilot.activeAccount.${settings?.demoMode ? 'demo' : 'live'}`
-  const refreshAccounts = useCallback(() => window.api.accounts.list().then(setAccounts), [])
+  // Long-lived callbacks (openContract, openSession) read the key through a ref so they never use a stale mode.
+  const accountKeyRef = useRef(accountKey)
+  accountKeyRef.current = accountKey
+  const refreshAccounts = useCallback(
+    () => Promise.all([window.api.accounts.list().then(setAccounts), window.api.contracts.list().then(setContracts)]),
+    []
+  )
   const setActiveAccountId = (id: string | null) => {
     setActiveAccountIdState(id)
     try {
-      if (id) localStorage.setItem(accountKey, id)
-      else localStorage.removeItem(accountKey)
+      if (id) localStorage.setItem(accountKeyRef.current, id)
+      else localStorage.removeItem(accountKeyRef.current)
     } catch {
       /* not remembered, still works for this session */
     }
@@ -140,7 +153,7 @@ export function App() {
   useEffect(() => {
     if (activeAccountId && accounts.length && !activeAccount) setActiveAccountId(null)
   }, [accounts, activeAccountId])
-  // Accounts can be created elsewhere (Accounts page, open-contract dialog).
+  // Accounts and contracts can be created elsewhere (picker, new-contract page, open-contract dialog).
   useEffect(() => {
     refreshAccounts()
   }, [view, reviews.length])
@@ -154,7 +167,17 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  const scopedReviews = activeAccountId ? reviews.filter((r) => r.accountId === activeAccountId) : reviews
+  // One client at a time: account-tied features only ever see the active account.
+  const scopedReviews = activeAccountId ? reviews.filter((r) => r.accountId === activeAccountId) : []
+  const accountContracts = contracts.filter((c) => c.accountId === activeAccountId)
+  const currentContractId = view === 'contract' ? contractPageId : view === 'review' ? (session?.contractId ?? null) : null
+  const contractPage = contracts.find((c) => c.id === contractPageId)
+  // Leaving a client behind: its contract pages and reviews close.
+  useEffect(() => {
+    if ((view === 'contract' || view === 'new-contract' || view === 'reviews') && !activeAccountId) setView('home')
+    if (view === 'contract' && contractPage && contractPage.accountId !== activeAccountId) setView('home')
+    if (view === 'review' && session?.accountId && session.accountId !== activeAccountId) setView('home')
+  }, [activeAccountId])
 
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
@@ -165,9 +188,9 @@ export function App() {
         <button className="icon-btn" onClick={() => setNavOpen((o) => !o)} title={navOpen ? 'Hide menu' : 'Show menu'}>
           <SidebarIcon side="left" open={navOpen} />
         </button>
-        <button className="account-switch" onClick={() => setPickerOpen(true)} title="Choose the active account (⌘K)">
+        <button className={`account-switch ${activeAccount ? '' : 'none'}`} onClick={() => setPickerOpen(true)} title="Choose the active account (⌘K)">
           <Icon name="users" size={15} />
-          <span>{activeAccount?.name ?? 'All accounts'}</span>
+          <span>{activeAccount?.name ?? 'Choose an account'}</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
             <path d="M6 9l6 6 6-6" />
           </svg>
@@ -209,16 +232,21 @@ export function App() {
         <NavDrawer
           open={navOpen}
           view={view}
-          setView={(v) => {
-            // The sidebar item goes to the active account, or the list of all accounts.
-            if (v === 'accounts') setAccountsAt(activeAccountId ? { accountId: activeAccountId } : {})
-            setView(v)
-          }}
+          setView={setView}
           session={session}
           pendingNominations={pending}
           openAlerts={alerts.filter((a) => a.status === 'open').length}
+          account={activeAccount}
+          contracts={accountContracts}
           reviews={scopedReviews}
-          onOpenReview={openSession}
+          currentContractId={currentContractId}
+          canCreateContract={!settings?.demoMode}
+          onOpenContract={(id) => {
+            setContractPageId(id)
+            setView('contract')
+          }}
+          onNewContract={() => setView('new-contract')}
+          onChooseAccount={() => setPickerOpen(true)}
         />
         <main className="main">
           {error && (
@@ -230,7 +258,7 @@ export function App() {
             <Home
               demoMode={!!settings?.demoMode}
               onOpen={openContract}
-              onOpenLive={() => setOpenModal({})}
+              onOpenLive={() => (activeAccount ? setOpenModal({}) : setPickerOpen(true))}
               onGuided={async (file, path, contractId) => {
                 await openContract(path, contractId)
                 const t = CONTRACT_TOURS[file]
@@ -238,6 +266,9 @@ export function App() {
               }}
               onWelcome={() => setTour({ ...WELCOME_TOUR })}
               onNavigate={setView}
+              account={activeAccount}
+              accounts={accounts}
+              onChooseAccount={() => setPickerOpen(true)}
             />
           )}
           {reviewing && (
@@ -255,15 +286,25 @@ export function App() {
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
           {view === 'reviews' && <ReviewsView reviews={scopedReviews} accountName={activeAccount?.name} onOpen={openSession} />}
-          {view === 'accounts' && (
-            <AccountsView
+          {view === 'contract' && contractPage && activeAccount && (
+            <ContractView
+              contract={contractPage}
+              account={activeAccount}
               demoMode={!!settings?.demoMode}
-              reviews={reviews}
-              at={accountsAt}
-              onNavigate={setAccountsAt}
+              reviews={scopedReviews}
               onOpenReview={openSession}
               onUploadDraft={(contractId) => setOpenModal({ contractId })}
               onStartDemo={(path, contractId) => openContract(path, contractId)}
+            />
+          )}
+          {view === 'new-contract' && activeAccount && (
+            <NewContractView
+              account={activeAccount}
+              onCreated={async (c) => {
+                await refreshAccounts()
+                setContractPageId(c.id)
+                setView('contract')
+              }}
             />
           )}
           {view === 'library' && <LibraryView />}
@@ -331,10 +372,10 @@ export function App() {
           }}
         />
       )}
-      {openModal && (
+      {openModal && activeAccount && (
         <OpenContractModal
+          account={activeAccount}
           initialContractId={openModal.contractId}
-          initialAccountId={activeAccountId}
           onClose={() => setOpenModal(null)}
           onOpen={(path, contractId) => {
             setOpenModal(null)

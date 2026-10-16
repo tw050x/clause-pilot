@@ -13,8 +13,7 @@ export function ReviewsView({ reviews, accountName, onOpen }: { reviews: ReviewS
             All reviews <span className="faint" style={{ fontWeight: 400 }}>{reviews.length}</span>
           </h1>
           <p className="lede" style={{ margin: 0 }}>
-            {accountName ? `Every review for ${accountName}. Choose “All accounts” at the top left to see everyone’s.` : 'Every contract reviewed on this machine.'} Open one to see its
-            analysis and decisions as they were recorded.
+            Every review for {accountName}, newest first. Open one to see its analysis and decisions as they were recorded.
           </p>
         </div>
         <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />

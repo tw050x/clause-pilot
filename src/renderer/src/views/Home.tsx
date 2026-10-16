@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DemoContract } from '@shared/types'
+import type { Account, DemoContract } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 import type { View } from '../components/NavDrawer'
 
@@ -9,9 +9,16 @@ export function Home({
   onGuided,
   onWelcome,
   onNavigate,
-  onOpenLive
+  onOpenLive,
+  account,
+  accounts,
+  onChooseAccount
 }: {
   demoMode: boolean
+  /** The client being worked on. Opening contracts needs one. */
+  account: Account | null
+  accounts: Account[]
+  onChooseAccount: () => void
   /** Demo contracts: open straight into their demo account and contract. */
   onOpen: (path: string, contractId?: string) => void
   onGuided: (file: string, path: string, contractId: string) => void
@@ -25,6 +32,9 @@ export function Home({
   const [hasKey, setHasKey] = useState(true)
   // Until the first live review, the setup checklist is the way in: it explains what opening a contract involves.
   const needsFirstReview = !demoMode && !!ws && ws.reviews === 0
+  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? ''
+  // With a client chosen, only its demos; with none, every demo (starting one makes its client active).
+  const shownDemos = demos.filter((d) => !d.followUpOf && (!account || d.accountId === account.id))
 
   useEffect(() => {
     window.api.demo.list().then(setDemos)
@@ -54,14 +64,20 @@ export function Home({
       {demoMode ? (
         <>
 
-          <h3 style={{ marginBottom: 6 }}>Demo contracts</h3>
+          <h3 style={{ marginBottom: 6 }}>{account ? `Demo contracts for ${account.name}` : 'Demo contracts'}</h3>
           <p className="faint" style={{ marginTop: 0 }}>
-            Demo mode uses these sample contracts and recorded AI responses. Switch demo mode off (top right) to open your own contracts.
+            {account
+              ? 'You’re working on this client. Choose a different account at the top left to see its demos.'
+              : 'Each demo belongs to a client account; starting one makes that client the active account.'}{' '}
+            Demo mode uses sample contracts and recorded AI responses. Switch demo mode off (top right) to open your own contracts.
           </p>
           <div className="demo-grid">
-            {demos.filter((d) => !d.followUpOf).map((d) => (
+            {shownDemos.map((d) => (
               <div key={d.file} className="demo-card">
-                <span className="ext">{d.file.split('.').pop()?.toUpperCase()}</span>
+                <span className="ext">
+                  {d.file.split('.').pop()?.toUpperCase()}
+                  {!account && <span className="demo-client"> · {accountName(d.accountId)}</span>}
+                </span>
                 <strong>{d.title}</strong>
                 <p>{d.description}</p>
                 <div className="row-gap" style={{ marginTop: 'auto', paddingTop: 6 }}>
@@ -76,11 +92,13 @@ export function Home({
             ))}
           </div>
         </>
+      ) : !account && !needsFirstReview ? (
+        <ChooseAccount onChoose={onChooseAccount} />
       ) : !needsFirstReview ? (
         <div className="home-upload-block" style={{ marginBottom: 28, width: 'fit-content', maxWidth: 640 }}>
           <div className="row-gap">
             <button className="btn primary home-upload" onClick={browse}>
-              <Icon name="upload" /> Open a contract…
+              <Icon name="upload" /> Open a contract for {account?.name}…
             </button>
             <span className="faint">PDF, Word (.docx) or text</span>
           </div>
@@ -93,6 +111,12 @@ export function Home({
       {!demoMode && ws && (
         <SetupChecklist
           items={[
+            {
+              title: 'Choose or create a client account',
+              detail: 'You work on one client at a time. Their contracts, drafts and reviews live under their account.',
+              done: !!account,
+              cta: { label: 'Choose account', onClick: onChooseAccount }
+            },
             {
               title: 'Add your Anthropic API key',
               detail: 'Needed for the AI checks and Ask AI. It is stored encrypted on this computer.',
@@ -110,7 +134,7 @@ export function Home({
               detail:
                 'Needs your API key. The contract’s text is sent to Anthropic’s API for the AI checks, so only open documents you’re allowed to share outside the company. With an empty library, every clause needs a decision at first; that’s expected.',
               done: ws.reviews > 0,
-              cta: { label: 'Open a contract…', onClick: browse }
+              cta: account ? { label: 'Open a contract…', onClick: browse } : { label: 'Choose account first', onClick: onChooseAccount }
             },
             {
               title: 'Nominate a clause for the library',
@@ -181,6 +205,22 @@ function SetupChecklist({ items }: { items: ChecklistItem[] }) {
           ))}
         </ol>
       )}
+    </section>
+  )
+}
+
+/** Shown in place of "Open a contract" until a client is chosen. */
+function ChooseAccount({ onChoose }: { onChoose: () => void }) {
+  return (
+    <section className="choose-account">
+      <Icon name="users" size={20} />
+      <div>
+        <h3>Choose a client to work on</h3>
+        <p className="faint">Contracts, drafts and reviews belong to a client account. Pick one (or create one) to open contracts and see its reviews.</p>
+      </div>
+      <button className="btn primary" onClick={onChoose}>
+        Choose account <Chevron />
+      </button>
     </section>
   )
 }

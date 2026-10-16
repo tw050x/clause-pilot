@@ -446,3 +446,15 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .picker-item.cursor { background: var(--processing-tint); }
 .picker-item svg { color: var(--processing); }
 .picker-empty { padding: 10px; margin: 0; }
+
+.account-switch.none { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.nav-item:disabled { opacity: 0.45; cursor: default; }
+.nav-item:disabled:hover { background: none; color: var(--text-2); }
+.nav-item.new-contract { color: var(--text-2); font-size: 13px; }
+.nav-empty .link-btn { font-weight: 600; }
+.choose-account { display: flex; align-items: center; gap: 14px; max-width: 760px; padding: 16px 18px; margin-bottom: 24px; border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.choose-account > svg { color: var(--accent-ink); flex-shrink: 0; }
+.choose-account div { flex: 1; }
+.choose-account h3 { font-size: 15px; margin-bottom: 2px; }
+.choose-account p { margin: 0; font-size: 13px; }
+.demo-client { color: var(--text-2); font-family: var(--ui-font); font-weight: 600; }

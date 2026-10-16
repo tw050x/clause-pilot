@@ -171,9 +171,9 @@ const globex: Tour = {
     {
       title: 'Back to the review',
       body: 'Confirmed: the flagged clause can only be rejected, and the response can now be drafted.',
-      target: () => q('.nav-item.recent'),
-      placement: 'right',
-      action: 'Click the Globex review in the sidebar.',
+      target: () => withText('.page tr.clickable', 'Globex'),
+      placement: 'top',
+      action: 'Click the resolved alert to go back to the review.',
       done: () => !!q('.review-wrap')
     },
     {
@@ -356,27 +356,11 @@ const acme: Tour = {
       body: 'You sent Acme your comments. A few days later they send back a new draft. This is where most of the time goes today: reading the whole contract again to find what changed. Let’s upload their reply.'
     },
     {
-      title: 'Contracts live under accounts',
-      body: 'Every review belongs to a client account and a contract, and each uploaded draft becomes a new version.',
-      target: () => navItem('Accounts'),
+      title: 'Every contract has its own page',
+      body: 'You’re working on Acme, so the sidebar lists Acme’s contracts. Each one has a page with every draft you’ve reviewed and an upload button for the next.',
+      target: () => withText('.contract-item', 'Mutual NDA'),
       placement: 'right',
-      action: 'Click Accounts.',
-      done: () => pageTitle() === 'Accounts'
-    },
-    {
-      title: 'Acme Corporation',
-      body: 'Open the account.',
-      target: () => withText('.account-row', 'Acme'),
-      placement: 'bottom',
-      action: 'Click Acme Corporation.',
-      done: () => pageTitle() === 'Acme Corporation'
-    },
-    {
-      title: 'The Mutual NDA',
-      body: 'Open the contract to see its versions.',
-      target: () => withText('.contract-row', 'Mutual NDA'),
-      placement: 'bottom',
-      action: 'Click Mutual NDA.',
+      action: 'Click Mutual NDA in the sidebar.',
       done: () => pageTitle() === 'Mutual NDA'
     },
     {
@@ -512,9 +496,15 @@ export const WELCOME_TOUR: Tour = {
     },
     {
       title: 'Your reviews and the knowledge behind them',
-      body: 'The sidebar lists your recent reviews, with every review under All reviews. Below that is the knowledge the checks use (the library of pre-approved wording, our playbook and precedents), Approvals for changes waiting to be signed off, and the audit log. During a review, a second panel on the right holds the review controls and Ask AI.',
+      body: 'The sidebar lists the active client’s contracts; each has a page with every draft you’ve reviewed. Below that is the knowledge the checks use (the library of pre-approved wording, our playbook and precedents), Approvals for changes waiting to be signed off, Security and the audit log. During a review, a second panel on the right holds the review controls and Ask AI.',
       target: () => q('.nav'),
       placement: 'right'
+    },
+    {
+      title: 'One client at a time',
+      body: 'You work on one client account at a time. Choose it here (or press ⌘K). Its contracts appear in the sidebar, and opening contracts needs an account to be chosen. Starting a guided demo chooses its client for you.',
+      target: () => q('.account-switch'),
+      placement: 'bottom'
     },
     {
       title: 'Demo mode or live mode',
@@ -526,7 +516,7 @@ export const WELCOME_TOUR: Tour = {
       title: 'Reviewing your own contracts',
       body: (
         <>
-          In live mode, <b>Open a contract…</b> on this page (in the setup checklist until your first review) loads a PDF, Word or text file. Two things to know first: it needs an <b>Anthropic API key</b> (added in Settings), and the
+          In live mode, choose a client, then <b>Open a contract…</b> on this page (in the setup checklist until your first review), or upload a new draft from a contract’s page. Two things to know first: it needs an <b>Anthropic API key</b> (added in Settings), and the
           contract’s text is <b>sent to Anthropic’s API</b> for the AI checks. Only use documents you’re allowed to share outside the company. The library, precedent search
           and your decisions stay on this computer.
         </>
@@ -543,8 +533,8 @@ export const WELCOME_TOUR: Tour = {
       done: () => !!q('.titlebar .mode-pill.demo')
     },
     {
-      title: 'Three guided demos',
-      body: 'Each contract shows a different part of the workflow: the fast lane (Initech), learning from past negotiations (Acme), and finding a hidden trap (Globex). Click Guided demo on any of them.',
+      title: 'Guided demos',
+      body: 'Each demo client shows a different part of the workflow: the fast lane (Initech), learning from past negotiations and a second draft (Acme), and finding a hidden trap (Globex). Click Guided demo on any of them.',
       target: () => q('.demo-grid'),
       placement: 'bottom'
     }
