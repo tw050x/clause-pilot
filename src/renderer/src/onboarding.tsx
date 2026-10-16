@@ -289,13 +289,17 @@ const reviewAcme: Tour = {
     waitForChecks,
     {
       title: 'Their redline, sorted',
-      body: 'Every tracked change has been read and sorted: what must change, what needs a decision, and what’s pre-approved. Anything they touched with Track Changes is never accepted automatically.',
+      body: (
+        <>Every tracked change has been read and sorted: what must change, what needs a decision, and what’s pre-approved. Anything they touched with <i>Track Changes</i> is never accepted automatically.</>
+      ),
       target: () => q('.issues-summary'),
       placement: 'left'
     },
     {
       title: 'They deleted one of our clauses',
-      body: 'Acme deleted clause 3.3 with Track Changes. It’s our standard “No warranty” wording, so it’s a must-change: the response will ask for it back. Deletions are the easiest edits to miss when reading a redline.',
+      body: (
+        <>Acme deleted clause 3.3 with <i>Track Changes</i>. It’s our standard “No warranty” wording, so it’s a must-change: the response will ask for it back. Deletions are the easiest edits to miss when reading a redline.</>
+      ),
       target: () => q('.deleted-summary'),
       placement: 'left'
     },

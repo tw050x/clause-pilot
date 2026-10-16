@@ -70,7 +70,7 @@ export function ClauseResult({ session, clause, flags, visual, onJump, onChange,
           {clause.tracked && (
             <>
               <p className="faint" style={{ fontSize: 12.5 }}>
-                {flags.redlined === 'inserted' ? 'Inserted as a tracked change' : 'Changed with Track Changes'}
+                {flags.redlined === 'inserted' ? 'Inserted as a tracked change' : <>Changed with <i>Track Changes</i></>}
                 {authorsOf(clause.tracked)}.
               </p>
               <div className="diff redline-box">
