@@ -32,7 +32,7 @@ const api: Api = {
     resolve: (id, outcome, note) => invoke('security:resolve', id, outcome, note),
     onUpdate: on('security:update')
   },
-  file: { open: () => invoke('file:open'), bytes: (path) => invoke('file:bytes', path), docxHtml: (path) => invoke('file:docxHtml', path) },
+  file: { open: () => invoke('file:open'), bytes: (path) => invoke('file:bytes', path) },
   review: {
     start: (path, contractId) => invoke('review:start', path, contractId),
     get: (id) => invoke('review:get', id),

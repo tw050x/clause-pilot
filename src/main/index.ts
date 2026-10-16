@@ -271,13 +271,6 @@ ipcMain.handle('file:open', async () => {
 
 ipcMain.handle('file:bytes', async (_e, path: string) => new Uint8Array(await readFile(resolvePath(path))))
 
-/** DOCX rendered to HTML for the "check in original" view. The renderer sanitises it again before display. */
-ipcMain.handle('file:docxHtml', async (_e, path: string) => {
-  const mammoth = await import('mammoth')
-  const { value } = await mammoth.convertToHtml({ buffer: await readFile(resolvePath(path)) }, { ignoreEmptyParagraphs: true })
-  return value
-})
-
 // ---- IPC: accounts and contracts -------------------------------------------------------------
 
 ipcMain.handle('accounts:list', () => ws.store.accounts())

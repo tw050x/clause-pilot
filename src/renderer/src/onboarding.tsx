@@ -198,16 +198,16 @@ const reviewGlobex: Tour = {
     },
     {
       title: 'There it is in the PDF',
-      body: 'The clause is highlighted in the original PDF. If its text couldn’t be found there, you’d see a warning, which usually means it was captured wrongly.',
+      body: 'This is the actual PDF Globex sent, opened full width so it’s readable, with the clause highlighted. If its text couldn’t be found there, you’d see a warning, which usually means it was captured wrongly.',
       target: () => q('.orig mark.orig-hl'),
       placement: 'left'
     },
     {
       title: 'Back to the analysis',
-      body: 'Switch back to the analysis for this clause.',
-      target: () => q('.clause-tools:not(.hidden) .btn'),
-      placement: 'bottom',
-      action: 'Click Back to analysis.',
+      body: 'Close the original to return to the analysis for this clause.',
+      target: () => q('.orig-close'),
+      placement: 'top',
+      action: 'Click Close original.',
       done: () => !!q('.result-box') && openClause() === 'Clause 11.1'
     },
     {

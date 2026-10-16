@@ -28,7 +28,7 @@ export interface Api {
     resolve(id: string, outcome: 'malicious' | 'false-positive', note: string): Promise<SecurityAlert[]>
     onUpdate(cb: () => void): Unsub
   }
-  file: { open(): Promise<string | null>; bytes(path: string): Promise<Uint8Array>; docxHtml(path: string): Promise<string> }
+  file: { open(): Promise<string | null>; bytes(path: string): Promise<Uint8Array> }
   review: {
     start(path: string, contractId?: string): Promise<ReviewSession>
     get(id: string): Promise<ReviewSession>

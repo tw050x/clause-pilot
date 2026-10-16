@@ -108,7 +108,7 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
   let lastHeading: string | null = null
 
   return (
-    <div className={`review-wrap s-${selVisual} ${ready ? 'ready' : ''}`} ref={wrapRef}>
+    <div className={`review-wrap s-${selVisual} ${ready ? 'ready' : ''} ${mode === 'original' && sel ? 'orig-open' : ''}`} ref={wrapRef}>
       <div className="doc-pane" ref={docPane} tabIndex={-1}>
         <div className="doc-paper">
           {session.clauses.map((c) => {
@@ -134,8 +134,8 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
                 tools={
                   // Space is reserved under every clause so selecting one never shifts the layout.
                   <div className={`clause-tools ${isSel ? '' : 'hidden'}`} aria-hidden={!isSel}>
-                    <button className="btn sm" tabIndex={isSel ? 0 : -1} onClick={() => onMode(mode === 'original' ? 'clause' : 'original')}>
-                      {mode === 'original' && isSel ? 'Back to analysis' : 'Check in original'}
+                    <button className="btn sm" tabIndex={isSel ? 0 : -1} onClick={() => onMode('original')}>
+                      Check in original
                       <Chevron />
                     </button>
                   </div>
@@ -147,16 +147,13 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
       </div>
 
       <div className="right-pane" ref={rightPane} tabIndex={-1}>
-        <div className="right-content">
-          {mode !== 'issues' && sel && (
+        <div className="right-content" hidden={mode === 'original' && !!sel}>
+          {mode === 'clause' && sel && (
             <div className="right-nav">
               <button className="link-btn" onClick={() => onMode('issues')}>
                 ← All issues
               </button>
-              <span className="faint">
-                {clauseLabel(sel)}
-                {mode === 'original' && ' · original document'}
-              </span>
+              <span className="faint">{clauseLabel(sel)}</span>
             </div>
           )}
 
@@ -179,9 +176,16 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
             </div>
           )}
 
-          {mode === 'original' && sel && <OriginalView path={session.filePath} sourceType={session.sourceType} highlight={sel.text} />}
         </div>
+        {mode === 'original' && sel && (
+          <OriginalView path={session.filePath} sourceType={session.sourceType} highlight={sel.text} label={clauseLabel(sel)} />
+        )}
       </div>
+      {mode === 'original' && sel && (
+        <button className="btn orig-close" onClick={() => onMode('clause')}>
+          <Icon name="x" size={14} /> Close original
+        </button>
+      )}
     </div>
   )
 })
@@ -249,12 +253,8 @@ function DocClause(props: {
         title={clauseLabel(c)}
         data-num={c.number ?? undefined}
       >
-        {c.number && (
-          <span className="doc-num">
-            {c.number}
-            {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
-          </span>
-        )}
+        {c.number && <span className="doc-num">{c.number}</span>}
+        {props.versionKind && props.versionKind !== 'unchanged' && <span className={`ver-tag ${props.versionKind}`}>{props.versionKind}</span>}
         <span className="doc-text">{props.flagged ? <Highlighted text={c.text} /> : c.text}</span>
         {props.flagged ? <SecurityBadge /> : <StatusBadge action={props.action} />}
         {selected && <SelectedArrow />}

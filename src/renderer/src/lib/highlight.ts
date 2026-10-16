@@ -60,25 +60,3 @@ export function highlightText(root: HTMLElement, needle: string): HTMLElement | 
   }
   return first
 }
-
-/** Allow-list sanitiser for Word-derived HTML: structure and text only, no attributes. */
-export function sanitiseHtml(html: string): DocumentFragment {
-  const allowed = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'STRONG', 'B', 'EM', 'I', 'U', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'BR', 'SPAN', 'SUP', 'SUB'])
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const out = document.createDocumentFragment()
-  const copy = (src: Node, dest: Node) => {
-    for (const child of Array.from(src.childNodes)) {
-      if (child.nodeType === Node.TEXT_NODE) dest.appendChild(document.createTextNode(child.textContent ?? ''))
-      else if (child.nodeType === Node.ELEMENT_NODE) {
-        const el = child as Element
-        if (allowed.has(el.tagName)) {
-          const clean = document.createElement(el.tagName.toLowerCase())
-          copy(el, clean)
-          dest.appendChild(clean)
-        } else copy(el, dest) // drop the tag, keep its text
-      }
-    }
-  }
-  copy(doc.body, out)
-  return out
-}
