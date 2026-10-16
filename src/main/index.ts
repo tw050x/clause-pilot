@@ -17,6 +17,13 @@ import { chatSystem, offlineAnswer } from './chat'
 const here = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_MODEL = 'claude-opus-5-5'
 const appRoot = process.env.CLAUSEPILOT_APP_ROOT ?? app.getAppPath()
+// Where reviews, workspaces, settings and the API key live. Running from source uses its own
+// folder so development never touches the installed app's data; CLAUSEPILOT_USER_DATA
+// overrides both (used for isolated test runs). An explicit setPath (e.g. by a test
+// harness) is left alone.
+const defaultUserData = join(app.getPath('appData'), app.getName())
+if (process.env.CLAUSEPILOT_USER_DATA) app.setPath('userData', process.env.CLAUSEPILOT_USER_DATA)
+else if (!app.isPackaged && app.getPath('userData') === defaultUserData) app.setPath('userData', join(app.getPath('appData'), `${app.getName()} (Dev)`))
 const userDir = app.getPath('userData')
 // ---- workspaces ------------------------------------------------------------------
 // Demo and live data never mix. The demo workspace is seeded with the sample library,

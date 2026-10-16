@@ -20,6 +20,17 @@ The app opens in **demo mode**: three demo contracts with recorded AI responses,
 | `npm run pack` | Build an unpacked app for this machine (in `release/`) |
 | `npm run release` | Build installers for this machine (in `release/`) |
 
+## Where data is stored
+
+Settings, the encrypted API key, and the demo and live workspaces live in the app's data folder:
+
+| Running | Folder (macOS; other platforms use their usual app-data location) |
+|---|---|
+| Installed app | `~/Library/Application Support/Clause Pilot` |
+| From source (`npm run dev`, `npm start`) | `~/Library/Application Support/Clause Pilot (Dev)` |
+
+Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example for a throwaway test run.
+
 ## CI and releases
 
 - **Prerequisites** (`.github/workflows/prerequisites.yml`) runs on every push to every branch. It installs dependencies, typechecks, builds, and runs `demo:build`, which runs the real pipeline over the demo contracts and fails if demo mode would be missing an AI answer.
