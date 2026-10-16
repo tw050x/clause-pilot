@@ -654,7 +654,7 @@ export const WELCOME_TOUR: Tour = {
     },
     {
       title: 'One client at a time',
-      body: 'You work on one client account at a time. Choose it here (or press ⌘K). Its contracts appear in the sidebar, and opening contracts needs an account to be chosen. Starting a guided demo chooses its client for you.',
+      body: 'You work on one client account at a time. Choose it here (or press ⌘K). Its contracts appear in the sidebar, and opening contracts needs an account to be chosen.',
       target: () => q('.account-switch'),
       placement: 'bottom'
     },
