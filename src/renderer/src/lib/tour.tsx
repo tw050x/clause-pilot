@@ -46,13 +46,14 @@ export function TourOverlay({ tour, ctx, onClose }: { tour: Tour; ctx: TourCtx; 
   const tipRef = useRef<HTMLDivElement>(null)
   /** False until the tooltip has been positioned once: it then fades in where it is instead of sliding from the corner. */
   const [placed, setPlaced] = useState(false)
-  const scrolledFor = useRef(-1)
+  /** The last element we scrolled into view, so a target that changes (or moves off-screen) is brought back. */
+  const scrolledEl = useRef<Element | null>(null)
   const step = tour.steps[i]
   const last = i === tour.steps.length - 1
 
   useEffect(() => {
     step.prepare?.(ctx)
-    scrolledFor.current = -1
+    scrolledEl.current = null
     setDone(false)
   }, [i, tour.id])
 
@@ -66,10 +67,11 @@ export function TourOverlay({ tour, ctx, onClose }: { tour: Tour; ctx: TourCtx; 
       if (el) {
         const b = el.getBoundingClientRect()
         if (b.width || b.height) r = { top: b.top, left: b.left, width: b.width, height: b.height }
-        const offscreen = b.bottom < 60 || b.top > window.innerHeight - 40
-        if (r && offscreen && scrolledFor.current !== i) {
-          scrolledFor.current = i
-          el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        // Bring the target fully on screen (e.g. a form whose button opened below the fold).
+        const notFullyVisible = b.top < 50 || b.bottom > window.innerHeight - 12
+        if (r && notFullyVisible && scrolledEl.current !== el) {
+          scrolledEl.current = el
+          el.scrollIntoView({ block: b.height > window.innerHeight - 120 ? 'start' : 'center', behavior: 'smooth' })
         }
       }
       if (!same(r, prev)) {
@@ -111,10 +113,11 @@ export function TourOverlay({ tour, ctx, onClose }: { tour: Tour; ctx: TourCtx; 
     const along = (pos: number, size: number) => Math.min(Math.max(18, pos), size - 18)
     if (side === 'bottom' || side === 'top') {
       const left = clampX(cx - tw / 2)
-      setTip({ top: side === 'bottom' ? r.bottom + gap : r.top - gap - th, left, arrow: side === 'bottom' ? 'top' : 'bottom', at: along(cx - left, tw) })
+      // Always fully inside the window (a target near an edge must never push Next off-screen).
+      setTip({ top: clampY(side === 'bottom' ? r.bottom + gap : r.top - gap - th), left, arrow: side === 'bottom' ? 'top' : 'bottom', at: along(cx - left, tw) })
     } else if (side === 'right' || side === 'left') {
       const top = clampY(cy - th / 2)
-      setTip({ top, left: side === 'right' ? r.right + gap : r.left - gap - tw, arrow: side === 'right' ? 'left' : 'right', at: along(cy - top, th) })
+      setTip({ top, left: clampX(side === 'right' ? r.right + gap : r.left - gap - tw), arrow: side === 'right' ? 'left' : 'right', at: along(cy - top, th) })
     }
     else setTip({ top: H - th - m, left: W - tw - m, arrow: null }) // huge target: park in the corner
   }, [rect, i, done])

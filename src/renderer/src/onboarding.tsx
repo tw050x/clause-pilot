@@ -193,7 +193,7 @@ const reviewGlobex: Tour = {
       body: 'Text pulled out of a PDF can go wrong. You can always see a clause in the original document.',
       target: () => q('.clause-tools:not(.hidden) .btn'),
       placement: 'bottom',
-      action: 'Click Check in original.',
+      action: 'Click Check in original document.',
       done: () => !!q('.orig mark.orig-hl')
     },
     {
@@ -213,7 +213,7 @@ const reviewGlobex: Tour = {
     {
       title: 'Reject it',
       body: 'Unlimited liability for any security incident is the biggest risk in this contract for a security vendor.',
-      target: () => q('.result-box .decision .btn.reject'),
+      target: () => q('.result-box .decision .btn.reject:not(.on)'),
       placement: 'top',
       action: 'Click Reject.',
       done: () => !!q('.result-box .decision textarea')
@@ -326,7 +326,7 @@ const reviewAcme: Tour = {
     {
       title: 'Reject it',
       body: 'Following precedent.',
-      target: () => q('.result-box .decision .btn.reject'),
+      target: () => q('.result-box .decision .btn.reject:not(.on)'),
       placement: 'top',
       action: 'Click Reject.',
       done: () => !!q('.result-box .decision textarea')
@@ -497,7 +497,7 @@ const thirdDraft: Tour = {
     {
       title: 'Reject it',
       body: 'The suggested wording (no publicity without consent, both ways) is pre-filled.',
-      target: () => q('.result-box .decision .btn.reject'),
+      target: () => q('.result-box .decision .btn.reject:not(.on)'),
       placement: 'top',
       action: 'Click Reject, then Confirm reject.',
       done: () => isDecided(clause('6.10'), 'rejected')

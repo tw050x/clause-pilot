@@ -135,7 +135,7 @@ export const ReviewGrid = forwardRef<ReviewGridHandle, Props>(function ReviewGri
                 tools={
                   <span className={`clause-tools ${isSel ? '' : 'hidden'}`} aria-hidden={!isSel}>
                     <button className="btn sm" tabIndex={isSel ? 0 : -1} onClick={() => onMode('original')}>
-                      Check in original
+                      Check in original document
                       <Chevron />
                     </button>
                   </span>
