@@ -56,7 +56,6 @@ export function Home({
       </section>
 
       <section className="demos-link">
-        <Icon name="bolt" size={20} />
         <div>
           <h3>Demos</h3>
           <p className="faint">
