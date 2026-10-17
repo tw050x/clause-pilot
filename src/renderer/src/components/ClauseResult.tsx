@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type TextareaHTMLAttributes } from 'react'
 import type { Clause, DiffToken, PlaybookPosition, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
 import { Redline } from './Redline'
@@ -475,7 +475,7 @@ function DecisionPanel({
       )}
       {mode && (
         <>
-          <textarea
+          <AutoTextarea
             rows={2}
             autoFocus
             placeholder={mode === 'accepted' ? 'Why is this acceptable? (becomes a precedent)' : 'Why we can’t accept it (shared with the counterparty)'}
@@ -505,7 +505,7 @@ function DecisionPanel({
                 <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>The response will ask for this clause to be removed.</p>
               ) : (
                 <>
-                  <textarea rows={4} placeholder="The wording we propose instead" value={redline} onChange={(e) => setRedline(e.target.value)} />
+                  <AutoTextarea rows={4} placeholder="The wording we propose instead" value={redline} onChange={(e) => setRedline(e.target.value)} />
                   <p className="faint" style={{ margin: 0, fontSize: 12 }}>
                     {source ? `Pre-filled from: ${source}.` : 'No approved wording or precedent found for this clause. Write the wording we propose.'}
                   </p>
@@ -602,4 +602,23 @@ function usePlaybook(): PlaybookPosition[] {
     })
   }, [])
   return list
+}
+
+/** A textarea that grows to fit its text, so pre-filled wording is readable without scrolling. */
+function AutoTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const fit = () => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }
+  useLayoutEffect(fit, [props.value])
+  useEffect(() => {
+    // Re-fit when the column changes width (text rewraps).
+    const ro = new ResizeObserver(fit)
+    if (ref.current) ro.observe(ref.current.parentElement ?? ref.current)
+    return () => ro.disconnect()
+  }, [])
+  return <textarea {...props} ref={ref} style={{ ...props.style, overflow: 'hidden' }} />
 }
