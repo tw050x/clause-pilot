@@ -1,6 +1,6 @@
 # Intent matching: the AI response schema
 
-The **meaning check** ("Check meaning with AI") asks Claude whether a paragraph that differs from one of our pre-approved clauses has the **same legal effect**. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
+The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks Claude whether a paragraph that differs from one of our pre-approved clauses has the **same legal effect**. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
 
 The AI only advises. A paragraph it judges to mean the same gets a dashed green bar; it is never accepted until a person accepts or rejects the changes.
 

@@ -33,7 +33,7 @@ interface Props {
   /** "Comment" on selected text. */
   onComment: (blockId: string, quote: string) => void
   /** The redlines inside a selection (null when you click elsewhere). */
-  onSelectChanges: (changes: SelectedChange[] | null) => void
+  onSelectChanges: (changes: SelectedChange[] | null, highlighted?: boolean) => void
   readOnly?: boolean
 }
 
@@ -472,7 +472,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
               return
             }
             focused.current = null
-            cb.current.onSelectChanges(changesIn(state))
+            cb.current.onSelectChanges(changesIn(state), true)
             v.dispatch(state.tr.setMeta('redraw', true))
             // Within one paragraph, offer a comment on the selected text.
             if (sel.$from.parent === sel.$to.parent) {

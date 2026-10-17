@@ -43,8 +43,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   /** Each new selection is a new action: everything decided in it undoes together. */
   const [selection, setSelection] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
-  const onSelectChanges = useCallback((x: SelectedChange[] | null) => {
+  /** The selection was text you highlighted (not a caret placed in a change). */
+  const [highlighted, setHighlighted] = useState(false)
+  const onSelectChanges = useCallback((x: SelectedChange[] | null, hl = false) => {
     setPicked(x)
+    setHighlighted(!!x && hl)
     if (x) {
       setSelection((n) => n + 1)
       setShowHistory(false)
@@ -127,7 +130,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             <i className="bar checked" /> Nothing to check ({cleared})
           </span>
           <span>
-            <i className="bar ai" /> Same meaning, by AI ({aiOk})
+            <i className="bar ai" /> Intent check passed, by AI ({aiOk})
           </span>
           <span>
             <i className="bar theirs" /> To decide
@@ -161,7 +164,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             title={onHold ? 'On security hold: nothing goes to the AI' : 'Asks the AI, for each paragraph that differs from our approved wording, whether it means the same. Nothing is accepted by it.'}
             onClick={() => act(window.api.doc.checkIntent(session.id, toCheck.map((b) => b.id)))}
           >
-            {checking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {checking ? 'Checking meaning…' : `Check meaning with AI (${toCheck.length})`}
+            {checking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {checking ? 'Checking intent…' : `Intent check with AI (${toCheck.length})`}
           </button>
         )}
         <div className="rc-actions">
@@ -188,7 +191,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           }}
         />
       ) : picked && picked.length > 0 ? (
-        <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} />
+        <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} />
       ) : block ? (
         <ParagraphPanel key={block.id} session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
       ) : (
@@ -234,7 +237,19 @@ const snippet = (t: string) => (t.length > 140 ? `${t.slice(0, 140).trimEnd()}�
  * The redlines in a selection, decided together: one Accept or Reject for all of theirs,
  * and one Revert for any of yours. To decide one change on its own, select just that.
  */
-function SelectionPanel({ session, picked, act, group }: { session: ReviewSession; picked: SelectedChange[]; act: (p: Promise<ReviewSession>) => Promise<boolean>; group: string }) {
+function SelectionPanel({
+  session,
+  picked,
+  act,
+  group,
+  highlighted
+}: {
+  session: ReviewSession
+  picked: SelectedChange[]
+  act: (p: Promise<ReviewSession>) => Promise<boolean>
+  group: string
+  highlighted: boolean
+}) {
   const d = session.doc!
   const blocks = new Map(d.blocks.map((b) => [b.id, b]))
   const items = picked.filter((x) => blocks.has(x.blockId))
@@ -352,6 +367,12 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
           )
         })}
       </div>
+      {/* Intent check: only for text you've highlighted, per paragraph it covers. */}
+      {highlighted &&
+        [...new Set(items.map((x) => x.blockId))].map((id) => {
+          const b = blocks.get(id)!
+          return <IntentSection key={id} session={session} b={b} act={act} many={new Set(items.map((x) => x.blockId)).size > 1} />
+        })}
     </section>
   )
 }
@@ -563,8 +584,6 @@ function ParagraphPanel({
         )}
       </div>
 
-      <IntentSection session={session} b={b} act={act} />
-
       <div className="dr-mini-h rc-comments-h">
         Comments
         {!draft && (
@@ -606,7 +625,7 @@ function ParagraphPanel({
 }
 
 /** The AI's meaning check for a paragraph that differs from our approved wording: ask, and its answer. */
-function IntentSection({ session, b, act }: { session: ReviewSession; b: DocBlock; act: (p: Promise<ReviewSession>) => Promise<boolean> }) {
+function IntentSection({ session, b, act, many }: { session: ReviewSession; b: DocBlock; act: (p: Promise<ReviewSession>) => Promise<boolean>; many?: boolean }) {
   const d = session.doc!
   const r = d.intent?.[b.id]
   const current = r && r.text === proposedText(d, b)
@@ -615,10 +634,10 @@ function IntentSection({ session, b, act }: { session: ReviewSession; b: DocBloc
   return (
     <div className="dr-ai">
       <div className="dr-mini-h">
-        Same meaning as ours?
+        Intent check{many ? ` · ${whereOf(d, b)}` : ''}
         {canAsk && r?.status !== 'running' && (
           <button className="btn sm" onClick={() => act(window.api.doc.checkIntent(session.id, [b.id]))}>
-            <Icon name="sparkle" size={13} /> {r && current ? 'Check again' : 'Check with AI'}
+            <Icon name="sparkle" size={13} /> {r && current ? 'Check again' : 'Check intent'}
           </button>
         )}
       </div>
@@ -632,7 +651,7 @@ function IntentSection({ session, b, act }: { session: ReviewSession; b: DocBloc
       {r?.status === 'done' && current && (
         <div className={`dr-ai-card ${r.same ? 'same' : 'differs'}`}>
           <div className="dr-ai-chips">
-            <span className={`dr-chip ${r.same ? 'rec-accept' : 'rec-escalate'}`}>{r.same ? 'Same meaning' : 'Differs'}</span>
+            <span className={`dr-chip ${r.same ? 'rec-accept' : 'rec-escalate'}`}>{r.same ? 'Same intent' : 'Differs'}</span>
             {r.confidence && <span className="dr-chip">{r.confidence} confidence</span>}
           </div>
           <p className="dr-ai-summary">{r.note}</p>
