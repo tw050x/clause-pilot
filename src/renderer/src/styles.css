@@ -218,7 +218,10 @@ table.t td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical
 .nav-item .count + .nav-chevron { margin-left: 0; }
 .nav-item.active .nav-chevron { color: currentColor; }
 
-.right-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 10px; font-size: 13px; }
+/* Stays at the top of the right column however far the analysis is scrolled. */
+.right-nav { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 4px; margin-top: -12px; font-size: 13px; background: var(--surface); }
+.ask-seg { align-self: flex-start; }
+.ask-seg button { padding: 4px 10px; }
 .link-btn { border: none; background: none; padding: 2px 0; cursor: pointer; color: var(--focus); font-weight: 600; }
 
 /* The selected clause's analysis: tinted and outlined, joined to the clause on its left. */

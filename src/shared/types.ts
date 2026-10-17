@@ -179,7 +179,10 @@ export interface Decision {
   clauseId: string
   decision: Outcome
   note: string
+  /** Our proposed replacement wording (empty when we ask for removal or just reject). */
   redline: string
+  /** We ask the counterparty to remove the clause rather than reword it. */
+  removal?: boolean
   nominate: boolean // accepted clause nominated for the pre-approved library
   by: string
   at: string

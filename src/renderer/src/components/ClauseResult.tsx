@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { Clause, DiffToken, ReviewSession, SecurityAlert } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { Clause, DiffToken, PlaybookPosition, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
 import { Redline } from './Redline'
 import { clauseLabel, isCleared, type ClauseFlags, type Visual } from '@shared/derive'
@@ -228,7 +228,9 @@ export function ClauseResult({ session, clause, flags, visual, onJump, onChange,
         </div>
       )}
 
+      {/* Keyed by clause: a half-filled form never carries over to another clause. */}
       <DecisionPanel
+        key={clause.id}
         session={session}
         clause={clause}
         flags={flags}
@@ -331,8 +333,39 @@ function DecisionPanel({
   const [note, setNote] = useState('')
   const [redline, setRedline] = useState('')
   const [nominate, setNominate] = useState(false)
+  const [removal, setRemoval] = useState(false)
+  const playbook = usePlaybook()
   const d = flags.decision
-  const suggested = flags.playbook.find((p) => p.suggestedRedline)?.suggestedRedline ?? ''
+
+  /**
+   * Starting a rejection: pre-fill what the counterparty will read. The reason comes from our
+   * playbook position (or our standard wording); the ask is either our wording - the playbook's
+   * suggested replacement or our closest approved clause - or, when our position is that the
+   * clause shouldn't be there at all, a request to remove it.
+   */
+  const startReject = () => {
+    // Prefer a finding that offers real wording, then one asking for removal, then any.
+    const isInstruction = (t: string) => /^\s*(delete|see|make|replace|amend)\b/i.test(t)
+    const finding =
+      flags.playbook.find((p) => p.suggestedRedline && !isInstruction(p.suggestedRedline)) ??
+      flags.playbook.find((p) => /^\s*delete\b/i.test(p.suggestedRedline)) ??
+      flags.playbook[0]
+    const position = finding && playbook.find((p) => p.id === finding.positionId)
+    const best = session.match[clause.id]?.data?.candidates?.[0]
+    const suggestion = finding?.suggestedRedline ?? ''
+    const askRemoval = /^\s*delete\b/i.test(suggestion) || (!suggestion && flags.redlined === 'inserted' && !best)
+    let reason = ''
+    if (flags.injection.length) reason = 'This clause contains instructions addressed to an automated review system rather than to us. It needs to be removed.'
+    else if (position) reason = `This doesn’t match our standard position on ${position.title.toLowerCase()}. ${position.standard}`
+    else if (flags.overriding.length) reason = 'This clause overrides other terms of the agreement and changes their effect. We can’t accept that.'
+    else if (best) reason = 'This departs from our standard wording for this clause.'
+    const wording = askRemoval ? '' : isInstruction(suggestion) ? best?.text ?? '' : suggestion || best?.text || ''
+    if (reason && wording && !askRemoval && !flags.injection.length) reason += ' We propose the wording below instead.'
+    setNote(reason)
+    setRemoval(askRemoval || !!flags.injection.length)
+    setRedline(wording)
+    setMode('rejected')
+  }
   const cleared = isCleared(flags)
   const exact = flags.match === 'exact'
 
@@ -357,6 +390,7 @@ function DecisionPanel({
           </button>
         </div>
         {d.note && <div style={{ fontSize: 13 }}>{d.note}</div>}
+        {d.removal && <div className="faint" style={{ fontSize: 12.5 }}>Asked them to remove this clause.</div>}
         {d.redline && <div className="quote">{d.redline}</div>}
       </div>
     )
@@ -375,10 +409,7 @@ function DecisionPanel({
           <div style={{ flex: 1 }} />
           <button
             className="btn sm reject"
-            onClick={() => {
-              setRedline(suggested)
-              setMode('rejected')
-            }}
+            onClick={startReject}
           >
             <Icon name="x" size={13} /> Reject
           </button>
@@ -388,7 +419,16 @@ function DecisionPanel({
   }
 
   const submit = async (decision: 'accepted' | 'rejected') => {
-    onChange(await window.api.review.decide(session.id, { clauseId: clause.id, decision, note, redline: decision === 'rejected' ? redline : '', nominate: decision === 'accepted' && nominate }))
+    onChange(
+      await window.api.review.decide(session.id, {
+        clauseId: clause.id,
+        decision,
+        note,
+        redline: decision === 'rejected' && !removal ? redline : '',
+        removal: decision === 'rejected' && removal,
+        nominate: decision === 'accepted' && nominate
+      })
+    )
     if (nominate) onNominationsChanged()
     setMode(null)
   }
@@ -407,10 +447,7 @@ function DecisionPanel({
           </button>
           <button
             className="btn sm reject"
-            onClick={() => {
-              setRedline(suggested)
-              setMode('rejected')
-            }}
+            onClick={startReject}
           >
             <Icon name="x" size={13} /> Reject
           </button>
@@ -421,12 +458,26 @@ function DecisionPanel({
           <textarea
             rows={2}
             autoFocus
-            placeholder={mode === 'accepted' ? 'Why is this acceptable? (becomes a precedent)' : 'Reason (shared with the counterparty in the email)'}
+            placeholder={mode === 'accepted' ? 'Why is this acceptable? (becomes a precedent)' : 'Why we can’t accept it (shared with the counterparty)'}
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
           {mode === 'rejected' && (
-            <textarea rows={3} placeholder="Our proposed wording (optional)" value={redline} onChange={(e) => setRedline(e.target.value)} />
+            <>
+              <div className="seg ask-seg">
+                <button className={!removal ? 'on' : ''} onClick={() => setRemoval(false)}>
+                  Propose our wording
+                </button>
+                <button className={removal ? 'on' : ''} onClick={() => setRemoval(true)}>
+                  Ask them to remove it
+                </button>
+              </div>
+              {removal ? (
+                <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>The response will ask for this clause to be removed.</p>
+              ) : (
+                <textarea rows={4} placeholder="The wording we propose instead" value={redline} onChange={(e) => setRedline(e.target.value)} />
+              )}
+            </>
           )}
           {mode === 'accepted' && !exact && (
             <label className="row-gap" style={{ fontSize: 13 }}>
@@ -504,4 +555,17 @@ function VersionSection({ link, prevVersion }: { link: NonNullable<ClauseFlags['
 function authorsOf(segs: NonNullable<Clause['tracked']>): string {
   const names = [...new Set(segs.filter((s) => s.op !== 'same' && s.author).map((s) => s.author!))]
   return names.length ? ` by ${names.join(', ')}` : ''
+}
+
+/** Our standard positions, used to pre-fill the reason when rejecting a clause. */
+let playbookCache: PlaybookPosition[] | null = null
+function usePlaybook(): PlaybookPosition[] {
+  const [list, setList] = useState<PlaybookPosition[]>(playbookCache ?? [])
+  useEffect(() => {
+    window.api.kb.playbook().then((p) => {
+      playbookCache = p
+      setList(p)
+    })
+  }, [])
+  return list
 }

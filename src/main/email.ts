@@ -15,7 +15,7 @@ export function emailBrief(s: ReviewSession, reviewer: string): { points: EmailP
     }))
   const points: EmailPoint[] = s.clauses
     .filter((c) => s.decisions[c.id]?.decision === 'rejected')
-    .map((c) => {
+    .map((c): EmailPoint => {
       const d = s.decisions[c.id]
       const positions = Object.values(s.playbook)
         .map((p) => p.data)
@@ -25,7 +25,8 @@ export function emailBrief(s: ReviewSession, reviewer: string): { points: EmailP
         heading: c.heading,
         text: c.text,
         note: d.note,
-        redline: d.redline || positions.find((p) => p?.suggestedRedline)?.suggestedRedline || ''
+        removal: !!d.removal,
+        redline: d.removal ? '' : d.redline || ''
       }
     })
     .concat(reinstate)
@@ -39,7 +40,7 @@ ${points
     (p, i) => `${i + 1}. ${p.label}${p.heading ? ` (${p.heading})` : ''}
    Their wording: <clause>${p.text}</clause>
    Reviewer's note: ${p.note || '(none)'}
-   Our proposed wording: ${p.redline || '(ask them to delete or revert to our standard)'}`
+   What we ask: ${p.removal ? 'remove this clause' : p.redline ? `replace it with: ${p.redline}` : 'revert to our standard wording'}`
   )
   .join('\n')}
 
@@ -48,6 +49,7 @@ Return a subject line and the email body (plain text, no markdown).`
 }
 
 interface EmailPoint {
+  removal?: boolean
   label: string
   heading: string | null
   text: string
@@ -71,7 +73,11 @@ export function templateEmail(s: ReviewSession, reviewer: string): EmailDraft {
       (p, i) =>
         `${i + 1}. ${p.label}${p.heading ? ` (${title(p.heading)})` : ''}\n` +
         (p.note ? `   ${p.note}\n` : '') +
-        (p.redline ? `   We propose: "${p.redline}"\n` : '   We would ask for this to be removed or returned to our standard wording.\n')
+        (p.removal
+          ? '   We ask for this clause to be removed.\n'
+          : p.redline
+            ? `   We propose instead: "${p.redline}"\n`
+            : '   We would ask for this to be returned to our standard wording.\n')
     )
     .join('\n')
   return {

@@ -220,7 +220,7 @@ const reviewGlobex: Tour = {
     },
     {
       title: 'Say why, propose wording',
-      body: 'The proposed wording is pre-filled from our playbook’s fallback (a 3× data-protection cap). Your reason and redline go straight into the response email and become a precedent.',
+      body: 'Your reason and our proposed wording (the playbook’s fallback: a 3× data-protection cap) are pre-filled, ready for the counterparty. They go straight into the response email and become a precedent.',
       target: () => q('.result-box .decision'),
       placement: 'left',
       action: 'Optionally type a reason, then click Confirm reject.',
@@ -333,7 +333,7 @@ const reviewAcme: Tour = {
     },
     {
       title: 'Confirm',
-      body: 'The redline (“Delete clause 2.4 in its entirety”) is pre-filled from the playbook.',
+      body: 'Your reason and what you’re asking for are pre-filled from our playbook: here, a request to remove the clause. Edit either before you confirm.',
       target: () => q('.result-box .decision'),
       placement: 'left',
       action: 'Click Confirm reject.',
@@ -496,7 +496,7 @@ const thirdDraft: Tour = {
     },
     {
       title: 'Reject it',
-      body: 'The suggested wording (no publicity without consent, both ways) is pre-filled.',
+      body: 'The reason and our wording (no publicity without consent, both ways) are pre-filled.',
       target: () => q('.result-box .decision .btn.reject:not(.on)'),
       placement: 'top',
       action: 'Click Reject, then Confirm reject.',
