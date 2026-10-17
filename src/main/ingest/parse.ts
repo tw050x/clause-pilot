@@ -11,7 +11,7 @@ export interface ParsedDocument {
   /** Logical lines / paragraphs in reading order. */
   lines: string[]
   /** Word only: the redline and comments for each line (same order as `lines`). */
-  lineMeta?: { tracked?: TrackedSegment[]; comments?: DocComment[] }[]
+  lineMeta?: { tracked?: TrackedSegment[]; comments?: DocComment[]; row?: boolean }[]
   /** Word only: whole paragraphs deleted as tracked changes. */
   deletions?: TrackedDeletion[]
 }
@@ -62,7 +62,7 @@ async function docx(buf: Buffer): Promise<Pick<ParsedDocument, 'lines' | 'lineMe
       }
       if (!p.text) continue
       lines.push(p.text)
-      lineMeta.push({ tracked: p.segments, comments: p.comments })
+      lineMeta.push({ tracked: p.segments, comments: p.comments, row: p.row })
     }
     return { lines, lineMeta, deletions }
   } catch {

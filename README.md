@@ -52,10 +52,15 @@ The **Demos** page (linked from Start; opening it switches to demo mode) has sho
 | Add to the library | Accept and nominate wording, approve it, and it's accepted automatically from then on |
 | Add to the playbook | Propose a standard position and approve it as the owner |
 
+## Real-world test contracts
+
+`test-contracts/` holds real published agreements (Common Paper, CC BY 4.0) and counterparty drafts of them with tracked changes, for trying the app on documents it wasn't written around. See `test-contracts/README.md`.
+
 ## Word redlines (Track Changes and comments)
 
 Negotiated drafts usually arrive as Word files with Track Changes and margin comments. Clause Pilot reads `.docx` files from their XML so that these survive (a plain-text extract silently accepts every tracked change and drops the comments):
 
+- Clauses are split on Word's **automatic numbering** as well as typed numbers, and a **key-terms table** row ("Governing Law | The laws of …") becomes a clause of its own.
 - Each clause keeps the counterparty's **redline** (insertions and deletions, with author and date) and the **comments** anchored on it. Both are shown on the clause and in its analysis; the original-document view renders the tracked changes too.
 - The clause is reviewed as **proposed** (their insertions in, deletions out), and anything they changed with Track Changes is **never accepted automatically**, even if the result looks standard.
 - **Whole clauses they deleted** are listed. If the deleted text was our pre-approved wording it is a must-change issue, and the response email asks for it to be reinstated.
@@ -149,7 +154,7 @@ demo/authored/         hand-written demo AI answers, compiled into demo/recordin
 
 ## Limitations
 
-- Clause splitting relies on typed numbering ("4.2"). Word auto-numbering is not extracted by mammoth, and scanned PDFs would need OCR. Legacy `.doc` files are rejected with a "save as .docx" message.
+- Clause splitting relies on numbering: typed ("4.2") or Word's automatic list numbering, which is worked out from the document's numbering definitions. Unnumbered documents become a few large clauses, and scanned PDFs would need OCR. Legacy `.doc` files are rejected with a "save as .docx" message.
 - Lexical thresholds (`CANDIDATE_THRESHOLD = 0.45`) were tuned on the demo set only. They need measuring against real contracts.
 - Demo recordings are authored, not captured from a live model. Run live with recording on to capture real ones.
 - Single user, local data. A team deployment needs a shared store and identity for the audit log.

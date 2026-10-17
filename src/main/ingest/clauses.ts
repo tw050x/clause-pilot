@@ -15,6 +15,11 @@ function isHeading(text: string): boolean {
   return letters.length > 0 && letters === letters.toUpperCase()
 }
 
+/** "2. Service", "4. Privacy & Security": a short, unpunctuated title after a top-level number is a section heading. */
+function isSectionTitle(number: string, text: string): boolean {
+  return !number.includes('.') && text.split(/\s+/).length <= 6 && !/[.;:,]$/.test(text) && /^[A-Z]/.test(text)
+}
+
 /**
  * Split document lines into clauses. Each numbered item (any depth) becomes a
  * clause; a numbered line that is only a heading ("9. LIMITATION OF LIABILITY")
@@ -49,7 +54,7 @@ export function splitClauses(lines: string[], lineMeta?: ParsedDocument['lineMet
     const meta = lineMeta?.[i]
     const cur = current as Pending | null
     if (!cur) return
-    if (meta?.comments) cur.comments.push(...meta.comments)
+    for (const c of meta?.comments ?? []) if (!cur.comments.some((x) => x.id === c.id)) cur.comments.push(c)
     const segs = meta?.tracked ?? [{ op: 'same' as const, text: lines[i].trim() }]
     if (meta?.tracked) cur.changed = true
     // Drop the printed clause number from the redline, as it is from the text.
@@ -74,6 +79,15 @@ export function splitClauses(lines: string[], lineMeta?: ParsedDocument['lineMet
     const line = raw.trim()
     if (!line) continue
 
+    // A key-terms table row (Word): a clause of its own, unnumbered.
+    if (lineMeta?.[i]?.row) {
+      flush()
+      current = start(null, heading, line)
+      attach(i, 0)
+      flush()
+      continue
+    }
+
     if (SCHEDULE.test(line) && line.length < 90) {
       flush()
       heading = line.toUpperCase()
@@ -83,7 +97,7 @@ export function splitClauses(lines: string[], lineMeta?: ParsedDocument['lineMet
     const m = line.match(NUMBERED)
     if (m) {
       const rest = line.slice(m[0].length).trim()
-      if (isHeading(rest)) {
+      if (isHeading(rest) || isSectionTitle(m[1], rest)) {
         flush()
         heading = rest.toUpperCase()
         continue

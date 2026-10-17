@@ -1,7 +1,8 @@
 import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
 import type { Clause, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
-import { clauseLabel } from '@shared/derive'
+import { clauseLabel } from '../../shared/derive'
+import { readNumbering } from '../ingest/docxTracked'
 
 /**
  * Our response as a marked-up Word document: the counterparty's contract with
@@ -34,11 +35,18 @@ const REL_COMMENTS_EX = 'http://schemas.microsoft.com/office/2011/relationships/
 const NUMBER_PREFIX = /^\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+/
 
 
-export async function buildRedline(s: ReviewSession, reviewer: string, original: Buffer): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[] }> {
+export async function buildRedline(
+  s: ReviewSession,
+  reviewer: string,
+  original: Buffer,
+  /** Test drafts: comment only where a reason was written (a counterparty doesn't explain every edit). */
+  opts: { commentsOnlyWhenGiven?: boolean } = {}
+): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[] }> {
   const source = s.sourceType === 'docx' ? 'original' : 'generated'
   const zip = await JSZip.loadAsync(source === 'original' ? original : await baseDocx(s))
   const doc = await xml(zip, 'word/document.xml')
   if (!doc) throw new Error('Not a Word document (word/document.xml missing).')
+  await numberParagraphs(zip, doc)
   const m = new Markup(zip, doc, reviewer)
   await m.loadComments()
 
@@ -67,7 +75,7 @@ export async function buildRedline(s: ReviewSession, reviewer: string, original:
     // The reviewer's note was written for the app ("the wording below"); in Word the wording is in the clause itself.
     const note = d.note.trim().replace(/\s*We propose the wording below instead\.?$/i, wording && !d.removal ? ' Our proposed wording is marked up in the clause.' : '')
     const reason = note || (d.removal ? 'We ask for this clause to be removed.' : 'We can’t accept this clause as drafted.')
-    m.comment(paras, reason, clauseLabel(c), theirComment, c.text)
+    if (note || !opts.commentsOnlyWhenGiven) m.comment(paras, reason, clauseLabel(c), theirComment, c.text)
   }
 
   // Our standard clauses they deleted outright: put them back.
@@ -99,6 +107,20 @@ function bodyParagraphs(doc: Document): Element[] {
   return Array.from(doc.getElementsByTagNameNS(W, 'p'))
 }
 
+/**
+ * Word's automatic numbers per paragraph, worked out before we change anything (as the reader
+ * does), so the text we compare with the clause includes "2." or "a." the way the reader saw it.
+ */
+let labels = new WeakMap<Element, string>()
+async function numberParagraphs(zip: JSZip, doc: Document) {
+  labels = new WeakMap()
+  const numbering = await readNumbering(zip)
+  for (const p of bodyParagraphs(doc)) {
+    const label = numbering.label(p, !visibleText(p).trim())
+    if (label) labels.set(p, label)
+  }
+}
+
 /** The paragraph's text as proposed: insertions in, deletions out. */
 function visibleText(p: Element): string {
   return visiblePieces([p]).map((x) => x.text).join('')
@@ -124,9 +146,11 @@ function locateClauses(doc: Document, clauses: Clause[]): Map<string, Element[]>
       let j = i + 1
       while (acc.length < target.length && j < paras.length) {
         const next = norm(paras[j].text)
-        if (next && !target.startsWith(acc + next)) break
         if (next) {
-          acc += next
+          // Allow for a list label ("a", "ii", "12") that Word numbers automatically and the text doesn't contain.
+          const k = [0, 1, 2, 3, 4].find((n) => target.startsWith(next, acc.length + n))
+          if (k === undefined) break
+          acc = target.slice(0, acc.length + k) + next
           group.push(paras[j].p)
         }
         j++
@@ -202,8 +226,9 @@ function rename(el: Element, local: string) {
 // ---- visible text as runs ----------------------------------------------------------------
 
 interface Piece {
-  run: Element
-  node: Element // w:t or w:tab
+  /** null for text the reader adds that isn't in a run: automatic numbers and the gaps between paragraphs. */
+  run: Element | null
+  node: Element | null // w:t or w:tab
   text: string
   start: number
   end: number
@@ -218,7 +243,16 @@ const ancestor = (el: Node, stop: Element, names: string[]) => {
 function visiblePieces(paras: Element[]): Piece[] {
   const out: Piece[] = []
   let at = 0
-  for (const p of paras) {
+  const virtual = (text: string) => {
+    out.push({ run: null, node: null, text, start: at, end: at + text.length })
+    at += text.length
+  }
+  const cellOf = (p: Element) => ancestor(p, p.ownerDocument!.documentElement!, ['tc'])
+  paras.forEach((p, i) => {
+    // As the reader joins them: a space between paragraphs, " — " between table cells.
+    if (i) virtual(cellOf(p) && cellOf(paras[i - 1]) && cellOf(p) !== cellOf(paras[i - 1]) ? ' — ' : ' ')
+    const label = labels.get(p)
+    if (label) virtual(`${label} `)
     for (const run of Array.from(p.getElementsByTagNameNS(W, 'r'))) {
       if (ancestor(run, p, ['del', 'rPr'])) continue
       for (let n = run.firstChild; n; n = n.nextSibling) {
@@ -230,7 +264,7 @@ function visiblePieces(paras: Element[]): Piece[] {
         at += text.length
       }
     }
-  }
+  })
   return out
 }
 
@@ -297,8 +331,8 @@ class Markup {
 
   /** Make sure a run boundary falls at character `at`. */
   private splitAt(paras: Element[], at: number) {
-    const piece = visiblePieces(paras).find((x) => x.start < at && at < x.end)
-    if (!piece) return
+    const piece = visiblePieces(paras).find((x) => x.run && x.start < at && at < x.end)
+    if (!piece || !piece.run || !piece.node) return
     const k = at - piece.start
     // Isolate the text node in its own run first (a run can hold several).
     const run = isolate(piece.run, piece.node)
@@ -313,8 +347,9 @@ class Markup {
     this.splitAt(paras, b)
     // Give each text node in range its own run, then strike those runs. (Collect first: once a run
     // is struck it stops counting as visible text and every later position shifts.)
-    for (const x of visiblePieces(paras)) if (x.start >= a && x.end <= b && x.node.parentNode === x.run) isolate(x.run, x.node)
-    const runs = visiblePieces(paras).filter((x) => x.start >= a && x.end <= b).map((x) => x.run)
+    for (const x of visiblePieces(paras)) if (x.run && x.node && x.start >= a && x.end <= b && x.node.parentNode === x.run) isolate(x.run, x.node)
+    // Numbers and paragraph gaps aren't text we can strike; they stay.
+    const runs = visiblePieces(paras).filter((x) => x.run && x.start >= a && x.end <= b).map((x) => x.run as Element)
     for (const run of runs) {
       const wrap = this.track('del')
       run.parentNode!.insertBefore(wrap, run)
@@ -326,7 +361,7 @@ class Markup {
 
   private insertAt(paras: Element[], at: number, text: string, prefix: number) {
     this.splitAt(paras, at)
-    const pieces = visiblePieces(paras)
+    const pieces = visiblePieces(paras).filter((x): x is Piece & { run: Element } => !!x.run)
     const before = pieces.filter((x) => x.end <= at).pop()
     const after = pieces.find((x) => x.start >= at)
     // Take formatting from the text we're next to, but never from the (often bold) clause number.
@@ -345,7 +380,8 @@ class Markup {
     const ins = this.track('ins')
     ins.appendChild(run)
 
-    if (before) placeAfter(before.run, ins)
+    // Right after a paragraph gap or number, the insertion belongs to the text that follows.
+    if (before && (!after || before.end === at)) placeAfter(before.run, ins)
     else if (after) placeBefore(after.run, ins)
     else {
       const p = paras[0]

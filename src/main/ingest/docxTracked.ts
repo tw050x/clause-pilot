@@ -12,6 +12,8 @@ export interface DocxParagraph {
   comments?: DocComment[]
   /** The whole paragraph was deleted as a tracked change. */
   deleted?: { text: string; author?: string; date?: string }
+  /** A table row of key terms (cells joined with " — "): a clause of its own. */
+  row?: boolean
 }
 
 /**
@@ -26,28 +28,83 @@ export async function readDocx(buf: Buffer): Promise<DocxParagraph[]> {
   if (!xml) throw new Error('Not a Word document (word/document.xml missing).')
   const doc = new DOMParser().parseFromString(xml, 'text/xml')
   const comments = await readComments(zip)
+  const numbering = await readNumbering(zip)
 
-  const out: DocxParagraph[] = []
-  const paragraphs = Array.from(doc.getElementsByTagNameNS(W, 'p'))
-  for (const p of paragraphs) {
+  // One paragraph: its proposed text, redline and comments (null when there's nothing in it).
+  const read = (p: Element): DocxParagraph | null => {
     const segments: TrackedSegment[] = []
     const anchored = new Set<string>()
     walk(p, null, segments, anchored)
     const merged = merge(segments)
+    const commentList = [...anchored].map((id) => comments.get(id)).filter((c): c is DocComment => !!c)
+    // Word's automatic numbering ("1.", "4.2", "(a)") isn't in the text: work it out and put it back in front.
+    // No number for deleted paragraphs or empty ones (often just a section break).
+    const label = numbering.label(p, merged.every((s) => s.op === 'del' || !s.text.trim()))
+    if (label) merged.unshift({ op: merged[0]?.op === 'ins' ? 'ins' : merged[0]?.op === 'del' ? 'del' : 'same', text: `${label} `, author: merged[0]?.author, date: merged[0]?.date })
     const text = clean(merged.filter((s) => s.op !== 'del').map((s) => s.text).join(''))
     const removedText = clean(merged.filter((s) => s.op !== 'ins').map((s) => s.text).join(''))
     const hasChanges = merged.some((s) => s.op !== 'same')
-    const commentList = [...anchored].map((id) => comments.get(id)).filter((c): c is DocComment => !!c)
 
     // A paragraph whose content is all tracked deletion (and nothing proposed) was deleted outright.
     if (!text && removedText && merged.every((s) => s.op === 'del' || !s.text.trim())) {
       const by = merged.find((s) => s.op === 'del')
-      out.push({ text: '', deleted: { text: removedText, author: by?.author, date: by?.date }, comments: commentList.length ? commentList : undefined })
-      continue
+      return { text: '', deleted: { text: removedText, author: by?.author, date: by?.date }, comments: commentList.length ? commentList : undefined }
     }
-    if (!text && !commentList.length) continue
-    out.push({ text, segments: hasChanges ? trimSegments(merged) : undefined, comments: commentList.length ? commentList : undefined })
+    if (!text && !commentList.length) return null
+    return { text, segments: hasChanges ? trimSegments(merged) : undefined, comments: commentList.length ? commentList : undefined }
   }
+
+  const out: DocxParagraph[] = []
+  const push = (x: DocxParagraph | null) => x && out.push(x)
+  // Walk the body in order: paragraphs (and any text boxes inside them), tables row by row,
+  // and through content controls and other wrappers.
+  const visit = (node: Element) => {
+    for (let n = node.firstChild; n; n = n.nextSibling) {
+      const el = n as Element
+      if (el.nodeType !== 1 || el.namespaceURI !== W) continue
+      if (el.localName === 'p') {
+        push(read(el))
+        for (const inner of Array.from(el.getElementsByTagNameNS(W, 'p'))) push(read(inner))
+      } else if (el.localName === 'tbl') {
+        for (const tr of Array.from(el.childNodes).filter((x) => (x as Element).localName === 'tr') as Element[]) row(tr)
+      } else if (el.localName !== 'sectPr') visit(el)
+    }
+  }
+  /**
+   * A key-terms row ("Governing Law | The laws of the State of …") becomes one line, cells joined
+   * with " — ", so each term is reviewed as its own clause. Rows holding numbered clauses, or long
+   * text (tables used for layout), stay as separate paragraphs.
+   */
+  const row = (tr: Element) => {
+    const cells = (Array.from(tr.childNodes).filter((x) => (x as Element).localName === 'tc') as Element[]).map((tc) =>
+      Array.from(tc.getElementsByTagNameNS(W, 'p')).map(read).filter((x): x is DocxParagraph => !!x)
+    )
+    const all = cells.flat()
+    const filled = cells.filter((c) => c.some((x) => x.text))
+    const length = all.reduce((n, x) => n + x.text.length, 0)
+    if (filled.length < 2 || length > 600 || all.some((x) => x.deleted || /^\d{1,2}(\.\d{1,2})+\.?\s|^\d{1,2}\.\s/.test(x.text))) {
+      all.forEach(push)
+      return
+    }
+    const segments: TrackedSegment[] = []
+    filled.forEach((cell, ci) => {
+      if (ci) segments.push({ op: 'same', text: ' — ' })
+      cell.filter((x) => x.text).forEach((x, pi) => {
+        if (pi) segments.push({ op: 'same', text: ' ' })
+        segments.push(...(x.segments ?? [{ op: 'same' as const, text: x.text }]))
+      })
+    })
+    // A comment spanning cells is anchored in more than one of them: list it once.
+    const comments = [...new Map(all.flatMap((x) => x.comments ?? []).map((c) => [c.id, c])).values()]
+    out.push({
+      text: filled.map((c) => c.map((x) => x.text).filter(Boolean).join(' ')).join(' — '),
+      segments: all.some((x) => x.segments) ? segments : undefined,
+      comments: comments.length ? comments : undefined,
+      row: true
+    })
+  }
+  const body = doc.getElementsByTagNameNS(W, 'body')[0]
+  if (body) visit(body)
   return out
 }
 
@@ -83,6 +140,137 @@ function walk(node: Element, track: Track, out: TrackedSegment[], anchored: Set<
         walk(el, track, out, anchored)
     }
   }
+}
+
+// ---- automatic numbering ------------------------------------------------------------------
+
+interface Level {
+  start: number
+  fmt: string
+  text: string
+  legal: boolean
+}
+
+/**
+ * Word list numbering: each numbered paragraph points at a list (numId) and a
+ * level; numbering.xml says how that level is counted and printed ("%1.%2").
+ * Numbering can also come from the paragraph's style (common for headings).
+ * Counting follows Word: a level counts up, deeper levels restart under it.
+ */
+export async function readNumbering(zip: JSZip) {
+  const xml = await zip.file('word/numbering.xml')?.async('string')
+  const stylesXml = await zip.file('word/styles.xml')?.async('string')
+  const abstract = new Map<string, Map<number, Level>>()
+  const nums = new Map<string, { abstractId: string; starts: Map<number, number> }>()
+  if (xml) {
+    const doc = new DOMParser().parseFromString(xml, 'text/xml')
+    for (const a of Array.from(doc.getElementsByTagNameNS(W, 'abstractNum'))) {
+      const levels = new Map<number, Level>()
+      for (const l of Array.from(a.getElementsByTagNameNS(W, 'lvl'))) {
+        levels.set(Number(l.getAttributeNS(W, 'ilvl')), {
+          start: Number(val(l, 'start') ?? 1),
+          fmt: val(l, 'numFmt') ?? 'decimal',
+          text: val(l, 'lvlText') ?? '',
+          legal: l.getElementsByTagNameNS(W, 'isLgl').length > 0
+        })
+      }
+      abstract.set(a.getAttributeNS(W, 'abstractNumId') ?? '', levels)
+    }
+    for (const n of Array.from(doc.getElementsByTagNameNS(W, 'num'))) {
+      const starts = new Map<number, number>()
+      for (const o of Array.from(n.getElementsByTagNameNS(W, 'lvlOverride'))) {
+        const so = val(o, 'startOverride')
+        if (so !== null) starts.set(Number(o.getAttributeNS(W, 'ilvl')), Number(so))
+      }
+      nums.set(n.getAttributeNS(W, 'numId') ?? '', { abstractId: val(n, 'abstractNumId') ?? '', starts })
+    }
+  }
+
+  // Paragraph styles that carry numbering, following basedOn.
+  const styles = new Map<string, { numId?: string; ilvl?: number; basedOn?: string }>()
+  if (stylesXml) {
+    const doc = new DOMParser().parseFromString(stylesXml, 'text/xml')
+    for (const st of Array.from(doc.getElementsByTagNameNS(W, 'style'))) {
+      const numPr = st.getElementsByTagNameNS(W, 'numPr')[0]
+      styles.set(st.getAttributeNS(W, 'styleId') ?? '', {
+        numId: numPr ? val(numPr, 'numId') ?? undefined : undefined,
+        ilvl: numPr && val(numPr, 'ilvl') !== null ? Number(val(numPr, 'ilvl')) : undefined,
+        basedOn: val(st, 'basedOn') ?? undefined
+      })
+    }
+  }
+  const fromStyle = (id: string | null) => {
+    const out: { numId?: string; ilvl?: number } = {}
+    for (let i = 0, cur = id; cur && i < 10; i++) {
+      const st = styles.get(cur)
+      if (!st) break
+      out.numId ??= st.numId
+      out.ilvl ??= st.ilvl
+      cur = st.basedOn ?? null
+    }
+    return out
+  }
+
+  // Counters per list. Lists sharing an abstract definition continue each other unless restarted.
+  const counters = new Map<string, number[]>()
+  return {
+    label(p: Element, skip: boolean): string {
+      const pPr = Array.from(p.childNodes).find((n) => (n as Element).localName === 'pPr') as Element | undefined
+      if (!pPr) return ''
+      const numPr = Array.from(pPr.childNodes).find((n) => (n as Element).localName === 'numPr') as Element | undefined
+      const style = fromStyle(Array.from(pPr.childNodes).find((n) => (n as Element).localName === 'pStyle') ? val(pPr, 'pStyle') : null)
+      const numId = (numPr && val(numPr, 'numId')) ?? style.numId
+      const ilvl = Number((numPr && val(numPr, 'ilvl')) ?? style.ilvl ?? 0)
+      if (!numId || numId === '0' || skip) return ''
+      const num = nums.get(numId)
+      const levels = num && abstract.get(num.abstractId)
+      const level = levels?.get(ilvl)
+      if (!num || !levels || !level || level.fmt === 'bullet' || level.fmt === 'none') return ''
+      const key = num.starts.size ? `n${numId}` : `a${num.abstractId}`
+      const startOf = (l: number) => num.starts.get(l) ?? levels.get(l)?.start ?? 1
+      const c = counters.get(key) ?? []
+      for (let l = 0; l < ilvl; l++) c[l] ??= startOf(l)
+      c[ilvl] = c[ilvl] === undefined ? startOf(ilvl) : c[ilvl] + 1
+      c.length = ilvl + 1 // deeper levels restart
+      counters.set(key, c)
+      return level.text.replace(/%(\d)/g, (_, d) => {
+        const l = Number(d) - 1
+        const fmt = level.legal ? 'decimal' : levels.get(l)?.fmt ?? 'decimal'
+        return format(c[l] ?? startOf(l), fmt)
+      }).trim()
+    }
+  }
+}
+
+const val = (el: Element, child: string): string | null => {
+  const c = el.getElementsByTagNameNS(W, child)[0]
+  return c ? c.getAttributeNS(W, 'val') : null
+}
+
+function format(n: number, fmt: string): string {
+  switch (fmt) {
+    case 'lowerLetter':
+    case 'upperLetter': {
+      const ch = String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1)
+      return fmt === 'upperLetter' ? ch.toUpperCase() : ch
+    }
+    case 'lowerRoman':
+    case 'upperRoman': {
+      const r = roman(n)
+      return fmt === 'upperRoman' ? r : r.toLowerCase()
+    }
+    case 'decimalZero':
+      return String(n).padStart(2, '0')
+    default:
+      return String(n)
+  }
+}
+
+function roman(n: number): string {
+  const table: [number, string][] = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
+  let out = ''
+  for (const [v, s] of table) while (n >= v) (out += s), (n -= v)
+  return out
 }
 
 async function readComments(zip: JSZip): Promise<Map<string, DocComment>> {
