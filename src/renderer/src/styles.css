@@ -528,8 +528,8 @@ del.rl-del { color: #1d4ed8; text-decoration: line-through; text-decoration-colo
 .redline-their { color: var(--text-2); font-size: 12.5px; border-left: 2px solid var(--border-strong); padding-left: 8px; }
 
 /* ---- document review: the contract as written, decorated ---------------------------------- */
-.dr-wrap { flex: 1; min-height: 0; overflow-y: auto; background: color-mix(in srgb, var(--border) 45%, var(--surface-2)); position: relative; }
-.dr-doc { max-width: 860px; margin: 24px auto 120px; padding: 48px 0 64px; background: var(--surface); box-shadow: var(--shadow-lg); border-radius: 4px; }
+.dr-wrap { flex: 1; min-height: 0; overflow-y: auto; background: var(--surface); position: relative; }
+.dr-doc { max-width: 860px; margin: 0 auto; padding: 40px 0 120px; background: var(--surface); }
 .dr-row { padding: 0 64px; }
 .dr-block { position: relative; font: 15px/1.6 Georgia, 'Times New Roman', serif; color: var(--text); padding: 5px 14px; margin: 2px 0; border-left: 3px solid transparent; border-radius: 2px; cursor: text; }
 .dr-block.quiet { color: var(--text-2); }
