@@ -705,3 +705,11 @@ del.us-del ins.th-ins { color: inherit; }
 .sel-st { font-size: 11px; font-weight: 600; color: var(--text-2); }
 .sel-st.accepted { color: var(--exact); }
 .sel-st.rejected { color: var(--rejected); }
+
+.rc-actions .btn.on { background: var(--surface-2); border-color: var(--text-3); }
+.hist-list { display: flex; flex-direction: column; gap: 8px; }
+.hist-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12.5px; }
+.hist-item.undone .hist-label { color: var(--text-3); text-decoration: line-through; }
+.hist-label { font-weight: 600; line-height: 1.4; }
+.hist-meta { font-size: 11.5px; }
+.hist-confirm ul { margin: 4px 0 6px; padding-left: 18px; }

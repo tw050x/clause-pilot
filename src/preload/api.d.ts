@@ -38,7 +38,7 @@ export interface Api {
   email: { draft(id: string): Promise<EmailDraft> }
   doc: {
     /** Our wording for a paragraph; null clears it. */
-    edit(id: string, blockId: string, text: string | null): Promise<ReviewSession>
+    edit(id: string, blockId: string, text: string | null, group?: string): Promise<ReviewSession>
     /** Undo their changes in a change set, as our redline. */
     revert(id: string, setId: string): Promise<ReviewSession>
     decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
@@ -47,9 +47,12 @@ export interface Api {
     /** Enter: split a paragraph at the caret; the rest goes into a new paragraph of ours. */
     split(id: string, blockId: string, head: string, tail: string): Promise<{ session: ReviewSession; id: string }>
     /** Accept or reject one of their changes (segment index in the paragraph's redline); null reopens it. */
-    resolve(id: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null): Promise<ReviewSession>
+    resolve(id: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string): Promise<ReviewSession>
     /** Undo one of our own changes (mark index in the paragraph as shown). */
-    undoOurs(id: string, blockId: string, mark: number): Promise<ReviewSession>
+    undoOurs(id: string, blockId: string, mark: number, group?: string): Promise<ReviewSession>
+    /** Undo an action in the history (and later ones that depend on it). */
+    undo(id: string, actionId: string): Promise<ReviewSession>
+    redo(id: string, actionId: string): Promise<ReviewSession>
     /** Remove a paragraph we added. */
     unsplit(id: string, blockId: string): Promise<ReviewSession>
     /** Earlier negotiations per change set (identical first, then similar). */

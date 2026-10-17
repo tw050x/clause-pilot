@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
 import { applicable, applyScriptedChanges, changeInput, createDocSession, toChangeReview, type ScriptedChange } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
+import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_MODEL = 'claude-opus-5-5'
@@ -399,6 +400,63 @@ ipcMain.handle('email:draft', async (_e, sessionId: string): Promise<EmailDraft>
 
 // ---- IPC: document review (edits, comments, change-set decisions) ---------------------------
 
+/**
+ * Run a change to a review as one undoable action: the facets it changed are recorded. With a
+ * group (a selection, typing in one paragraph), it merges into the previous action if that
+ * was the same group.
+ */
+function tracked<T>(s: ReviewSession, group: string | undefined, fn: () => T): T {
+  const d = s.doc!
+  const before = snapshot(d)
+  const out = fn()
+  const ch = diff(before, snapshot(d))
+  if (!Object.keys(ch.after).length) return out
+  d.history ??= []
+  const last = d.history[d.history.length - 1]
+  const at = new Date().toISOString()
+  if (group && last && last.group === group && !last.undone) {
+    for (const k of Object.keys(ch.after)) {
+      if (!(k in last.before)) last.before[k] = ch.before[k]
+      last.after[k] = ch.after[k]
+    }
+    for (const k of Object.keys(last.after)) if (same(last.before[k], last.after[k])) {
+      delete last.before[k]
+      delete last.after[k]
+    }
+    last.at = at
+    if (!Object.keys(last.after).length) d.history.pop()
+  } else d.history.push({ id: `a${Date.now().toString(36)}${d.history.length}`, group, at, by: actor(), before: ch.before, after: ch.after })
+  return out
+}
+
+/** Undo an action, and any later ones that depend on it (they changed the same text). */
+ipcMain.handle('doc:undo', (_e, sessionId: string, actionId: string) => {
+  const { s, d } = docOf(sessionId)
+  const a = d.history?.find((x) => x.id === actionId)
+  if (!a || a.undone) throw new Error('Nothing to undo.')
+  const chain = [...dependents(d.history!, a).reverse(), a]
+  for (const x of chain) {
+    apply(d, x.before)
+    x.undone = true
+  }
+  ws.audit.append(actor(), 'doc.undone', s.id, { actions: chain.map((x) => describe(d, x)) })
+  persist(s)
+  return s
+})
+
+/** Redo an undone action, if nothing has changed the same text since. */
+ipcMain.handle('doc:redo', (_e, sessionId: string, actionId: string) => {
+  const { s, d } = docOf(sessionId)
+  const a = d.history?.find((x) => x.id === actionId)
+  if (!a?.undone) throw new Error('Nothing to redo.')
+  if (!canRedo(d, a)) throw new Error('Something has changed the same text since, so this can’t be redone.')
+  apply(d, a.after)
+  a.undone = false
+  ws.audit.append(actor(), 'doc.redone', s.id, { action: describe(d, a) })
+  persist(s)
+  return s
+})
+
 const OLD_REVIEW = 'This review was made with an earlier version of Clause Pilot. Upload the draft again to review it.'
 function docOf(sessionId: string) {
   const s = session(sessionId)
@@ -427,18 +485,22 @@ const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 const clean = (t: string) => t.replace(/\u00a0/g, ' ').replace(/[\r\n]+/g, ' ')
 
 /** Our wording for a paragraph (null clears our edit). Saving their wording unchanged clears it too. */
-ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string | null) => {
-  const { s, d } = docOf(sessionId)
-  const b = d.blocks.find((x) => x.id === blockId)
-  if (!b) throw new Error('Unknown paragraph.')
-  const next = text === null ? null : clean(text)
-  const same = next === null || (!b.ours && b.kind !== 'deleted' && tidy(next) === tidy(shownText(marksFor({ ...d, edits: {} }, b))))
-  if (same) delete d.edits[blockId]
-  else d.edits[blockId] = next
-  ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
-  recordTouching(s, blockId)
-  persist(s)
-  return s
+ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string | null, group?: string) => {
+  const out = tracked(session(sessionId), group, () => {
+    const { s, d } = docOf(sessionId)
+    const b = d.blocks.find((x) => x.id === blockId)
+    if (!b) throw new Error('Unknown paragraph.')
+    const next = text === null ? null : clean(text)
+    const same = next === null || (!b.ours && b.kind !== 'deleted' && tidy(next) === tidy(shownText(marksFor({ ...d, edits: {} }, b))))
+    if (same) delete d.edits[blockId]
+    else d.edits[blockId] = next
+    ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
+    recordTouching(s, blockId)
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /**
@@ -446,78 +508,94 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
  * of ours, after it, gets the rest. Both are our tracked changes.
  */
 ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string) => {
-  const { s, d } = docOf(sessionId)
-  const at = d.blocks.findIndex((x) => x.id === blockId)
-  if (at < 0) throw new Error('Unknown paragraph.')
-  const b = d.blocks[at]
-  const id = `n${Date.now().toString(36)}`
-  d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level })
-  const keep = clean(head)
-  if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep
-  else delete d.edits[blockId]
-  d.edits[id] = clean(tail)
-  ws.audit.append(actor(), 'doc.paragraph-added', s.id, { after: blockWhere(s, blockId) })
-  persist(s)
-  return { session: s, id }
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const at = d.blocks.findIndex((x) => x.id === blockId)
+    if (at < 0) throw new Error('Unknown paragraph.')
+    const b = d.blocks[at]
+    const id = `n${Date.now().toString(36)}`
+    d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level })
+    const keep = clean(head)
+    if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep
+    else delete d.edits[blockId]
+    d.edits[id] = clean(tail)
+    ws.audit.append(actor(), 'doc.paragraph-added', s.id, { after: blockWhere(s, blockId) })
+    persist(s)
+    return { session: s, id }
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /** Remove a paragraph we added. */
 ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
-  const { s, d } = docOf(sessionId)
-  const b = d.blocks.find((x) => x.id === blockId)
-  if (!b?.ours) throw new Error('Only paragraphs you added can be removed.')
-  d.blocks = d.blocks.filter((x) => x.id !== blockId)
-  delete d.edits[blockId]
-  d.comments = d.comments.filter((c) => c.blockId !== blockId)
-  ws.audit.append(actor(), 'doc.paragraph-removed', s.id, {})
-  persist(s)
-  return s
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const b = d.blocks.find((x) => x.id === blockId)
+    if (!b?.ours) throw new Error('Only paragraphs you added can be removed.')
+    d.blocks = d.blocks.filter((x) => x.id !== blockId)
+    delete d.edits[blockId]
+    d.comments = d.comments.filter((c) => c.blockId !== blockId)
+    ws.audit.append(actor(), 'doc.paragraph-removed', s.id, {})
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /**
  * Accept or reject one of their changes (null: undecided again), as in Word. A tracked change is
  * resolved in the file; a change found by comparison can't be, so rejecting it is our edit.
  */
-ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null) => {
-  const { s, d } = docOf(sessionId)
-  const b = d.blocks.find((x) => x.id === blockId)
-  if (!b || !segmentsOf(b)[seg] || segmentsOf(b)[seg].op === 'same') throw new Error('Unknown change.')
-  const key = changeKey(blockId, seg)
-  if (outcome === 'accepted' && s.injection[blockId] && alertFor(s.id)?.status !== 'false-positive')
-    throw new Error('This paragraph is on security hold: text in it is addressed to an AI reviewer.')
-  const before = marksFor(d, b)
-  const edit = d.edits[blockId]
-  d.resolved ??= {}
-  if (b.untracked && outcome === 'rejected') {
-    d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
-    delete d.resolved[key]
-  } else {
-    if (outcome) d.resolved[key] = outcome
-    else delete d.resolved[key]
-    if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
-  }
-  // Our wording that now matches the text as it stands isn't an edit any more.
-  const plain = shownText(marksFor({ ...d, edits: {} }, b))
-  if (d.edits[blockId] !== undefined && tidy(d.edits[blockId]) === tidy(plain) && !b.ours) delete d.edits[blockId]
-  ws.audit.append(actor(), outcome ? `doc.change-${outcome}` : 'doc.change-reopened', s.id, { block: blockWhere(s, blockId), change: segmentsOf(b)[seg].text.slice(0, 80), op: segmentsOf(b)[seg].op })
-  persist(s)
-  return s
+ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string) => {
+  const out = tracked(session(sessionId), group, () => {
+    const { s, d } = docOf(sessionId)
+    const b = d.blocks.find((x) => x.id === blockId)
+    if (!b || !segmentsOf(b)[seg] || segmentsOf(b)[seg].op === 'same') throw new Error('Unknown change.')
+    const key = changeKey(blockId, seg)
+    if (outcome === 'accepted' && s.injection[blockId] && alertFor(s.id)?.status !== 'false-positive')
+      throw new Error('This paragraph is on security hold: text in it is addressed to an AI reviewer.')
+    const before = marksFor(d, b)
+    const edit = d.edits[blockId]
+    d.resolved ??= {}
+    if (b.untracked && outcome === 'rejected') {
+      d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
+      delete d.resolved[key]
+    } else {
+      if (outcome) d.resolved[key] = outcome
+      else delete d.resolved[key]
+      if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
+    }
+    // Our wording that now matches the text as it stands isn't an edit any more.
+    const plain = shownText(marksFor({ ...d, edits: {} }, b))
+    if (d.edits[blockId] !== undefined && tidy(d.edits[blockId]) === tidy(plain) && !b.ours) delete d.edits[blockId]
+    ws.audit.append(actor(), outcome ? `doc.change-${outcome}` : 'doc.change-reopened', s.id, { block: blockWhere(s, blockId), change: segmentsOf(b)[seg].text.slice(0, 80), op: segmentsOf(b)[seg].op })
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /** Undo one of our own changes (an insertion or deletion of ours) in a paragraph. */
-ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: number) => {
-  const { s, d } = docOf(sessionId)
-  const b = d.blocks.find((x) => x.id === blockId)
-  if (!b || d.edits[blockId] === undefined) throw new Error('Nothing to undo.')
-  const marks = marksFor(d, b)
-  if (!marks[mark]?.ours) throw new Error('That isn’t one of your changes.')
-  const next = textWithout(marks, (_m, i) => i === mark)
-  const plain = shownText(marksFor({ ...d, edits: {} }, b))
-  if (!b.ours && tidy(next) === tidy(plain)) delete d.edits[blockId]
-  else d.edits[blockId] = next
-  ws.audit.append(actor(), 'doc.edit-undone', s.id, { block: blockWhere(s, blockId), text: marks[mark].text.slice(0, 80) })
-  persist(s)
-  return s
+ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: number, group?: string) => {
+  const out = tracked(session(sessionId), group, () => {
+    const { s, d } = docOf(sessionId)
+    const b = d.blocks.find((x) => x.id === blockId)
+    if (!b || d.edits[blockId] === undefined) throw new Error('Nothing to undo.')
+    const marks = marksFor(d, b)
+    if (!marks[mark]?.ours) throw new Error('That isn’t one of your changes.')
+    const next = textWithout(marks, (_m, i) => i === mark)
+    const plain = shownText(marksFor({ ...d, edits: {} }, b))
+    if (!b.ours && tidy(next) === tidy(plain)) delete d.edits[blockId]
+    else d.edits[blockId] = next
+    ws.audit.append(actor(), 'doc.edit-undone', s.id, { block: blockWhere(s, blockId), text: marks[mark].text.slice(0, 80) })
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /** Undo their changes in a change set: restore what was there before, as our redline. */
@@ -554,24 +632,32 @@ ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: Chan
 })
 
 ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>) => {
-  const { s, d } = docOf(sessionId)
-  if (!c.text.trim()) throw new Error('Write a comment first.')
-  const comment: OurComment = { id: `oc-${Date.now().toString(36)}`, blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
-  d.comments.push(comment)
-  ws.audit.append(actor(), 'doc.commented', s.id, { block: blockWhere(s, c.blockId), text: comment.text, replyTo: c.replyTo ?? null })
-  recordTouching(s, c.blockId)
-  persist(s)
-  return s
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    if (!c.text.trim()) throw new Error('Write a comment first.')
+    const comment: OurComment = { id: `oc-${Date.now().toString(36)}`, blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
+    d.comments.push(comment)
+    ws.audit.append(actor(), 'doc.commented', s.id, { block: blockWhere(s, c.blockId), text: comment.text, replyTo: c.replyTo ?? null })
+    recordTouching(s, c.blockId)
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
-  const { s, d } = docOf(sessionId)
-  const gone = d.comments.find((c) => c.id === commentId)
-  d.comments = d.comments.filter((c) => c.id !== commentId)
-  ws.audit.append(actor(), 'doc.comment-deleted', s.id, { commentId })
-  if (gone) recordTouching(s, gone.blockId)
-  persist(s)
-  return s
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const gone = d.comments.find((c) => c.id === commentId)
+    d.comments = d.comments.filter((c) => c.id !== commentId)
+    ws.audit.append(actor(), 'doc.comment-deleted', s.id, { commentId })
+    if (gone) recordTouching(s, gone.blockId)
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
 })
 
 /** Earlier negotiations for each change set: the identical change first, then similar ones. */

@@ -223,7 +223,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     if (!p) return
     const b = d.blocks.find((x) => x.id === id)
     const text = visibleText(p)
-    act(window.api.doc.edit(sessionId.current, id, b?.kind === 'deleted' ? text.replace(/^\s+/, '') : text))
+    // Typing in one paragraph, without working anywhere else in between, is one action.
+    act(window.api.doc.edit(sessionId.current, id, b?.kind === 'deleted' ? text.replace(/^\s+/, '') : text, `type:${id}`))
   }
   const schedule = (id: string) => {
     window.clearTimeout(pending.current.get(id))
@@ -337,6 +338,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     }
     /** Replace the selected text, which may run over several paragraphs, with `typed`. A paragraph wholly inside is struck. */
     const replaceAcross = (sp: HTMLElement, ep: HTMLElement, a: number, z: number, typed: string) => {
+      const group = `range:${Date.now().toString(36)}`
       const ps = Array.from(el.querySelectorAll<HTMLElement>('p[data-block]'))
       const from = ps.indexOf(sp)
       const to = ps.indexOf(ep)
@@ -351,7 +353,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         window.clearTimeout(pending.current.get(id))
         pending.current.delete(id)
         force.current.set(id, { text: next, caret: i === from ? a + typed.length : null })
-        act(window.api.doc.edit(sessionId.current, id, next))
+        act(window.api.doc.edit(sessionId.current, id, next, group))
       }
     }
     const onInput = () => {

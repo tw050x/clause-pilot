@@ -7,6 +7,7 @@ import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, type SelectedChange } from '../components/DocEditor'
+import { canRedo, dependents, describe } from '@shared/history'
 
 interface Props {
   session: ReviewSession
@@ -35,6 +36,16 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const [redlineOpen, setRedlineOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<SelectedChange[] | null>(null)
+  /** Each new selection is a new action: everything decided in it undoes together. */
+  const [selection, setSelection] = useState(0)
+  const [showHistory, setShowHistory] = useState(false)
+  const onSelectChanges = useCallback((x: SelectedChange[] | null) => {
+    setPicked(x)
+    if (x) {
+      setSelection((n) => n + 1)
+      setShowHistory(false)
+    }
+  }, [])
 
   useEffect(() => {
     setFocus(null)
@@ -118,6 +129,9 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           </div>
         )}
         <div className="rc-actions">
+          <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
+            <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
+          </button>
           <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
             <Icon name="doc" size={14} /> Marked-up copy
           </button>
@@ -127,8 +141,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         </div>
       </section>
 
-      {picked && picked.length > 0 ? (
-        <SelectionPanel session={session} picked={picked} act={act} />
+      {showHistory ? (
+        <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} />
+      ) : picked && picked.length > 0 ? (
+        <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} />
       ) : block ? (
         <ParagraphPanel key={block.id} session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
       ) : (
@@ -152,7 +168,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         session={session}
         act={act}
         onFocusBlock={onFocusBlock}
-        onSelectChanges={setPicked}
+        onSelectChanges={onSelectChanges}
         onComment={(blockId, quote) => {
           setFocus(blockId)
           setDraft({ blockId, quote })
@@ -171,7 +187,7 @@ const where = (b: DocBlock) => (b.ours ? 'New paragraph' : b.label ? `§${b.labe
 const snippet = (t: string) => (t.length > 140 ? `${t.slice(0, 140).trimEnd()}…` : t)
 
 /** Only the redlines you selected: accept or reject each of theirs, undo any of yours. */
-function SelectionPanel({ session, picked, act }: { session: ReviewSession; picked: SelectedChange[]; act: (p: Promise<ReviewSession>) => Promise<boolean> }) {
+function SelectionPanel({ session, picked, act, group }: { session: ReviewSession; picked: SelectedChange[]; act: (p: Promise<ReviewSession>) => Promise<boolean>; group: string }) {
   const d = session.doc!
   const blocks = new Map(d.blocks.map((b) => [b.id, b]))
   const items = picked.filter((x) => blocks.has(x.blockId))
@@ -187,12 +203,19 @@ function SelectionPanel({ session, picked, act }: { session: ReviewSession; pick
   }
   const open = theirs.filter((x) => statusOf(x) === 'open')
   const all = async (outcome: 'accepted' | 'rejected') => {
-    for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome)))) return
+    for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome, group)))) return
   }
+  // What's been done with this selection is one action, undone together.
+  const action = d.history?.find((a) => a.group === group && !a.undone)
   return (
     <section className="rc-section">
       <h4 className="rp-h">
         {items.length} change{items.length === 1 ? '' : 's'} selected
+        {action && (
+          <button className="btn sm" title={describe(d, action)} onClick={() => act(window.api.doc.undo(session.id, action.id))}>
+            Undo
+          </button>
+        )}
       </h4>
       {open.length > 1 && (
         <div className="dr-card-actions">
@@ -225,17 +248,13 @@ function SelectionPanel({ session, picked, act }: { session: ReviewSession; pick
                 <div className="row-gap">
                   {st === 'open' ? (
                     <>
-                      <button className="btn sm accept" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'accepted'))}>
+                      <button className="btn sm accept" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'accepted', group))}>
                         <Icon name="check" size={13} /> Accept
                       </button>
-                      <button className="btn sm reject" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'rejected'))}>
+                      <button className="btn sm reject" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'rejected', group))}>
                         Reject
                       </button>
                     </>
-                  ) : d.resolved?.[changeKey(x.blockId, x.seg)] ? (
-                    <button className="link-btn" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, null))}>
-                      Undo
-                    </button>
                   ) : null}
                 </div>
               </div>
@@ -248,14 +267,91 @@ function SelectionPanel({ session, picked, act }: { session: ReviewSession; pick
                 <strong>{where(b)}</strong>
                 <span className="faint">{x.op === 'ins' ? 'Inserted' : 'Deleted'} by you</span>
                 <span style={{ flex: 1 }} />
-                {at < 0 && <span className="sel-st">Undone</span>}
+                {at < 0 && <span className="sel-st">Reverted</span>}
               </div>
               <div className="sel-text">{x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}</div>
               {at >= 0 && (
                 <div className="row-gap">
-                  <button className="btn sm ghost" onClick={() => act(window.api.doc.undoOurs(session.id, x.blockId, at))}>
-                    Undo
+                  <button className="btn sm ghost" onClick={() => act(window.api.doc.undoOurs(session.id, x.blockId, at, group))}>
+                    Revert
                   </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// ---- history: undo and redo by action ------------------------------------------------------------
+
+function HistoryPanel({ session, act, onClose }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onClose: () => void }) {
+  const d = session.doc!
+  const history = [...(d.history ?? [])].reverse()
+  const [confirm, setConfirm] = useState<string | null>(null)
+  return (
+    <section className="rc-section">
+      <h4 className="rp-h">
+        History
+        <button className="link-btn" onClick={onClose}>
+          Close
+        </button>
+      </h4>
+      {!history.length && <p className="faint dr-small">Nothing yet. Each selection you accept or reject in, and each stretch of typing in a paragraph, becomes one action here that you can undo.</p>}
+      <div className="hist-list">
+        {history.map((a) => {
+          const deps = a.undone ? [] : dependents(d.history!, a)
+          const redoable = a.undone && canRedo(d, a)
+          return (
+            <div key={a.id} className={`hist-item ${a.undone ? 'undone' : ''}`}>
+              <div className="hist-label">{describe(d, a)}</div>
+              <div className="hist-meta faint">
+                {a.by} · {new Date(a.at).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                {a.undone && ' · undone'}
+              </div>
+              {confirm === a.id ? (
+                <div className="hist-confirm">
+                  <p className="dr-small">
+                    Later action{deps.length === 1 ? '' : 's'} changed the same text, so {deps.length === 1 ? 'it has' : 'they have'} to be undone too:
+                  </p>
+                  <ul>
+                    {deps.map((x) => (
+                      <li key={x.id}>{describe(d, x)}</li>
+                    ))}
+                  </ul>
+                  <div className="row-gap">
+                    <button
+                      className="btn sm primary"
+                      onClick={async () => {
+                        if (await act(window.api.doc.undo(session.id, a.id))) setConfirm(null)
+                      }}
+                    >
+                      Undo all {deps.length + 1}
+                    </button>
+                    <button className="btn sm ghost" onClick={() => setConfirm(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row-gap">
+                  {!a.undone && (
+                    <button className="btn sm" onClick={() => (deps.length ? setConfirm(a.id) : act(window.api.doc.undo(session.id, a.id)))}>
+                      Undo{deps.length ? ` (+${deps.length} later)` : ''}
+                    </button>
+                  )}
+                  {a.undone && (
+                    <button
+                      className="btn sm"
+                      disabled={!redoable}
+                      title={redoable ? undefined : 'Something has changed the same text since, so this can’t be redone.'}
+                      onClick={() => act(window.api.doc.redo(session.id, a.id))}
+                    >
+                      Redo
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -321,7 +417,7 @@ function ParagraphPanel({
         )}
         {!b.ours && edit !== undefined && (
           <button className="btn sm ghost" onClick={() => act(window.api.doc.edit(session.id, b.id, null))}>
-            Undo my edits here
+            Revert my edits here
           </button>
         )}
         {b.ours && (

@@ -365,6 +365,20 @@ export interface DocReview {
   nominated?: string[]
   /** Their individual tracked changes accepted or rejected, keyed "blockId:segmentIndex". */
   resolved?: Record<string, 'accepted' | 'rejected'>
+  /** What was done, action by action, for undo and redo (see shared/history.ts). */
+  history?: HistoryAction[]
+}
+
+/** One action in a review's undo history: the state it changed, before and after. */
+export interface HistoryAction {
+  id: string
+  /** Actions with the same group, one straight after another, are one action (a selection, typing in one paragraph). */
+  group?: string
+  at: string
+  by: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  undone?: boolean
 }
 
 export interface ReviewSession {
