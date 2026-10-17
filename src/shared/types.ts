@@ -21,6 +21,8 @@ export interface DocComment {
   text: string
   /** The text in this paragraph the comment is anchored to in Word (its comment range), as proposed. */
   quote?: string
+  /** Marked resolved ("done") in their file. */
+  done?: boolean
 }
 
 export interface Clause {
@@ -388,10 +390,23 @@ export interface DocReview {
   history?: HistoryAction[]
   /** AI checks, on request, of whether a paragraph means the same as our approved wording. */
   intent?: Record<string, IntentCheck>
+  /**
+   * Comment threads resolved (or reopened) here, by the id of the thread's first comment, theirs
+   * or ours. As in Word, a resolved comment stays in the document, greyed out and unhighlighted.
+   * `done: false` reopens one they had resolved in their file.
+   */
+  commentsDone?: Record<string, CommentDone>
   /** Paragraphs with nothing to accept or reject that the reviewer has read and marked as checked. */
   checked?: Record<string, CheckedMark>
   /** The AI's check of the whole contract against each playbook position, when asked. */
   playbookCheck?: PlaybookCheck
+}
+
+/** A comment thread resolved or reopened, by whom and when. */
+export interface CommentDone {
+  done: boolean
+  by: string
+  at: string
 }
 
 /** A reviewer marked a paragraph as checked; it stands while the paragraph reads `text`. */

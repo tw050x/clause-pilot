@@ -58,6 +58,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
     - On 2.4: *We cannot accept a residuals clause.*
     - On 4.1: *We can meet you at four years.*
     - On 5.8: *English law is our standard for NDAs.*
+    Their comments are highlighted in yellow on the words they're about, and yours get an amber underline. Click highlighted text to see its comments. Once you've dealt with one of their comments, press ✓ on it to **resolve** it: it stays, greyed out, and its text is no longer highlighted.
 11. Optional: press **History** to see each action, with a preview. You can undo any of them and redo it again.
 12. Press **Marked-up copy**. The preview shows their Word file with your decisions applied, your edits as tracked changes in your name, and your comments. Press **Save .docx…** to keep it.
 13. Press **Draft response**. The email lists what you rejected and why (your comments), your four-year proposal ("four (4)" in place of "three (3)"), the restored assignment wording, and the changes you accepted.

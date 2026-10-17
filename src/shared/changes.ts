@@ -265,3 +265,18 @@ export const stillOpen = (doc: DocReview, b: DocBlock) => {
 /** Their changes we rejected, counted as the reader sees them (a replacement is one). */
 export const rejectedCount = (doc: DocReview) =>
   doc.blocks.reduce((n, b) => n + changeGroups(b).filter((g) => doc.resolved?.[changeKey(b.id, g[0])] === 'rejected').length, 0)
+
+/**
+ * Is a comment thread resolved? Our decision here if there is one, else what their file said.
+ * Replies follow the comment they reply to.
+ */
+export function commentResolved(doc: DocReview, c: { id: string; done?: boolean; replyTo?: string }): boolean {
+  const root = c.replyTo ?? c.id
+  const here = doc.commentsDone?.[root]
+  if (here) return here.done
+  if (c.replyTo) {
+    const parent = doc.blocks.flatMap((b) => b.comments ?? []).find((x) => x.id === c.replyTo)
+    return !!parent?.done
+  }
+  return !!c.done
+}

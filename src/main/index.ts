@@ -710,6 +710,29 @@ ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'block
   return out
 })
 
+/**
+ * Resolve a comment thread (theirs or ours) or reopen it, as Word does: it stays in the document,
+ * unhighlighted and greyed out, and goes into the marked-up copy marked done. One history action.
+ */
+ipcMain.handle('doc:resolveComment', (_e, sessionId: string, commentId: string, done: boolean) => {
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const theirs = d.blocks.flatMap((b) => b.comments ?? []).find((c) => c.id === commentId)
+    const ours = d.comments.find((c) => c.id === commentId)
+    if (!theirs && !ours) throw new Error('Unknown comment.')
+    d.commentsDone ??= {}
+    // Back to how their file had it: no override needed.
+    if (theirs && !!theirs.done === done) delete d.commentsDone[commentId]
+    else if (ours && !done) delete d.commentsDone[commentId]
+    else d.commentsDone[commentId] = { done, by: actor(), at: new Date().toISOString() }
+    ws.audit.append(actor(), done ? 'doc.comment-resolved' : 'doc.comment-reopened', s.id, { commentId, text: (theirs ?? ours)!.text.slice(0, 80) })
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
+})
+
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)

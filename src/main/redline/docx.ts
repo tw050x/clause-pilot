@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
 import type { DocBlock, DocReview, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
 import { labelsOf, parseLabel } from '../../shared/numbering'
-import { changeKey, changeSets, segmentsOf, statusOf } from '../../shared/changes'
+import { changeKey, changeSets, commentResolved, segmentsOf, statusOf } from '../../shared/changes'
 import { readNumbering } from '../ingest/docxTracked'
 import { diffWords } from '../../shared/diff'
 
@@ -138,11 +138,14 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     const b = d.blocks.find((x) => x.id === c.blockId)
     const paras = b ? parasOf(b) : []
     if (!b || !paras.length) continue
-    m.comment(paras, c.text, where(b), c.replyTo ? { id: Number(c.replyTo) } : null, c.quote ?? b.text, !!c.quote)
+    m.comment(paras, c.text, where(b), c.replyTo ? { id: Number(c.replyTo) } : null, c.quote ?? b.text, !!c.quote, commentResolved(d, c))
   }
+  // Their comments we resolved (or reopened) here: Word's done flag on the comment in their file.
+  const theirIds = new Set(d.blocks.flatMap((b) => (b.comments ?? []).map((c) => c.id)))
+  for (const [id, r] of Object.entries(d.commentsDone ?? {})) if (theirIds.has(id)) m.markDone(Number(id), r.done)
   stats.commentedOnly = d.comments.filter((c) => d.edits[c.blockId] === undefined).length
   stats.comments = m.added
-  if (m.added) await m.saveComments()
+  if (m.added || m.marked) await m.saveComments()
   await trackFurtherChanges(zip)
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc))
   const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
@@ -510,7 +513,7 @@ class Markup {
   }
 
   /** Add our comment on these paragraphs, or as a reply to `parent` (anchored on the same text). */
-  comment(paras: Element[], text: string, where: string, parent?: Comment | null, quote = '', onQuote = false) {
+  comment(paras: Element[], text: string, where: string, parent?: Comment | null, quote = '', onQuote = false, done = false) {
     const id = this.nextComment++
     this.added++
     this.log.push({ where, text, quote, author: this.author, replyTo: parent ? this.commentText(parent.id) : undefined })
@@ -531,11 +534,11 @@ class Markup {
       if (parentEnd) placeAfter(parentEnd, end)
       else placeBefore(parentRef.parentNode as Element, end)
       placeAfter(parentRef.parentNode as Element, refRun)
-      this.thread(paraId, this.parentParaId(parent.id))
+      this.thread(paraId, this.parentParaId(parent.id), done)
     } else if (onQuote && this.anchorOn(paras, quote, start, end)) {
       // On the words it was made on, as Word does when you comment on a selection.
       placeAfter(end, refRun)
-      this.thread(paraId, null)
+      this.thread(paraId, null, done)
     } else {
       const first = paras[0]
       const pPr = first.getElementsByTagNameNS(W, 'pPr')[0]
@@ -543,7 +546,7 @@ class Markup {
       const last = paras[paras.length - 1]
       last.appendChild(end)
       last.appendChild(refRun)
-      this.thread(paraId, null)
+      this.thread(paraId, null, done)
     }
   }
 
@@ -661,7 +664,20 @@ class Markup {
     return pid
   }
 
-  private thread(paraId: string, parent: string | null) {
+  /** Their comments marked done (or not) here. */
+  marked = 0
+
+  /** Mark one of their comments resolved (Word's done flag), or reopen it. */
+  markDone(id: number, done: boolean) {
+    const pid = this.parentParaId(id)
+    if (!pid) return
+    const ex = Array.from(this.extended?.getElementsByTagNameNS(W15, 'commentEx') ?? []).find((e) => e.getAttributeNS(W15, 'paraId') === pid)
+    if (ex) ex.setAttributeNS(W15, 'w15:done', done ? '1' : '0')
+    else this.thread(pid, null, done)
+    this.marked++
+  }
+
+  private thread(paraId: string, parent: string | null, done = false) {
     if (!this.extended) {
       this.extended = new DOMParser().parseFromString(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="${W15}" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w15"/>`,
@@ -671,7 +687,7 @@ class Markup {
     const ex = this.extended.createElementNS(W15, 'w15:commentEx')
     ex.setAttributeNS(W15, 'w15:paraId', paraId)
     if (parent) ex.setAttributeNS(W15, 'w15:paraIdParent', parent)
-    ex.setAttributeNS(W15, 'w15:done', '0')
+    ex.setAttributeNS(W15, 'w15:done', done ? '1' : '0')
     this.extended.documentElement!.appendChild(ex)
   }
 

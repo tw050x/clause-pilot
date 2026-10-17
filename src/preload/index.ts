@@ -52,6 +52,7 @@ const api: Api = {
     decide: (id, setId, status, note) => invoke('doc:decide', id, setId, status, note),
     comment: (id, c) => invoke('doc:comment', id, c),
     uncomment: (id, commentId) => invoke('doc:uncomment', id, commentId),
+    resolveComment: (id, commentId, done) => invoke('doc:resolveComment', id, commentId, done),
     split: (id, blockId, head, tail, newId, list) => invoke('doc:split', id, blockId, head, tail, newId, list),
     setList: (id, blockId, list) => invoke('doc:setList', id, blockId, list),
     unsplit: (id, blockId) => invoke('doc:unsplit', id, blockId),

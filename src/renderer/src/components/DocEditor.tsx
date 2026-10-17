@@ -5,9 +5,9 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
 import { history, undo, redo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
-import type { DocBlock, DocReview, ListStyle, OurComment, ReviewSession } from '@shared/types'
+import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
-import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
+import { aiSame, changeKey, commentResolved, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { CommentIcon } from '../lib/icons'
 
@@ -263,7 +263,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // in their file) and ours (the text selected when it was made). Found in the paragraph as it
         // now reads; if the words have changed since, there's nothing to highlight. Clicking the
         // highlight shows the comments.
-        for (const r of anchorRanges(b, d.comments, node.textContent))
+        for (const r of anchorRanges(d, b, node.textContent))
           decos.push(Decoration.inline(start + r.from, start + r.to, { class: `ed-anchor ${r.ours ? 'ours' : 'theirs'}`, 'data-anchor': b.id }))
       })
       return DecorationSet.create(state.doc, decos)
@@ -664,7 +664,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
 }
 
 /** Where in a paragraph's text (as now shown) its comments are anchored, theirs and ours. */
-function anchorRanges(b: DocBlock, ours: OurComment[], text: string): { from: number; to: number; ours: boolean }[] {
+function anchorRanges(d: DocReview, b: DocBlock, text: string): { from: number; to: number; ours: boolean }[] {
   const out: { from: number; to: number; ours: boolean }[] = []
   const find = (quote: string | undefined, isOurs: boolean) => {
     // No quote (a comment on the paragraph as a whole): the whole paragraph.
@@ -681,7 +681,8 @@ function anchorRanges(b: DocBlock, ours: OurComment[], text: string): { from: nu
     if (at < 0) at = flat.toLowerCase().indexOf(q.toLowerCase())
     if (at >= 0) out.push({ from: at, to: at + q.length, ours: isOurs })
   }
-  for (const c of b.comments ?? []) find(c.quote, false)
-  for (const c of ours) if (c.blockId === b.id) find(c.quote, true)
+  // Resolved threads stay in the document but aren't highlighted, as in Word.
+  for (const c of b.comments ?? []) if (!commentResolved(d, c)) find(c.quote, false)
+  for (const c of d.comments) if (c.blockId === b.id && !commentResolved(d, c)) find(c.quote, true)
   return out
 }

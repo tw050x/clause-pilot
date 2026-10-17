@@ -1,5 +1,5 @@
 import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
-import { changeGroups, changeKey, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { changeGroups, changeKey, commentResolved, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { labelOf } from '@shared/numbering'
 import { wordDiff } from './engine/text'
 
@@ -59,7 +59,8 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     const decided = (outcome: 'accepted' | 'rejected') => changeGroups(b).filter((g) => d.resolved?.[changeKey(b.id, g[0])] === outcome).map((g) => g.map((i) => segs[i]))
     const rejected = decided('rejected')
     const accepted = decided('accepted')
-    const notes = d.comments.filter((c) => c.blockId === b.id).map((c) => c.text)
+    // Our comments as the reasons; ones we've resolved are settled, so they're left out.
+    const notes = d.comments.filter((c) => c.blockId === b.id && !commentResolved(d, c)).map((c) => c.text)
     const edit = d.edits[b.id]
     // Wording of ours beyond what rejecting their changes already says.
     const plain = shownText(marksFor({ ...d, edits: {} }, b))

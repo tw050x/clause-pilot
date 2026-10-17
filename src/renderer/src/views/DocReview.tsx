@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, contractDigest, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, proposedText, segmentsOf, stillOpen, theyChanged } from '@shared/changes'
+import { aiSame, authorsOf, changeKey, contractDigest, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, proposedText, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -500,6 +500,12 @@ function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: strin
         {where} {item.added ? 'marked as checked' : 'unmarked'}: <span className="faint">{short(item.text)}</span>
       </div>
     )
+  if (item.kind === 'resolvedComment')
+    return (
+      <div className="hist-row">
+        {where} {item.done ? 'comment resolved' : 'comment reopened'}: <span className="hist-comment">“{short(item.text)}”</span>
+      </div>
+    )
   return (
     <div className="hist-row">
       {where} {item.added ? 'comment' : 'comment deleted'}: <span className="hist-comment">“{short(item.text)}”</span>
@@ -617,6 +623,9 @@ function ParagraphPanel({
   const last = d.lastRound?.[b.id]
   const toRead = needsReading(d, b)
   const checked = markedChecked(d, b) ? d.checked![b.id] : null
+  // Resolved comments aren't highlighted, so there's nothing to click: offer them here.
+  const resolvedHere = [...(b.comments ?? []), ...d.comments.filter((c) => c.blockId === b.id && !c.replyTo)].filter((c) => commentResolved(d, c)).length
+  const [showResolved, setShowResolved] = useState(false)
 
   return (
     <section className="rc-section">
@@ -673,7 +682,12 @@ function ParagraphPanel({
       </div>
 
       {quote !== undefined && <IntentSection session={session} b={b} act={act} />}
-      {showComments && <CommentsBlock session={session} b={b} quote={quote} draft={draft} setDraft={setDraft} act={act} />}
+      {!showComments && !showResolved && resolvedHere > 0 && (
+        <button className="link-btn dr-small" onClick={() => setShowResolved(true)}>
+          {resolvedHere} resolved comment{resolvedHere === 1 ? '' : 's'}
+        </button>
+      )}
+      {(showComments || showResolved) && <CommentsBlock session={session} b={b} quote={quote} draft={draft} setDraft={setDraft} act={act} />}
     </section>
   )
 }
@@ -698,6 +712,8 @@ function CommentsBlock({
   const theirs = b.comments ?? []
   const ours = d.comments.filter((c) => c.blockId === b.id)
   const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
+  // "Reply" at the top answers their first open comment; with none open, it adds a new one.
+  const openTheirs = theirs.find((t) => !commentResolved(d, t))
   const done = async (text?: string) => {
     if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
     setDraft(null)
@@ -707,31 +723,40 @@ function CommentsBlock({
       <div className="dr-mini-h rc-comments-h">
         Comments
         {!draft && (
-          <button className="btn sm" onClick={() => setDraft(quote ? { blockId: b.id, quote } : { blockId: b.id, replyTo: theirs[0]?.id })}>
-            <Icon name="chat" size={13} /> {quote ? 'Comment on the highlighted text' : theirs.length ? 'Reply' : 'Add'}
+          <button className="btn sm" onClick={() => setDraft(quote ? { blockId: b.id, quote } : { blockId: b.id, replyTo: openTheirs?.id })}>
+            <Icon name="chat" size={13} /> {quote ? 'Comment on the highlighted text' : openTheirs ? 'Reply' : 'Add'}
           </button>
         )}
       </div>
       {!theirs.length && !ours.length && !draft && <p className="faint dr-small">None. Comments go to them in the marked-up copy. Select text to comment on part of the paragraph.</p>}
       <div className="dr-threads">
-        {theirs.map((c) => (
-          <TheirComment key={c.id} c={c}>
-            {ours
-              .filter((o) => o.replyTo === c.id)
-              .map((o) => (
-                <OurCommentCard key={o.id} c={o} reply onDelete={() => act(window.api.doc.uncomment(session.id, o.id))} />
-              ))}
-            {draft?.replyTo === c.id ? (
-              <CommentForm placeholder={`Reply to ${c.author}`} onDone={done} />
-            ) : (
-              <button className="link-btn dr-reply" onClick={() => setDraft({ blockId: b.id, replyTo: c.id })}>
-                Reply
-              </button>
-            )}
-          </TheirComment>
-        ))}
+        {theirs.map((c) => {
+          const isDone = commentResolved(d, c)
+          return (
+            <TheirComment key={c.id} c={c} done={isDone ? (d.commentsDone?.[c.id] ?? { by: c.author }) : null} onResolve={(v) => act(window.api.doc.resolveComment(session.id, c.id, v))}>
+              {ours
+                .filter((o) => o.replyTo === c.id)
+                .map((o) => (
+                  <OurCommentCard key={o.id} c={o} reply onDelete={() => act(window.api.doc.uncomment(session.id, o.id))} />
+                ))}
+              {isDone ? null : draft?.replyTo === c.id ? (
+                <CommentForm placeholder={`Reply to ${c.author}`} onDone={done} />
+              ) : (
+                <button className="link-btn dr-reply" onClick={() => setDraft({ blockId: b.id, replyTo: c.id })}>
+                  Reply
+                </button>
+              )}
+            </TheirComment>
+          )
+        })}
         {loose.map((o) => (
-          <OurCommentCard key={o.id} c={o} onDelete={() => act(window.api.doc.uncomment(session.id, o.id))} />
+          <OurCommentCard
+            key={o.id}
+            c={o}
+            done={commentResolved(d, o) ? (d.commentsDone?.[o.id] ?? null) : null}
+            onResolve={(v) => act(window.api.doc.resolveComment(session.id, o.id, v))}
+            onDelete={() => act(window.api.doc.uncomment(session.id, o.id))}
+          />
         ))}
         {draft && !draft.replyTo && (
           <div className="dr-comment ours">
@@ -803,33 +828,76 @@ function IntentSection({ session, b, act, many }: { session: ReviewSession; b: D
   )
 }
 
-function TheirComment({ c, children }: { c: DocComment; children: ReactNode }) {
+/**
+ * Resolve or reopen a comment thread, as in Word. A resolved thread stays, greyed out, with who
+ * resolved it; its text is no longer highlighted in the document.
+ */
+function ResolveControl({ done, onResolve }: { done: { by: string } | null; onResolve: (done: boolean) => void }) {
+  return done ? null : (
+    <button className="icon-btn sm dr-resolve" title="Resolve: keep the comment, but mark it done and stop highlighting its text" onClick={() => onResolve(true)}>
+      <Icon name="check" size={13} />
+    </button>
+  )
+}
+
+/** Under a resolved comment: who resolved it, and Reopen. */
+function ResolvedLine({ done, onResolve }: { done: { by: string } | null; onResolve: (done: boolean) => void }) {
+  if (!done) return null
   return (
-    <div className="dr-comment theirs">
-      <div className="dr-comment-head">
-        <strong>{c.author}</strong>
-        {c.date && <span className="faint">{new Date(c.date).toLocaleDateString()}</span>}
-      </div>
-      {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
-      <div>{c.text}</div>
-      {children}
+    <div className="dr-resolved">
+      <Icon name="check" size={12} /> Resolved by {done.by} ·{' '}
+      <button className="link-btn" onClick={() => onResolve(false)}>
+        Reopen
+      </button>
     </div>
   )
 }
 
-function OurCommentCard({ c, reply, onDelete }: { c: OurComment; reply?: boolean; onDelete: () => void }) {
+function TheirComment({ c, done, onResolve, children }: { c: DocComment; done: { by: string } | null; onResolve: (done: boolean) => void; children: ReactNode }) {
   return (
-    <div className={`dr-comment ours ${reply ? 'reply' : ''}`}>
+    <div className={`dr-comment theirs ${done ? 'resolved' : ''}`}>
+      <div className="dr-comment-head">
+        <strong>{c.author}</strong>
+        {c.date && <span className="faint">{new Date(c.date).toLocaleDateString()}</span>}
+        <span style={{ flex: 1 }} />
+        <ResolveControl done={done} onResolve={onResolve} />
+      </div>
+      {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
+      <div>{c.text}</div>
+      {children}
+      <ResolvedLine done={done} onResolve={onResolve} />
+    </div>
+  )
+}
+
+function OurCommentCard({
+  c,
+  reply,
+  done = null,
+  onResolve,
+  onDelete
+}: {
+  c: OurComment
+  reply?: boolean
+  /** Not for replies: a reply is resolved with the comment it replies to. */
+  done?: { by: string } | null
+  onResolve?: (done: boolean) => void
+  onDelete: () => void
+}) {
+  return (
+    <div className={`dr-comment ours ${reply ? 'reply' : ''} ${done ? 'resolved' : ''}`}>
       <div className="dr-comment-head">
         <strong>{c.by}</strong>
         <span className="faint">{new Date(c.at).toLocaleDateString()}</span>
         <span style={{ flex: 1 }} />
+        {onResolve && <ResolveControl done={done} onResolve={onResolve} />}
         <button className="icon-btn sm" title="Delete comment" onClick={onDelete}>
           <Icon name="x" size={12} />
         </button>
       </div>
       {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
       <div>{c.text}</div>
+      {onResolve && <ResolvedLine done={done} onResolve={onResolve} />}
     </div>
   )
 }

@@ -3,6 +3,8 @@ import { DOMParser, type Element } from '@xmldom/xmldom'
 import type { DocComment, TrackedSegment } from '@shared/types'
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml'
+const W15 = 'http://schemas.microsoft.com/office/word/2012/wordml'
 
 export interface DocxParagraph {
   /** The paragraph as proposed: insertions in, deletions out. */
@@ -363,13 +365,22 @@ async function readComments(zip: JSZip): Promise<Map<string, DocComment>> {
   const xml = await zip.file('word/comments.xml')?.async('string')
   if (!xml) return map
   const doc = new DOMParser().parseFromString(xml, 'text/xml')
+  // Resolved ("done") comments are flagged in commentsExtended.xml, keyed by the paraId of the
+  // comment's last paragraph.
+  const done = new Set<string>()
+  const ex = await zip.file('word/commentsExtended.xml')?.async('string')
+  if (ex)
+    for (const e of Array.from(new DOMParser().parseFromString(ex, 'text/xml').getElementsByTagNameNS(W15, 'commentEx')))
+      if (e.getAttributeNS(W15, 'done') === '1') done.add(e.getAttributeNS(W15, 'paraId') ?? '')
   for (const c of Array.from(doc.getElementsByTagNameNS(W, 'comment'))) {
     const id = c.getAttributeNS(W, 'id') ?? ''
-    const text = Array.from(c.getElementsByTagNameNS(W, 'p'))
+    const ps = Array.from(c.getElementsByTagNameNS(W, 'p'))
+    const text = ps
       .map((p) => Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? '').join(''))
       .join('\n')
       .trim()
-    map.set(id, { id, author: c.getAttributeNS(W, 'author') || 'Unknown', date: c.getAttributeNS(W, 'date') || undefined, text })
+    const paraId = ps[ps.length - 1]?.getAttributeNS(W14, 'paraId') ?? ''
+    map.set(id, { id, author: c.getAttributeNS(W, 'author') || 'Unknown', date: c.getAttributeNS(W, 'date') || undefined, text, ...(paraId && done.has(paraId) ? { done: true } : {}) })
   }
   return map
 }
