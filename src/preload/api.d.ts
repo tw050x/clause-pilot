@@ -55,6 +55,8 @@ export interface Api {
     /** Undo an action in the history (and later ones that depend on it). */
     undo(id: string, actionId: string): Promise<ReviewSession>
     redo(id: string, actionId: string): Promise<ReviewSession>
+    /** Ask the AI whether paragraphs mean the same as the approved clauses they differ from. */
+    checkIntent(id: string, blockIds: string[]): Promise<ReviewSession>
     /** Remove a paragraph we added. */
     unsplit(id: string, blockId: string): Promise<ReviewSession>
     /** Earlier negotiations per change set (identical first, then similar). */

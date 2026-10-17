@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { authorsOf, changeKey, hasOpenChanges, isCleared, marksFor, segmentsOf, theyChanged } from '@shared/changes'
+import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, marksFor, proposedText, segmentsOf, theyChanged } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -79,6 +79,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const ourEdits = Object.keys(d.edits).length
   const cleared = d.blocks.filter((b) => b.kind !== 'heading' && !hasOpenChanges(d, b) && d.edits[b.id] === undefined && (isCleared(d, b) || segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)]))).length
   const onHold = alert?.status === 'open'
+  // Paragraphs the AI could check for meaning that it hasn't checked as they now read.
+  const toCheck = d.blocks.filter((b) => intentCandidate(d, b) && d.intent?.[b.id]?.text !== proposedText(d, b))
+  const checking = Object.values(d.intent ?? {}).some((x) => x.status === 'running')
+  const aiOk = d.blocks.filter((b) => intentCandidate(d, b) && aiSame(d, b)).length
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
 
   const column = (
@@ -123,6 +127,9 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             <i className="bar checked" /> Nothing to check ({cleared})
           </span>
           <span>
+            <i className="bar ai" /> Same meaning, by AI ({aiOk})
+          </span>
+          <span>
             <i className="bar theirs" /> To decide
           </span>
           <span>
@@ -146,6 +153,16 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
               Security
             </button>
           </div>
+        )}
+        {(toCheck.length > 0 || checking) && (
+          <button
+            className="btn sm"
+            disabled={onHold || checking}
+            title={onHold ? 'On security hold: nothing goes to the AI' : 'Asks the AI, for each paragraph that differs from our approved wording, whether it means the same. Nothing is accepted by it.'}
+            onClick={() => act(window.api.doc.checkIntent(session.id, toCheck.map((b) => b.id)))}
+          >
+            {checking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {checking ? 'Checking meaning…' : `Check meaning with AI (${toCheck.length})`}
+          </button>
         )}
         <div className="rc-actions">
           <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
@@ -228,7 +245,13 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
     if (r) return r
     // A change found by comparison is rejected by striking (or restoring) it with our edit.
     const b = blocks.get(x.blockId)!
-    const ms = marksFor(d, b).filter((m) => m.seg === x.seg)
+    const ms = marksFor(d, b).filter((m) => m.seg === x.seg && m.theirs === 'ins')
+    if (b.untracked && !ms.length) {
+      const g = groupOf(b, x.seg)
+      const ins = marksFor(d, b).filter((m) => m.seg !== undefined && g.includes(m.seg) && m.theirs === 'ins')
+      if (ins.length && ins.every((m) => m.ours === 'del')) return 'rejected'
+      return 'open'
+    }
     if (b.untracked && ms.length && ms.every((m) => (m.theirs === 'ins' ? m.ours === 'del' : false))) return 'rejected'
     return 'open'
   }
@@ -247,7 +270,9 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
   }
   const decide = (outcome: 'accepted' | 'rejected') =>
     run(async () => {
-      for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome, group)))) return
+      // A replacement is one change: its deletion and insertion are decided together.
+      for (const x of open)
+        for (const seg of groupOf(blocks.get(x.blockId)!, x.seg)) if (!(await act(window.api.doc.resolve(session.id, x.blockId, seg, outcome, group)))) return
     })
   // Each revert shifts the rest, so each is looked up again in the paragraph as it then is.
   const revert = () =>
@@ -302,12 +327,19 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
         {items.map((x, i) => {
           const b = blocks.get(x.blockId)!
           if (x.kind === 'theirs') {
-            const seg = segmentsOf(b)[x.seg]
             const st = statusOf(x)
             return (
               <div key={i} className={`sel-line st-${st}`}>
                 <span className="hist-where">{whereOf(d, b)}</span>
-                {seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}
+                {groupOf(b, x.seg).map((k, n) => {
+                  const seg = segmentsOf(b)[k]
+                  return (
+                    <span key={k}>
+                      {n > 0 && ' → '}
+                      {seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}
+                    </span>
+                  )
+                })}
                 {st !== 'open' && <span className={`sel-st ${st}`}> {st === 'accepted' ? 'Accepted' : 'Rejected'}</span>}
               </div>
             )
@@ -531,6 +563,8 @@ function ParagraphPanel({
         )}
       </div>
 
+      <IntentSection session={session} b={b} act={act} />
+
       <div className="dr-mini-h rc-comments-h">
         Comments
         {!draft && (
@@ -568,6 +602,54 @@ function ParagraphPanel({
         )}
       </div>
     </section>
+  )
+}
+
+/** The AI's meaning check for a paragraph that differs from our approved wording: ask, and its answer. */
+function IntentSection({ session, b, act }: { session: ReviewSession; b: DocBlock; act: (p: Promise<ReviewSession>) => Promise<boolean> }) {
+  const d = session.doc!
+  const r = d.intent?.[b.id]
+  const current = r && r.text === proposedText(d, b)
+  const canAsk = intentCandidate(d, b)
+  if (!canAsk && !(r && current)) return null
+  return (
+    <div className="dr-ai">
+      <div className="dr-mini-h">
+        Same meaning as ours?
+        {canAsk && r?.status !== 'running' && (
+          <button className="btn sm" onClick={() => act(window.api.doc.checkIntent(session.id, [b.id]))}>
+            <Icon name="sparkle" size={13} /> {r && current ? 'Check again' : 'Check with AI'}
+          </button>
+        )}
+      </div>
+      {(!r || !current) && <p className="faint dr-small">Ask the AI whether this means the same as our approved “{b.standard ?? b.wasApproved}”. It only advises: if it agrees, the bar turns dashed green until you accept or reject the changes yourself.</p>}
+      {r?.status === 'running' && current && (
+        <p className="faint dr-small">
+          <span className="spinner sm" /> Comparing with our approved wording…
+        </p>
+      )}
+      {r?.status === 'error' && current && <p className="dr-small dr-err">{r.error}</p>}
+      {r?.status === 'done' && current && (
+        <div className={`dr-ai-card ${r.same ? 'same' : 'differs'}`}>
+          <div className="dr-ai-chips">
+            <span className={`dr-chip ${r.same ? 'rec-accept' : 'rec-escalate'}`}>{r.same ? 'Same meaning' : 'Differs'}</span>
+            {r.confidence && <span className="dr-chip">{r.confidence} confidence</span>}
+          </div>
+          <p className="dr-ai-summary">{r.note}</p>
+          {r.reasoning && <p className="dr-small">{r.reasoning}</p>}
+          {!!r.differences?.length && (
+            <div className="dr-ai-list">
+              {r.differences.map((x, i) => (
+                <div key={i} className={x.favours === 'counterparty' ? 'conflict' : 'ok'}>
+                  • {x.description} <span className="faint">({x.favours === 'us' ? 'favours us' : x.favours === 'counterparty' ? 'favours them' : 'neutral'})</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {r.same && <p className="faint dr-small">The AI only advises. Accept or reject their changes here yourself to mark it checked.</p>}
+        </div>
+      )}
+    </div>
   )
 }
 

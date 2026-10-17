@@ -377,6 +377,26 @@ export interface DocReview {
   resolved?: Record<string, 'accepted' | 'rejected'>
   /** What was done, action by action, for undo and redo (see shared/history.ts). */
   history?: HistoryAction[]
+  /** AI checks, on request, of whether a paragraph means the same as our approved wording. */
+  intent?: Record<string, IntentCheck>
+}
+
+/** The AI's view of whether a paragraph has the same legal effect as our approved clause. */
+export interface IntentCheck {
+  status: 'running' | 'done' | 'error'
+  /** The paragraph text that was checked; the result stands only while the text is the same. */
+  text: string
+  /** Same legal effect, and passed the checks in code (see main/docreview.ts). */
+  same?: boolean
+  /** Our approved clause it was compared with. */
+  title?: string
+  confidence?: 'high' | 'medium' | 'low'
+  reasoning?: string
+  differences?: { description: string; favours: 'us' | 'counterparty' | 'neutral' }[]
+  /** Why it was or wasn't counted as the same. */
+  note?: string
+  error?: string
+  at: string
 }
 
 /** One action in a review's undo history: the state it changed, before and after. */

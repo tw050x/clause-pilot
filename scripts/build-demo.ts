@@ -20,12 +20,13 @@ import { LIBRARY } from './seed-library'
 import { PLAYBOOK, PRECEDENTS } from './seed-playbook'
 import { DEMO_ACCOUNTS, DEMO_CONTRACT_RECORDS, DEMO_CONTRACTS, type DemoContractDef, type Block } from './demo-contracts'
 import { AUTHORED_CHANGES } from '../demo/authored/changes'
+import { AUTHORED_INTENT } from '../demo/authored/intent'
 import { parseFile } from '../src/main/ingest/parse'
 import { readBlocks } from '../src/main/ingest/blocks'
-import { applyScriptedChanges, changeInput, createDocSession } from '../src/main/docreview'
+import { applyScriptedChanges, changeInput, createDocSession, intentInput } from '../src/main/docreview'
 import { changeKey, recordingKey } from '../src/main/ai/provider'
 import type { ChangeOut, TaskName } from '../src/main/ai/tasks'
-import { changeSets, type ChangeSet } from '../src/shared/changes'
+import { changeSets, intentCandidate, type ChangeSet } from '../src/shared/changes'
 import { DEMO_SCENARIOS } from '../src/shared/demoScenarios'
 import type { DemoContract, ReviewSession } from '../src/shared/types'
 
@@ -187,6 +188,23 @@ async function main() {
       recordings.push({ task: 'change', key: recordingKey('change', changeKey(input)), label: `${def.file} :: ${set.where}`, output: out, recordedAt: new Date().toISOString(), source: 'authored' })
     }
     for (const k of Object.keys(authored)) if (!sets.some((x) => keyOf(x) === k)) missing.push(`${def.file}: authored answer for ${k}, but the app finds no change there`)
+
+    // The AI meaning check: every paragraph the app would offer to check needs an answer.
+    const intents = AUTHORED_INTENT[def.file] ?? {}
+    const offered = s.doc!.blocks.filter((b) => intentCandidate(s.doc!, b))
+    for (const b of offered) {
+      const label = b.label?.replace(/\.$/, '') ?? ''
+      const input = intentInput(s.doc!, b, LIBRARY)
+      const a = intents[label]
+      if (!input) continue
+      if (!a) {
+        missing.push(`${def.file}: no authored meaning check for ${label || b.text.slice(0, 30)} (against "${input.candidates[0].title}")`)
+        continue
+      }
+      recordings.push({ task: 'intent', key: recordingKey('intent', input), label: `${def.file} :: intent ${label}`, output: { ...a, best_match_id: input.candidates[0].id }, recordedAt: new Date().toISOString(), source: 'authored' })
+    }
+    for (const k of Object.keys(intents)) if (!offered.some((b) => b.label?.replace(/\.$/, '') === k)) missing.push(`${def.file}: authored meaning check for ${k}, but the app wouldn't offer it`)
+    console.log(`  meaning checks offered: ${offered.map((b) => b.label ?? '?').join(', ') || 'none'}`)
     console.log(`${def.file}: ${s.doc!.blocks.length} paragraphs, ${sets.length} changes (${sets.map((x) => x.where.split(' ')[0]).join(', ')})`)
     const script = scripted.find((h) => h.file === def.file)
     if (script) applyScriptedChanges(s, script.changes, 'demo-setup')

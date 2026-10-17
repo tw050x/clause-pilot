@@ -13,11 +13,12 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, t
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { beforeTheirs, changeKey, changeSets, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
-import type { ChangeStatus, ListStyle, OurComment } from '@shared/types'
+import { beforeTheirs, changeKey, changeSets, intentCandidate, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
+import type { ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
+import type { IntentInput } from './ai/tasks'
 import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
-import { applicable, applyScriptedChanges, changeInput, createDocSession, toChangeReview, type ScriptedChange } from './docreview'
+import { applicable, applyScriptedChanges, changeInput, createDocSession, intentInput, intentResult, toChangeReview, type ScriptedChange } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
 
@@ -750,6 +751,50 @@ async function askAi(s: ReviewSession, setIds: string[]) {
   const rest = sets.slice(1)
   for (let i = 0; i < rest.length; i += 4) await Promise.all(rest.slice(i, i + 4).map(one))
 }
+
+/**
+ * Ask the AI, on request, whether paragraphs mean the same as the approved clauses they differ
+ * from. One request per paragraph; results arrive as session updates. Nothing is decided by it.
+ */
+ipcMain.handle('doc:checkIntent', (_e, sessionId: string, blockIds: string[]) => {
+  const { s, d } = docOf(sessionId)
+  if (alertFor(s.id)?.status === 'open')
+    throw new Error('On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.')
+  const w = wsFor(s)
+  const library = w.store.library()
+  const jobs = blockIds
+    .map((id) => d.blocks.find((b) => b.id === id))
+    .filter((b): b is DocBlock => !!b && intentCandidate(d, b))
+    .map((b) => ({ b, input: intentInput(d, b, library) }))
+    .filter((j): j is { b: DocBlock; input: IntentInput } => !!j.input)
+  if (!jobs.length) throw new Error('Nothing to check: the AI compares paragraphs that differ from our approved wording.')
+  d.intent ??= {}
+  const at = new Date().toISOString()
+  for (const j of jobs) d.intent[j.b.id] = { status: 'running', text: j.input.clause.text, at }
+  w.audit.append(actor(), 'ai.intent-requested', s.id, { paragraphs: jobs.map((j) => blockWhere(s, j.b.id)) })
+  persist(s)
+  const ai = provider()
+  const one = async ({ b, input }: { b: DocBlock; input: IntentInput }) => {
+    try {
+      const out = await ai.intent(input)
+      const r = intentResult(input, out)
+      d.intent![b.id] = { status: 'done', ...r, at: new Date().toISOString() }
+      if (out.injection_suspected && out.injection_notes.trim()) {
+        s.aiInjectionReports.push(`Meaning check of ${blockWhere(s, b.id)}: ${out.injection_notes.trim()}`)
+        syncSecurityAlert(w, s)
+      }
+      w.audit.append('system', 'ai.intent', s.id, { paragraph: blockWhere(s, b.id), against: r.title, same: r.same, confidence: r.confidence, note: r.note })
+    } catch (e) {
+      d.intent![b.id] = { status: 'error', text: input.clause.text, error: e instanceof Error ? e.message : String(e), at: new Date().toISOString() }
+      w.audit.append('system', 'ai.intent.error', s.id, { paragraph: blockWhere(s, b.id), error: String(e) })
+    }
+    persist(s)
+  }
+  ;(async () => {
+    for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(one))
+  })()
+  return s
+})
 
 ipcMain.handle('doc:ask', (_e, sessionId: string, setIds: string[]) => {
   const { s } = docOf(sessionId)

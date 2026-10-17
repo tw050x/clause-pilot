@@ -179,3 +179,42 @@ export function textWithout(marks: Mark[], pick: (m: Mark, i: number) => boolean
 /** Cleared without anyone reading it: word for word our approved wording, or exactly what we sent last round. */
 export const isCleared = (doc: DocReview, b: DocBlock) =>
   !theyChanged(b) && !b.ours && (!!b.approved || (doc.baseline?.kind === 'sent' && !!doc.lastRound?.[b.id]))
+
+/** Paragraphs the AI can check for meaning: changed (tracked or not) from one of our approved clauses. */
+export const intentCandidate = (doc: DocReview, b: DocBlock) =>
+  b.kind !== 'deleted' && !b.ours && !!(b.standard ?? b.wasApproved) && hasOpenChanges(doc, b) && doc.edits[b.id] === undefined
+
+/** The paragraph as they propose it now (their changes, as decided so far; none of our wording). */
+export const proposedText = (doc: DocReview, b: DocBlock) => shownText(marksFor({ ...doc, edits: {} }, b))
+
+/** The AI found it means the same as our approved wording, for the text as it now stands. */
+export const aiSame = (doc: DocReview, b: DocBlock) => {
+  const r = doc.intent?.[b.id]
+  return !!r && r.status === 'done' && !!r.same && r.text === proposedText(doc, b)
+}
+
+/**
+ * Their changes in a paragraph as the reader sees them: a deletion straight followed by an
+ * insertion (nothing but a space between) is one replacement, decided together. Each group
+ * is the segment indexes in it; the first is its id.
+ */
+export function changeGroups(b: DocBlock): number[][] {
+  const segs = segmentsOf(b)
+  const groups: number[][] = []
+  let last: number[] | null = null
+  let gap = true // only whitespace since the last change
+  segs.forEach((s, i) => {
+    if (s.op === 'same') {
+      if (s.text.trim()) gap = false
+      return
+    }
+    const prev = last ? segs[last[last.length - 1]] : null
+    if (last && last.length === 1 && gap && prev && prev.op !== s.op) last.push(i)
+    else groups.push((last = [i]))
+    gap = true
+  })
+  return groups
+}
+
+/** The group (replacement or single change) a segment belongs to. */
+export const groupOf = (b: DocBlock, seg: number) => changeGroups(b).find((g) => g.includes(seg)) ?? [seg]

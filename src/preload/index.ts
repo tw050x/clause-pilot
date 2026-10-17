@@ -49,6 +49,7 @@ const api: Api = {
     split: (id, blockId, head, tail, newId, list) => invoke('doc:split', id, blockId, head, tail, newId, list),
     setList: (id, blockId, list) => invoke('doc:setList', id, blockId, list),
     unsplit: (id, blockId) => invoke('doc:unsplit', id, blockId),
+    checkIntent: (id, blockIds) => invoke('doc:checkIntent', id, blockIds),
     resolve: (id, blockId, seg, outcome, group) => invoke('doc:resolve', id, blockId, seg, outcome, group),
     undoOurs: (id, blockId, mark, group) => invoke('doc:undoOurs', id, blockId, mark, group),
     undo: (id, actionId) => invoke('doc:undo', id, actionId),

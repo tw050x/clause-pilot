@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { ChangeReview, ContractType, DocBlock, LibraryClause, PlaybookPosition, ReviewSession, SeenHit } from '@shared/types'
-import { beforeTheirs, changeSets, type ChangeSet } from '@shared/changes'
+import type { ChangeReview, ContractType, DocBlock, DocReview, IntentCheck, LibraryClause, PlaybookPosition, ReviewSession, SeenHit } from '@shared/types'
+import { beforeTheirs, changeSets, proposedText, type ChangeSet } from '@shared/changes'
 import { RESPONSE } from './engine/seen'
 import { compareWithSent, compareWithTemplate } from './engine/baseline'
 import { injectionHits } from './engine/injection'
-import type { ChangeInput, ChangeOut } from './ai/tasks'
+import type { ChangeInput, ChangeOut, IntentInput, IntentOut } from './ai/tasks'
 import type { ParsedDocument } from './ingest/parse'
 import { guessContractType } from './ingest/headings'
 import type { ScriptedChange } from '@shared/demoScenarios'
@@ -138,4 +138,37 @@ export function applyScriptedChanges(s: ReviewSession, list: ScriptedChange[], b
     touched.push(set)
   }
   return touched
+}
+
+/** What the AI is asked for a paragraph: does it mean the same as the approved clause it differs from? */
+export function intentInput(d: DocReview, b: DocBlock, library: LibraryClause[]): IntentInput | null {
+  const title = b.standard ?? b.wasApproved
+  const lib = title ? library.find((c) => c.title === title) : undefined
+  if (!lib) return null
+  return { clause: { number: b.label ?? null, heading: null, text: proposedText(d, b) }, candidates: [{ id: lib.id, title: lib.title, text: lib.text }] }
+}
+
+/**
+ * The AI's answer, checked in code: it only counts as "same meaning" if the model says so with
+ * confidence, names the clause, finds nothing that favours the counterparty and suspects no
+ * injection. The model's opinion alone never clears a paragraph.
+ */
+export function intentResult(input: IntentInput, out: IntentOut): Omit<IntentCheck, 'status' | 'at'> {
+  const lib = input.candidates[0]
+  const against = out.material_differences.filter((x) => x.favours === 'counterparty')
+  let note = ''
+  if (!out.aligned) note = 'The legal effect differs from our approved clause.'
+  else if (out.best_match_id !== lib.id) note = 'The AI did not match it to our approved clause.'
+  else if (out.confidence === 'low') note = 'The AI’s confidence was too low.'
+  else if (against.length) note = `${against.length} difference${against.length === 1 ? '' : 's'} favour${against.length === 1 ? 's' : ''} the counterparty.`
+  else if (out.injection_suspected) note = 'Possible text addressed to an AI reviewer.'
+  return {
+    text: input.clause.text,
+    same: !note,
+    title: lib.title,
+    confidence: out.confidence,
+    reasoning: out.reasoning,
+    differences: out.material_differences,
+    note: note || `Same legal effect as our approved “${lib.title}”.`
+  }
 }

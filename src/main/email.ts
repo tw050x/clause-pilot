@@ -1,5 +1,5 @@
 import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
-import { changeKey, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { changeGroups, changeKey, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { labelOf } from '@shared/numbering'
 
 /**
@@ -33,8 +33,8 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
   const acceptedIn: string[] = []
   for (const b of d.blocks) {
     const segs = segmentsOf(b)
-    const decided = (outcome: 'accepted' | 'rejected') =>
-      segs.map((x, i) => ({ x, r: d.resolved?.[changeKey(b.id, i)] })).filter((y) => y.r === outcome && y.x.op !== 'same').map((y) => y.x)
+    // Their changes as the reader sees them: a replacement (deletion + insertion) is one change.
+    const decided = (outcome: 'accepted' | 'rejected') => changeGroups(b).filter((g) => d.resolved?.[changeKey(b.id, g[0])] === outcome).map((g) => g.map((i) => segs[i]))
     const rejected = decided('rejected')
     const accepted = decided('accepted')
     const notes = d.comments.filter((c) => c.blockId === b.id).map((c) => c.text)
@@ -45,7 +45,12 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
 
     const lines: string[] = []
     if (rejected.length) {
-      const what = rejected.map((x) => `your ${x.op === 'ins' ? 'insertion of' : 'deletion of'} ${quote(x.text)}`)
+      const what = rejected.map((g) => {
+        const del = g.find((x) => x.op === 'del')
+        const ins = g.find((x) => x.op === 'ins')
+        if (del && ins) return `your change of ${quote(del.text)} to ${quote(ins.text)}`
+        return ins ? `your insertion of ${quote(ins.text)}` : `your deletion of ${quote(del!.text)}`
+      })
       lines.push(`We can't accept ${list(what)}, so ${rejected.length === 1 ? 'it has' : 'they have'} been rejected.`)
     }
     if (rejected.length && accepted.length) lines.push(`We accept your other ${accepted.length === 1 ? 'change' : 'changes'} here.`)

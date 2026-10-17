@@ -7,7 +7,7 @@ import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
 import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
-import { changeKey, hasOpenChanges, isCleared, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
+import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
@@ -88,8 +88,9 @@ function spans(marks: Mark[]) {
   })
 }
 
-const changeOfMark = (blockId: string, m: Mark): SelectedChange | null =>
-  m.theirs && m.seg !== undefined ? { blockId, kind: 'theirs', seg: m.seg } : m.ours ? { blockId, kind: 'ours', op: m.ours, text: m.text } : null
+/** The change a mark belongs to; one of theirs is identified by its group (a replacement is one change). */
+const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
+  m.theirs && m.seg !== undefined ? { blockId: b.id, kind: 'theirs', seg: groupOf(b, m.seg)[0] } : m.ours ? { blockId: b.id, kind: 'ours', op: m.ours, text: m.text } : null
 
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null)
@@ -196,7 +197,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
         decos.push(
           Decoration.node(offset, offset + node.nodeSize, {
-            class: `${open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
+            // The AI found it means the same as our approved wording: dashed green until you decide it.
+            class: `${open && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
             ...(tag ? { 'data-tag': tag } : {})
           })
         )
@@ -220,7 +222,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           )
         }
         const hl = (m: Mark) =>
-          !!f && f.blockId === b.id && (f.kind === 'theirs' ? m.theirs !== undefined && m.seg === f.seg : m.ours === f.op && m.text === f.text)
+          !!f && f.blockId === b.id && (f.kind === 'theirs' ? m.theirs !== undefined && m.seg !== undefined && groupOf(b, f.seg).includes(m.seg) : m.ours === f.op && m.text === f.text)
         for (const x of spans(marks)) {
           const m = x.m
           const attrs = { 'data-mark': String(x.i), 'data-block': b.id }
@@ -283,7 +285,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const off = $p.parentOffset
       const xs = spans(marksNow(model.current, b, node.textContent))
       const hit = xs.find((x) => !x.struck && (x.m.theirs === 'ins' || x.m.ours === 'ins') && x.s < off && off < x.e) ?? xs.find((x) => !x.struck && (x.m.theirs === 'ins' || x.m.ours === 'ins') && x.s <= off && off <= x.e)
-      return hit ? changeOfMark(b.id, hit.m) : null
+      return hit ? changeOfMark(b, hit.m) : null
     }
     /** The changes a selection covers, across paragraphs. */
     const changesIn = (state: EditorState): SelectedChange[] => {
@@ -304,9 +306,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           if (!x.m.theirs && !x.m.ours) continue
           const inside = x.struck ? x.s >= a && x.s <= z : x.e > a && x.s < z
           if (!inside) continue
-          add(changeOfMark(b.id, x.m))
+          add(changeOfMark(b, x.m))
           // Their change with ours on top of it: both are listed.
-          if (x.m.ours && x.m.theirs && x.m.seg !== undefined) add({ blockId: b.id, kind: 'theirs', seg: x.m.seg })
+          if (x.m.ours && x.m.theirs && x.m.seg !== undefined) add({ blockId: b.id, kind: 'theirs', seg: groupOf(b, x.m.seg)[0] })
         }
       }
       return out
@@ -442,7 +444,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           clicked.current = null
           if (del && b) {
             const m = marksFor(model.current, b)[Number(del.dataset.mark)]
-            clicked.current = m ? changeOfMark(b.id, m) : null
+            clicked.current = m ? changeOfMark(b, m) : null
           }
           focused.current = null
           cb.current.onSelectChanges(null)
