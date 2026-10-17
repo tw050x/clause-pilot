@@ -98,7 +98,21 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const column = (
     <div className="rc">
       <section className="rc-section">
-        <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
+        <div className="rc-title-row">
+          <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
+          <button
+            className="btn sm ghost"
+            title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
+            onClick={() => act(window.api.review.close(session.id, !session.closed))}
+          >
+            {session.closed ? 'Reopen' : 'Close review'}
+          </button>
+        </div>
+        {session.closed && (
+          <div className="banner info">
+            Closed by {session.closed.by} on {new Date(session.closed.at).toLocaleDateString()}. It’s kept, but hidden on the Reviews page.
+          </div>
+        )}
         {session.version && (
           <div className="faint rc-sub">
             Version {session.version}

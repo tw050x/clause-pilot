@@ -63,9 +63,10 @@ export function NavDrawer(p: Props) {
             to see its contracts.
           </p>
         )}
-        {account && p.contracts.length === 0 && <p className="nav-empty">No contracts for {account.name} yet.</p>}
+        {account && !p.contracts.some((c) => !c.archived) && <p className="nav-empty">No {p.contracts.length ? 'open ' : ''}contracts for {account.name}{p.contracts.length ? '' : ' yet'}.</p>}
         {account &&
-          p.contracts.map((c) => {
+          // Archived contracts stay out of the sidebar (they're under All contracts).
+          p.contracts.filter((c) => !c.archived).map((c) => {
             const v = latest(c.id)
             return (
               <button

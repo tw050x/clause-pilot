@@ -1,4 +1,4 @@
-import { changeSets, statusOf } from '@shared/changes'
+import { hasOpenChanges, theyChanged } from '@shared/changes'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Account, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
@@ -94,29 +94,32 @@ export class Store {
 
   listSessions(): ReviewSummary[] {
     const accounts = new Map(this.accounts().map((a) => [a.id, a.name]))
-    const contracts = new Map(this.contracts().map((c) => [c.id, c.title]))
+    const contracts = new Map(this.contracts().map((c) => [c.id, c]))
     return readdirSync(join(this.dir, 'sessions'))
       .filter((f) => f.endsWith('.json'))
       .map((f) => {
         const s = JSON.parse(readFileSync(join(this.dir, 'sessions', f), 'utf8')) as ReviewSession
         const decisions = Object.values(s.decisions)
-        // Document reviews count change sets, not clauses.
-        const sets = s.doc ? changeSets(s.doc) : null
-        const statuses = s.doc && sets ? sets.map((x) => statusOf(s.doc!, x)) : []
+        // Document reviews: paragraphs they changed, and how many are fully decided.
+        const d = s.doc
+        const changed = d ? d.blocks.filter(theyChanged) : []
+        const contract = s.contractId ? contracts.get(s.contractId) : undefined
         return {
           id: s.id,
           accountId: s.accountId,
           accountName: s.accountId ? accounts.get(s.accountId) : undefined,
           contractId: s.contractId,
-          contractTitle: s.contractId ? contracts.get(s.contractId) : undefined,
+          contractTitle: contract?.title,
           version: s.version,
           docName: s.docName,
           createdAt: s.createdAt,
           mode: s.mode,
           contractType: s.contractType,
-          clauses: sets ? sets.length : s.clauses.length,
-          decided: sets ? statuses.filter((x) => x !== 'open').length : decisions.length,
-          rejected: sets ? statuses.filter((x) => x === 'countered').length : decisions.filter((d) => d.decision === 'rejected').length
+          clauses: d ? changed.length : s.clauses.length,
+          decided: d ? changed.filter((b) => !hasOpenChanges(d, b)).length : decisions.length,
+          rejected: d ? Object.values(d.resolved ?? {}).filter((r) => r === 'rejected').length : decisions.filter((x) => x.decision === 'rejected').length,
+          closed: !!s.closed,
+          contractArchived: !!contract?.archived
         }
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

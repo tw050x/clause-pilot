@@ -388,7 +388,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       if (crosses(st)) replaceAcross(st, (tr) => (st = st.apply(tr)))
       const { $from, from, to } = st.selection
       const node = $from.parent
-      const id = `n${Date.now().toString(36)}`
+      const id = `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
       const tr = st.tr
       if (to > from) tr.delete(from, to)
       tr.split(tr.mapping.map(from), 1, [{ type: schema.nodes.para, attrs: { id, kind: 'para', level: node.attrs.level } }])

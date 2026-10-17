@@ -222,6 +222,8 @@ export interface ContractRecord {
   title: string
   contractType: ContractType
   createdAt: string
+  /** Archived: kept, but out of the sidebar, and its reviews hidden on the Reviews page. */
+  archived?: { by: string; at: string }
 }
 
 /** How a clause relates to the previous version of the same contract. */
@@ -439,6 +441,8 @@ export interface ReviewSession {
   decisions: Record<string, Decision>
   /** Document review: present on reviews made with the document screen (no clause pipeline). */
   doc?: DocReview
+  /** Closed: kept, but hidden on the Reviews page. */
+  closed?: { by: string; at: string }
 }
 
 /** A comment we put in the marked-up response. */
@@ -478,9 +482,13 @@ export interface ReviewSummary {
   createdAt: string
   mode: 'live' | 'demo'
   contractType: ContractType
+  /** Paragraphs they changed, and how many of those are decided (all their changes accepted or rejected). */
   clauses: number
   decided: number
   rejected: number
+  closed?: boolean
+  /** Its contract is archived. */
+  contractArchived?: boolean
 }
 
 // ---- Library promotion queue -----------------------------------------------------

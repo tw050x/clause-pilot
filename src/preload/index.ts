@@ -26,7 +26,8 @@ const api: Api = {
   contracts: {
     list: () => invoke('contracts:list'),
     create: (accountId, title) => invoke('contracts:create', accountId, title),
-    versions: (contractId) => invoke('contracts:versions', contractId)
+    versions: (contractId) => invoke('contracts:versions', contractId),
+    archive: (contractId, archived) => invoke('contracts:archive', contractId, archived)
   },
   security: {
     list: () => invoke('security:list'),
@@ -38,6 +39,7 @@ const api: Api = {
     start: (path, contractId) => invoke('review:start', path, contractId),
     get: (id) => invoke('review:get', id),
     list: () => invoke('review:list'),
+    close: (id, closed) => invoke('review:close', id, closed),
     onUpdate: on('session:update')
   },
   email: { draft: (id) => invoke('email:draft', id) },

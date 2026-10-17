@@ -129,6 +129,10 @@ export function App() {
   useEffect(() => {
     refreshAccounts()
   }, [view, reviews.length])
+  // Lists of reviews are always current when you open them (closed, archived, new drafts).
+  useEffect(() => {
+    if (view === 'reviews' || view === 'contract' || view === 'contracts' || view === 'home') refreshReviews()
+  }, [view])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -150,6 +154,11 @@ export function App() {
     if (view === 'contract' && contractPage && contractPage.accountId !== activeAccountId) setView('home')
     if (view === 'review' && session?.accountId && session.accountId !== activeAccountId) setView('home')
   }, [activeAccountId])
+
+  const refreshAll = () => {
+    refreshReviews()
+    refreshAccounts()
+  }
 
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
@@ -230,7 +239,7 @@ export function App() {
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
-          {view === 'reviews' && <ReviewsView reviews={scopedReviews} accountName={activeAccount?.name} onOpen={openSession} />}
+          {view === 'reviews' && <ReviewsView reviews={scopedReviews} accountName={activeAccount?.name} onOpen={openSession} onChanged={refreshAll} />}
           {view === 'contract' && contractPage && activeAccount && (
             <ContractView
               contract={contractPage}
@@ -238,6 +247,7 @@ export function App() {
               reviews={scopedReviews}
               onOpenReview={openSession}
               onUploadDraft={(contractId) => setOpenModal({ contractId })}
+              onChanged={refreshAll}
             />
           )}
           {view === 'contracts' && activeAccount && (
@@ -251,6 +261,7 @@ export function App() {
                 setView('contract')
               }}
               onNew={() => setView('new-contract')}
+              onChanged={refreshAll}
             />
           )}
           {view === 'new-contract' && activeAccount && (

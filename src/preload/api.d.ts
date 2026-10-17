@@ -23,6 +23,8 @@ export interface Api {
     list(): Promise<ContractRecord[]>
     create(accountId: string, title: string): Promise<ContractRecord>
     versions(contractId: string): Promise<ReviewSummary[]>
+    /** Archive (true) or bring back (false) a contract; returns all contracts. */
+    archive(contractId: string, archived: boolean): Promise<ContractRecord[]>
   }
   security: {
     list(): Promise<SecurityAlert[]>
@@ -34,6 +36,8 @@ export interface Api {
     start(path: string, contractId?: string): Promise<ReviewSession>
     get(id: string): Promise<ReviewSession>
     list(): Promise<ReviewSummary[]>
+    /** Close (true) or reopen (false) a review. */
+    close(id: string, closed: boolean): Promise<ReviewSession>
     onUpdate(cb: (s: ReviewSession) => void): Unsub
   }
   email: { draft(id: string): Promise<EmailDraft> }

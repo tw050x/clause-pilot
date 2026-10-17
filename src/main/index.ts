@@ -15,7 +15,7 @@ import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, intentCandidate, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
 import type { ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
 import type { IntentInput } from './ai/tasks'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem } from './chat'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
@@ -179,6 +179,8 @@ function session(id: string): ReviewSession {
 
 const resolvePath = (p: string) => (isAbsolute(p) ? p : join(appRoot, p))
 
+/** A new id: time plus randomness, so two made in the same millisecond never clash. */
+const uid = (prefix: string, sep = '-') => `${prefix}${sep}${Date.now().toString(36)}${randomBytes(3).toString('hex')}`
 const counterpartyOf = (s: ReviewSession) => s.docName.split(/[-_ ]/)[0]
 
 // ---- IPC: settings ------------------------------------------------------------------
@@ -238,7 +240,7 @@ ipcMain.handle('file:bytes', async (_e, path: string) => new Uint8Array(await re
 ipcMain.handle('accounts:list', () => ws.store.accounts())
 ipcMain.handle('accounts:create', (_e, name: string) => {
   if (!name.trim()) throw new Error('Give the account a name.')
-  const account: Account = { id: `ac-${Date.now().toString(36)}`, name: name.trim(), createdAt: new Date().toISOString() }
+  const account: Account = { id: uid('ac'), name: name.trim(), createdAt: new Date().toISOString() }
   ws.store.saveAccounts([...ws.store.accounts(), account])
   ws.audit.append(actor(), 'account.created', null, { accountId: account.id, name: account.name })
   return account
@@ -247,11 +249,33 @@ ipcMain.handle('contracts:list', () => ws.store.contracts())
 ipcMain.handle('contracts:create', (_e, accountId: string, title: string) => {
   if (!ws.store.accounts().some((a) => a.id === accountId)) throw new Error('Unknown account.')
   if (!title.trim()) throw new Error('Give the contract a name.')
-  const contract: ContractRecord = { id: `ct-${Date.now().toString(36)}`, accountId, title: title.trim(), contractType: 'general', createdAt: new Date().toISOString() }
+  const contract: ContractRecord = { id: uid('ct'), accountId, title: title.trim(), contractType: 'general', createdAt: new Date().toISOString() }
   ws.store.saveContracts([...ws.store.contracts(), contract])
   ws.audit.append(actor(), 'contract.created', null, { contractId: contract.id, accountId, title: contract.title })
   return contract
 })
+/** Archive (or bring back) a contract. Nothing is deleted. */
+ipcMain.handle('contracts:archive', (_e, contractId: string, archived: boolean) => {
+  const all = ws.store.contracts()
+  const c = all.find((x) => x.id === contractId)
+  if (!c) throw new Error('Unknown contract.')
+  if (archived) c.archived = { by: actor(), at: new Date().toISOString() }
+  else delete c.archived
+  ws.store.saveContracts(all)
+  ws.audit.append(actor(), archived ? 'contract.archived' : 'contract.unarchived', null, { contractId, title: c.title })
+  return ws.store.contracts()
+})
+
+/** Close (or reopen) a review. Nothing is deleted. */
+ipcMain.handle('review:close', (_e, sessionId: string, closed: boolean) => {
+  const s = session(sessionId)
+  if (closed) s.closed = { by: actor(), at: new Date().toISOString() }
+  else delete s.closed
+  ws.audit.append(actor(), closed ? 'review.closed' : 'review.reopened', s.id, { docName: s.docName })
+  persist(s)
+  return s
+})
+
 ipcMain.handle('contracts:versions', (_e, contractId: string) => ws.store.listSessions().filter((s) => s.contractId === contractId))
 
 /**
@@ -326,7 +350,7 @@ function syncSecurityAlert(w: Workspace, s: ReviewSession) {
   }
   const aiNotes = [...byNote].map(([note, n]) => (n > 1 ? `${note} (reported by ${n} separate checks)` : note))
   if (!existing) {
-    const alert: SecurityAlert = { id: `sa-${Date.now().toString(36)}`, sessionId: s.id, docName: s.docName, raisedAt: new Date().toISOString(), clauses, aiNotes, status: 'open' }
+    const alert: SecurityAlert = { id: uid('sa'), sessionId: s.id, docName: s.docName, raisedAt: new Date().toISOString(), clauses, aiNotes, status: 'open' }
     w.store.saveSecurityAlerts([...alerts, alert])
     w.audit.append('system', 'security.alert-raised', s.id, { alertId: alert.id, clauses: clauses.map((c) => c.label), patterns: clauses.flatMap((c) => c.hits) })
     send('security:update', null)
@@ -485,7 +509,7 @@ ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: strin
     const at = d.blocks.findIndex((x) => x.id === blockId)
     if (at < 0) throw new Error('Unknown paragraph.')
     const b = d.blocks[at]
-    const id = newId && /^n[a-z0-9]+$/.test(newId) && !d.blocks.some((x) => x.id === newId) ? newId : `n${Date.now().toString(36)}`
+    const id = newId && /^n[a-z0-9]+$/.test(newId) && !d.blocks.some((x) => x.id === newId) ? newId : uid('n', '')
     d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level, ...(list ? { list } : {}) })
     const keep = clean(head)
     if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep
@@ -622,7 +646,7 @@ ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'block
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     if (!c.text.trim()) throw new Error('Write a comment first.')
-    const comment: OurComment = { id: `oc-${Date.now().toString(36)}`, blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
+    const comment: OurComment = { id: uid('oc'), blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
     d.comments.push(comment)
     ws.audit.append(actor(), 'doc.commented', s.id, { block: blockWhere(s, c.blockId), text: comment.text, replyTo: c.replyTo ?? null })
     recordTouching(s, c.blockId)
@@ -829,7 +853,7 @@ ipcMain.handle('kb:promote', (_e, id: string, title: string, category: string) =
   const n = all.find((x) => x.id === id)
   if (!n || n.status !== 'pending') throw new Error('Nomination not pending')
   const clause: LibraryClause = {
-    id: `lib-${Date.now().toString(36)}`,
+    id: uid('lib'),
     contractType: n.contractType,
     category,
     title,
@@ -857,7 +881,7 @@ ipcMain.handle(
     if (p.kind !== 'add' && !before) throw new Error('That playbook position no longer exists.')
     if (p.kind !== 'delete' && (!p.after?.title.trim() || !p.after.standard.trim())) throw new Error('A position needs at least a title and a standard.')
     const proposal: PlaybookProposal = {
-      id: `pp-${Date.now().toString(36)}`,
+      id: uid('pp'),
       kind: p.kind,
       positionId: p.positionId,
       before,

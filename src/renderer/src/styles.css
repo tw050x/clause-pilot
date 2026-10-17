@@ -754,3 +754,6 @@ del.us-del ins.th-ins { color: inherit; }
 
 .settings-h { font-size: 15px; margin: 28px 0 6px; }
 .field .seg { width: fit-content; }
+
+.t tr.row-hidden td { opacity: 0.6; }
+.rc-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
