@@ -96,10 +96,10 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     ? `We have accepted your changes to ${acceptedLabels(acceptedIn)}.`
     : ''
   const numbered = points.map((p, i) => `${i + 1}. ${p}`).join('\n\n')
-  const subject = points.length ? `${name}: PortSwigger comments` : `${name}: approved`
+  const subject = points.length ? `${name}: our comments` : `${name}: approved`
   const body = points.length
-    ? `Hello,\n\nThank you for sending this through. We have reviewed the draft. ${acceptedLine ? `${acceptedLine} ` : ''}Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}${note}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
-    : `Hello,\n\nThank you for sending this through. We have reviewed the draft${acceptedLine ? ` and accepted your changes` : ''} and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
+    ? `Hello,\n\nThank you for sending this through. We have reviewed the draft. ${acceptedLine ? `${acceptedLine} ` : ''}Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}${note}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal team`
+    : `Hello,\n\nThank you for sending this through. We have reviewed the draft${acceptedLine ? ` and accepted your changes` : ''} and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal team`
   return { subject, body, generatedBy: 'template' }
 }
 

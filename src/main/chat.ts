@@ -1,12 +1,11 @@
 import type { ReviewSession } from '@shared/types'
 import { changeSets, statusOf } from '@shared/changes'
-import { OUR_COMPANY } from './ai/tasks'
 import { paragraphsBlock } from './ai/prompts'
 
 /** System prompt for the chat panel: the contract plus where the review stands. */
 export function chatSystem(s: ReviewSession): string {
   const d = s.doc!
-  return `You are the assistant inside ${OUR_COMPANY}'s contract review tool. The user is a lawyer reviewing "${s.docName}".
+  return `You are the assistant inside our legal team's contract review tool ("us" is our company: the party whose approved clauses and playbook these are). The user is a lawyer reviewing "${s.docName}".
 Answer questions about this contract and the review below. Cite paragraph numbers. Be concise and practical.
 Write your answer in Markdown: short paragraphs, bullet lists where they help, **bold** for the key point. No preamble.
 If something is a judgement call, say so; the lawyer makes the decision.

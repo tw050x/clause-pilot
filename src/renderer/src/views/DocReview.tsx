@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createPortal } from 'react-dom'
 import type { AiTaskKind, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
 import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
-import { Icon } from '../lib/icons'
+import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
@@ -914,10 +914,10 @@ function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (te
 // ---- AI tasks on highlighted text ------------------------------------------------------------------
 
 const AI_TASKS: { kind: AiTaskKind; title: string; detail: string }[] = [
-  { kind: 'intent', title: 'Is the intent the same?', detail: 'Compares it with our approved wording' },
-  { kind: 'playbook', title: 'Check against our playbook', detail: 'Each standard position that applies' },
-  { kind: 'changes', title: 'Review their changes', detail: 'What they do, who they favour, what to do' },
-  { kind: 'explain', title: 'Explain in plain English', detail: 'What it means for PortSwigger' }
+  { kind: 'intent', title: 'Ask: Does the intent match?', detail: 'Compares it with our approved wording' },
+  { kind: 'playbook', title: 'Ask: Does it meet our playbook?', detail: 'Each standard position that applies' },
+  { kind: 'changes', title: 'Ask: What do their changes do?', detail: 'Who they favour, and what to do' },
+  { kind: 'explain', title: 'Ask: What does this mean?', detail: 'In plain English: what it means for us' }
 ]
 
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
@@ -961,13 +961,13 @@ function AiCard({ title, detail, result, disabled, onRun }: { title: string; det
   const running = result?.status === 'running'
   return (
     <div className={`ai-card ${result ? 'has-result' : ''}`}>
-      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title="Asks the AI; the question and the answer also appear in Ask AI">
+      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title={result ? 'Ask again: the question and the answer also appear in Ask AI' : 'Asks the AI: the question and the answer also appear in Ask AI'}>
         <Icon name="sparkle" size={14} />
         <span className="ai-card-text">
           <strong>{title}</strong>
           <span className="faint">{detail}</span>
         </span>
-        <span className="ai-card-go">{running ? <span className="spinner sm" /> : result ? 'Ask again' : 'Ask'}</span>
+        <span className="ai-card-go">{running ? <span className="spinner sm" /> : <Chevron size={11} />}</span>
       </button>
       {result?.status === 'done' && (
         <div className="ai-card-body">

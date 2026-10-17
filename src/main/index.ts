@@ -872,10 +872,10 @@ async function runIntent(s: ReviewSession, blocks: DocBlock[]) {
 function questionFor(kind: AiTaskKind, places: string, quote: string): string {
   const q = quote.length > 400 ? `${quote.slice(0, 400).trimEnd()}…` : quote
   const quoted = `\n\n> ${q.replace(/\n+/g, ' ')}`
-  if (kind === 'intent') return `Is the intent the same as our approved wording? (${places})${quoted}`
+  if (kind === 'intent') return `Does the intent match our approved wording? (${places})${quoted}`
   if (kind === 'playbook') return `Does this meet our playbook? (${places})${quoted}`
-  if (kind === 'changes') return `Review their changes here: what do they do, who do they favour, and what should we do? (${places})${quoted}`
-  return `Explain this in plain English: what does it mean for PortSwigger? (${places})${quoted}`
+  if (kind === 'changes') return `What do their changes here do, who do they favour, and what should we do? (${places})${quoted}`
+  return `What does this mean for us, in plain English? (${places})${quoted}`
 }
 
 /**
@@ -973,7 +973,7 @@ async function redline(sessionId: string) {
   const original = await readFile(resolvePath(s.filePath))
   if (!s.doc) throw new Error(OLD_REVIEW)
   const out = await buildDocRedline(s, actor(), original)
-  return { s, ...out, name: `${s.docName.replace(/\.[a-z]+$/i, '')} - PortSwigger comments.docx` }
+  return { s, ...out, name: `${s.docName.replace(/\.[a-z]+$/i, '')} - our comments.docx` }
 }
 const savedRedlines = new Set<string>()
 

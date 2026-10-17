@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { PlaybookPosition } from '@shared/types'
 
-export const OUR_COMPANY = 'PortSwigger Ltd'
 
 /**
  * Every AI call is one of these single-purpose tasks. Each task has a stable
@@ -43,7 +42,7 @@ export const IntentSchema = z.object({
   material_differences: z.array(
     z.object({
       description: z.string(),
-      favours: z.enum(['us', 'counterparty', 'neutral']).describe(`Which side the difference benefits; "us" means ${OUR_COMPANY}.`)
+      favours: z.enum(['us', 'counterparty', 'neutral']).describe('Which side the difference benefits; "us" means our company (the party whose approved clauses these are).')
     })
   ),
   reasoning: z.string().describe('Two to four sentences a lawyer can verify quickly.'),
@@ -58,7 +57,7 @@ export const OverridesSchema = z.object({
       overridden_clause_ids: z.array(z.string()),
       mechanism: z.enum(['notwithstanding', 'order-of-precedence', 'definition-change', 'carve-out', 'other']),
       summary: z.string().describe('One sentence: what is overridden and how.'),
-      effect: z.string().describe(`Practical effect on ${OUR_COMPANY}.`),
+      effect: z.string().describe('Practical effect on us (the party whose playbook this is).'),
       severity: z.enum(['high', 'medium', 'low']),
       quote: z.string().describe('The exact words in the overriding clause that do the overriding.')
     })
@@ -102,7 +101,7 @@ export interface ChangeInput {
 
 export const ChangeSchema = z.object({
   summary: z.string().describe('What the change does, in one or two plain sentences.'),
-  effect: z.enum(['favours_us', 'neutral', 'favours_them']).describe(`Who the change benefits; "us" means ${OUR_COMPANY}.`),
+  effect: z.enum(['favours_us', 'neutral', 'favours_them']).describe('Who the change benefits; "us" means our company (the party whose playbook this is).'),
   risk: z.enum(['high', 'medium', 'low']),
   recommendation: z.enum(['accept', 'counter', 'restore', 'escalate']).describe('accept their change; counter with different wording; restore the wording before their change; escalate to a senior lawyer.'),
   reasoning: z.string().describe('Two to four sentences a lawyer can verify quickly, citing paragraph numbers.'),
