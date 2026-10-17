@@ -322,6 +322,57 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       queueMicrotask(() => view.current?.dispatch(view.current.state.tr.setMeta('redraw', true)))
     }
 
+    /** After a click or a selection: highlight the change clicked, or list what the selection covers. */
+    const report = (v: EditorView) => {
+      const { state } = v
+      const sel = state.selection
+      if (sel.empty) {
+        setFocus(clicked.current ?? changeAt(state, sel.from))
+        clicked.current = null
+        return
+      }
+      focused.current = null
+      cb.current.onSelectChanges(changesIn(state), { blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to, ' ').trim() })
+      v.dispatch(state.tr.setMeta('redraw', true))
+      // Within one paragraph, offer a comment on the selected text: in the gutter, level with it.
+      if (sel.$from.parent === sel.$to.parent) {
+        const a = v.coordsAtPos(sel.from)
+        const box = host.current!.getBoundingClientRect()
+        setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
+      }
+    }
+
+    /** The paragraphs a clause number covers: the clause, its sub-clauses and items, and unnumbered paragraphs under it. */
+    const clauseRange = (state: EditorState, id: string): { from: number; to: number } | null => {
+      const d = model.current
+      const labels = labelsOf(d)
+      const at = d.blocks.findIndex((b) => b.id === id)
+      const top = parseLabel(labels.get(id) ?? d.blocks[at]?.label)
+      if (at < 0 || !top) return null
+      let last = at
+      for (let j = at + 1; j < d.blocks.length; j++) {
+        const b = d.blocks[j]
+        const p = parseLabel(labels.get(b.id) ?? (b.ours ? undefined : b.label))
+        if (!p) {
+          if (b.kind === 'heading') break
+          last = j
+          continue
+        }
+        if (top.kind === 'dec' && p.kind === 'dec' && p.parts.length > top.parts.length && p.parts.slice(0, top.parts.length).join('.') === top.parts.join('.')) last = j
+        else if (top.kind === 'dec' && p.kind !== 'dec') last = j
+        else break
+      }
+      const ids = new Set(d.blocks.slice(at, last + 1).map((b) => b.id))
+      let from = -1
+      let to = -1
+      state.doc.forEach((node, pos) => {
+        if (!ids.has(node.attrs.id)) return
+        if (from < 0) from = pos + 1
+        to = pos + 1 + node.content.size
+      })
+      return from < 0 ? null : { from, to }
+    }
+
     const redline = new Plugin({ props: { decorations: decorate } })
 
     // A new paragraph (Enter): ours, after this one, with the text after the caret.
@@ -440,6 +491,21 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             cb.current.onShowComments(badge.dataset.badge!)
             return true
           }
+          // A clause number: select the whole clause (with its sub-clauses), as a highlight.
+          const label = t.closest<HTMLElement>('.dr-label')
+          const para = label?.closest<HTMLElement>('p[data-block]')
+          if (label && para) {
+            e.preventDefault()
+            const r = clauseRange(_v.state, para.dataset.block!)
+            if (r) {
+              _v.focus()
+              _v.dispatch(_v.state.tr.setSelection(TextSelection.create(_v.state.doc, r.from, r.to)))
+              cb.current.onSelectChanges(null)
+              setBubble(null)
+              window.setTimeout(() => report(_v), 0)
+            }
+            return true
+          }
           // Struck text isn't part of the text, so a click on it is caught here.
           const del = t.closest<HTMLElement>('del[data-mark]')
           const b = del ? blocksById().get(del.dataset.block!) : undefined
@@ -466,25 +532,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
                 // a point the editor doesn't map (a widget): keep its own selection
               }
             }
-            const { state } = v
-            const sel = state.selection
-            if (sel.empty) {
-              setFocus(clicked.current ?? changeAt(state, sel.from))
-              clicked.current = null
-              return
-            }
-            focused.current = null
-            cb.current.onSelectChanges(changesIn(state), { blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to, ' ').trim() })
-            v.dispatch(state.tr.setMeta('redraw', true))
-            // Within one paragraph, offer a comment on the selected text.
-            if (sel.$from.parent === sel.$to.parent) {
-              const a = v.coordsAtPos(sel.from)
-              const z = v.coordsAtPos(sel.to)
-              // In the gutter, level with the start of the selection.
-              const box = host.current!.getBoundingClientRect()
-              void z
-              setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
-            }
+            report(v)
           }, 0)
           return false
         }
