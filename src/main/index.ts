@@ -13,8 +13,9 @@ import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
-import type { AiAnswerPart, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
+import type { AiAnswerPart, ChatEntry, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
+import { HISTORY_BUDGET, SUMMARY_SYSTEM, contextFor, needsCompacting, summaryRequest, toSummarise } from './conversation'
 import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -190,7 +191,10 @@ const AI_TASK_LIMIT_MS = 4 * 60_000
 /** A task saved as running whose answer can no longer arrive (the app closed while it ran) is marked failed, so it can be asked again. */
 function settleStaleRuns(s: ReviewSession) {
   const stale = (s.doc?.aiRuns ?? []).filter((r) => r.status === 'running' && !inFlight.has(r.id))
-  for (const r of stale) Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
+  for (const r of stale) {
+    Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
+    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${r.error}`, runId: r.id, failed: true })
+  }
   if (stale.length) wsFor(s).store.saveSession(s)
 }
 
@@ -928,6 +932,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
   d.aiRuns = [...(d.aiRuns ?? []), run]
   w.audit.append(actor(), 'ai.task-requested', s.id, { kind: task.kind, paragraphs: places })
   persist(s)
+  addChat(s, { role: 'user', content: run.question, by: actor(), runId: run.id })
   inFlight.add(run.id)
   const finish = (patch: Partial<AiTaskRun>) => {
     const r = d.aiRuns!.find((x) => x.id === run.id)!
@@ -935,6 +940,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     if (r.status !== 'running') return
     inFlight.delete(run.id)
     Object.assign(r, patch, { at: new Date().toISOString() })
+    addChat(s, patch.status === 'done' ? { role: 'assistant', content: r.answer ?? '', runId: run.id } : { role: 'assistant', content: `Sorry, that failed: ${r.error}`, runId: run.id, failed: true })
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
     persist(s)
   }
@@ -991,8 +997,9 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
       )
     } else {
       const model = chatModel()
-      if (!model) throw new Error(loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
-      const text = await model.chat(chatSystem(s), [{ role: 'user', content: run.question }], (t) => send('chat:delta', { requestId: run.id, text: t }))
+      if (!model) throw new Error(NO_MODEL())
+      // Asked in the conversation (the question is already in it), so it has the context.
+      const text = await model.chat(chatSystem(s), await chatContext(s, model), (t) => send('chat:delta', { requestId: run.id, text: t }))
       finish({ status: 'done', answer: text, raw: text })
     }
   })()
@@ -1041,14 +1048,77 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
   if (err) throw new Error(err)
 })
 
-ipcMain.handle('chat:send', async (_e, sessionId: string, history: ChatMessage[], requestId: string) => {
+// ---- Ask AI: one conversation per contract ------------------------------------------------------
+
+const chatKey = (s: ReviewSession) => s.contractId ?? s.id
+const NO_MODEL = () => (loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
+
+/** Add a message to the contract's conversation, and tell the window. */
+function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' | 'version'>): ChatEntry {
+  const store = wsFor(s).store
+  const c = store.chat(chatKey(s))
+  const entry: ChatEntry = { id: uid('m'), at: new Date().toISOString(), sessionId: s.id, version: s.version, ...e }
+  c.entries.push(entry)
+  store.saveChat(c)
+  send('chat:changed', { key: c.key })
+  return entry
+}
+
+/**
+ * The conversation as it goes to the AI, compacted first if it has outgrown the budget: the
+ * older messages are summarised by the same model, and the summary is kept for next time.
+ */
+async function chatContext(s: ReviewSession, model: NonNullable<ReturnType<typeof chatModel>>): Promise<ChatMessage[]> {
+  const store = wsFor(s).store
+  const c = store.chat(chatKey(s))
+  const budget = HISTORY_BUDGET[loadSettings().aiProvider === 'vllm' ? 'vllm' : 'anthropic']
+  if (needsCompacting(c, budget)) {
+    const older = toSummarise(c)
+    try {
+      const text = await model.chat(SUMMARY_SYSTEM, summaryRequest(c, older), () => {})
+      c.summary = { text: text.trim(), through: older[older.length - 1].id, at: new Date().toISOString() }
+      store.saveChat(c)
+      send('chat:changed', { key: c.key })
+      wsFor(s).audit.append('system', 'chat.compacted', s.id, { messages: older.length })
+    } catch (e) {
+      // Sent in full instead; the next question tries again.
+      wsFor(s).audit.append('system', 'chat.compact-failed', s.id, { error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return contextFor(c, '', s.version)
+}
+
+ipcMain.handle('chat:get', (_e, sessionId: string) => {
+  const s = session(sessionId)
+  return wsFor(s).store.chat(chatKey(s))
+})
+
+/** A question typed into Ask AI: kept in the conversation, answered with it as context. */
+ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
-  const question = history[history.length - 1]?.content ?? ''
+  addChat(s, { role: 'user', content: question.trim(), by: actor() })
   ws.audit.append(actor(), 'chat.question', s.id, { question })
   const model = chatModel()
-  if (!model) throw new Error(loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
-  return model.chat(chatSystem(s), history, (text) => send('chat:delta', { requestId, text }))
+  if (!model) {
+    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${NO_MODEL()}`, failed: true })
+    return
+  }
+  try {
+    const text = await model.chat(chatSystem(s), await chatContext(s, model), (t) => send('chat:delta', { requestId, text: t }))
+    addChat(s, { role: 'assistant', content: text })
+  } catch (e) {
+    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${e instanceof Error ? e.message : String(e)}`, failed: true })
+  }
+})
+
+/** Start the contract's conversation again (the old one is not kept). */
+ipcMain.handle('chat:clear', (_e, sessionId: string) => {
+  const s = session(sessionId)
+  const store = wsFor(s).store
+  store.saveChat({ key: chatKey(s), entries: [] })
+  send('chat:changed', { key: chatKey(s) })
+  ws.audit.append(actor(), 'chat.cleared', s.id, {})
 })
 
 // ---- IPC: knowledge base -------------------------------------------------------------------

@@ -69,7 +69,13 @@ const api: Api = {
     nominate: (id, setId, note) => invoke('doc:nominate', id, setId, note)
   },
   redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
-  chat: { send: (id, history, requestId) => invoke('chat:send', id, history, requestId), onDelta: on('chat:delta') },
+  chat: {
+    get: (id) => invoke('chat:get', id),
+    send: (id, question, requestId) => invoke('chat:send', id, question, requestId),
+    clear: (id) => invoke('chat:clear', id),
+    onDelta: on('chat:delta'),
+    onChanged: on('chat:changed')
+  },
   kb: {
     library: () => invoke('kb:library'),
     playbook: () => invoke('kb:playbook'),

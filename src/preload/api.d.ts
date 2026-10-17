@@ -1,6 +1,6 @@
 import type {
   Account, ContractRecord, AiTaskKind,
-  AuditEntry, ChatMessage, SeenHit, EmailDraft, LibraryClause, Nomination,
+  AuditEntry, ChatConversation, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
 
@@ -88,9 +88,15 @@ export interface Api {
     save(id: string): Promise<string | null>
     open(path: string): Promise<void>
   }
+  /** Ask AI: one conversation per contract, kept in the main process. */
   chat: {
-    send(id: string, history: ChatMessage[], requestId: string): Promise<string>
+    get(id: string): Promise<ChatConversation>
+    /** Ask a question; the question and the answer are added to the conversation (the answer streams as deltas). */
+    send(id: string, question: string, requestId: string): Promise<void>
+    clear(id: string): Promise<void>
     onDelta(cb: (d: { requestId: string; text: string }) => void): Unsub
+    /** The conversation for this contract (`key`) changed. */
+    onChanged(cb: (d: { key: string }) => void): Unsub
   }
   kb: {
     library(): Promise<LibraryClause[]>

@@ -3,7 +3,7 @@ import type { Account, ContractRecord, Nomination, PlaybookProposal, ReviewSessi
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
-import { ChatPanel, type ChatInject } from './components/ChatDrawer'
+import { ChatPanel } from './components/ChatDrawer'
 import { Home } from './views/Home'
 import { Review } from './views/Review'
 import { HistoryView, LibraryView } from './views/KnowledgeView'
@@ -27,7 +27,6 @@ export function App() {
   const [navOpen, setNavOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   // A question posted to Ask AI from an AI card in the review column.
-  const [chatInject, setChatInject] = useState<ChatInject | null>(null)
   // Text to highlight again in the review (a link in Ask AI).
   const [reselect, setReselect] = useState<{ blockIds: string[]; quote: string; flash?: string[] } | null>(null)
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
@@ -241,10 +240,7 @@ export function App() {
               contractTitle={reviews.find((r) => r.id === session.id)?.contractTitle}
               onOpenReview={openSession}
               reselect={reselect}
-              onAskAi={(runId, question) => {
-                setChatInject({ runId, question })
-                setRightTab('chat')
-              }}
+              onAskAi={() => setRightTab('chat')}
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
@@ -319,7 +315,6 @@ export function App() {
           <div className="rightbar-chat" style={{ display: rightTab === 'chat' ? undefined : 'none' }}>
             <ChatPanel
               session={session}
-              inject={chatInject}
               onReturn={() => setRightTab('review')}
               onShowText={(blockIds, quote, flash) => {
                 setRightTab('review')

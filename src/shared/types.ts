@@ -643,6 +643,35 @@ export interface ChatMessage {
   content: string
 }
 
+/** One message in a contract's Ask AI conversation, as kept. */
+export interface ChatEntry {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  at: string
+  /** Who asked (user messages). */
+  by?: string
+  /** The review (version) it was asked in. */
+  sessionId: string
+  version?: number
+  /** From an AI card: the task it asked and answered. */
+  runId?: string
+  /** An answer that failed: shown, but not sent to the AI as context. */
+  failed?: boolean
+}
+
+/**
+ * Ask AI for one contract: a single conversation across its versions. Everything is kept and
+ * shown; what goes to the AI is the summary of older messages plus the newer ones verbatim.
+ */
+export interface ChatConversation {
+  /** The contract's id (or the review's, for a review not filed under a contract). */
+  key: string
+  entries: ChatEntry[]
+  /** Older messages, summarised for the AI once the conversation outgrew its budget. */
+  summary?: { text: string; through: string; at: string }
+}
+
 export interface EmailDraft {
   subject: string
   body: string

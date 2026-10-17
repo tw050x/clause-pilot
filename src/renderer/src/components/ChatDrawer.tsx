@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiTaskRun, ChatMessage, ReviewSession } from '@shared/types'
+import type { AiTaskRun, ChatConversation, ChatEntry, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
 import { AiAnswer } from './AiAnswer'
 import { Chevron, Icon } from '../lib/icons'
 
-/** A message as shown: from a card, an assistant message waits for its AI task (`runId`). */
-type Shown = ChatMessage & { runId?: string; pending?: boolean }
-
-/** A question posted from an AI card in the review column: the task is already running. */
-export interface ChatInject {
-  runId: string
-  question: string
-}
-
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
+/**
+ * Ask AI: one conversation per contract, across its versions, kept by the main process (so it
+ * survives restarts). The AI cards' questions and answers are part of it. What the AI is sent is
+ * managed there too: older messages are summarised once the conversation grows long.
+ */
 export function ChatPanel({
   session,
-  inject,
   onReturn,
   onShowText,
   onChange
@@ -25,97 +20,81 @@ export function ChatPanel({
   session: ReviewSession | null
   /** The review after an action in an answer (applying suggested wording). */
   onChange: (s: ReviewSession) => void
-  inject: ChatInject | null
   /** Back to the Review tab. */
   onReturn: () => void
   /** Back to the review, with this text highlighted again (and these paragraphs within it pointed at). */
   onShowText: (blockIds: string[], quote: string, flash?: string[]) => void
 }) {
-  const [history, setHistory] = useState<Shown[]>([])
+  const [chat, setChat] = useState<ChatConversation | null>(null)
+  /** Answers streaming in, by request id (a typed question) or run id (a card's Explain). */
+  const [streams, setStreams] = useState<Record<string, string>>({})
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const reqId = useRef<string>('')
+  /** A typed question waiting on its answer. */
+  const [asking, setAsking] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
+  const key = session ? (session.contractId ?? session.id) : null
+  const sessionId = session?.id
 
-  // New conversation per contract.
-  useEffect(() => setHistory([]), [session?.id])
-
-  useEffect(
-    () =>
-      window.api.chat.onDelta(({ requestId, text }) => {
-        setHistory((h) => {
-          // An answer streaming for a card's task (Explain).
-          const i = h.findIndex((m) => m.runId === requestId && m.pending)
-          if (i >= 0) return h.map((m, n) => (n === i ? { ...m, content: m.content + text } : m))
-          if (requestId !== reqId.current) return h
-          const last = h[h.length - 1]
-          return last?.role === 'assistant' ? [...h.slice(0, -1), { ...last, content: last.content + text }] : [...h, { role: 'assistant', content: text }]
-        })
-      }),
-    []
-  )
-
-  // A card's question: posted as asked, with its answer to follow from the task.
   useEffect(() => {
-    if (!inject) return
-    setHistory((h) =>
-      h.some((m) => m.runId === inject.runId) ? h : [...h, { role: 'user', content: inject.question, runId: inject.runId }, { role: 'assistant', content: '', runId: inject.runId, pending: true }]
-    )
-  }, [inject])
+    setChat(null)
+    setClearing(false)
+    if (!sessionId) return
+    let live = true
+    const load = () => window.api.chat.get(sessionId).then((c) => live && setChat(c))
+    load()
+    const off = window.api.chat.onChanged((d) => d.key === key && load())
+    return () => {
+      live = false
+      off()
+    }
+  }, [sessionId, key])
 
-  // The task's answer, as written from the server's response, once it's in.
-  useEffect(() => {
-    const runs = session?.doc?.aiRuns ?? []
-    setHistory((h) =>
-      h.some((m) => m.pending)
-        ? h.map((m) => {
-            const r = m.pending ? runs.find((x) => x.id === m.runId) : undefined
-            if (!r || r.status === 'running') return m
-            return { ...m, pending: false, content: r.status === 'done' ? (r.answer ?? '') : `Sorry, that failed: ${r.error}` }
-          })
-        : h
-    )
-  }, [session])
+  useEffect(() => window.api.chat.onDelta(({ requestId, text }) => setStreams((x) => ({ ...x, [requestId]: (x[requestId] ?? '') + text }))), [])
 
+  const entries = chat?.entries ?? []
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
-  }, [history])
+  }, [entries.length, streams])
 
   const send = async (text: string) => {
-    if (!session || !text.trim() || busy) return
-    const next: Shown[] = [...history, { role: 'user', content: text.trim() }]
-    setHistory(next)
+    if (!session || !text.trim() || asking) return
     setInput('')
-    setBusy(true)
-    reqId.current = crypto.randomUUID()
+    const requestId = crypto.randomUUID()
+    setAsking(requestId)
     try {
-      // The conversation so far, including the cards' questions and answers, as context.
-      const context = next.filter((m) => !m.pending && m.content.trim()).map(({ role, content }) => ({ role, content }))
-      const final = await window.api.chat.send(session.id, context, reqId.current)
-      setHistory((h) => {
-        const last = h[h.length - 1]
-        return last?.role === 'assistant' ? [...h.slice(0, -1), { role: 'assistant', content: final }] : [...h, { role: 'assistant', content: final }]
-      })
-    } catch (e) {
-      setHistory((h) => [...h, { role: 'assistant', content: `Sorry, that failed: ${e instanceof Error ? e.message : e}` }])
+      await window.api.chat.send(session.id, text.trim(), requestId)
     } finally {
-      setBusy(false)
+      setAsking(null)
+      setStreams((x) => {
+        const { [requestId]: _, ...rest } = x
+        return rest
+      })
     }
   }
 
-  // A card's answer, with its finding cards and actions; anything else as Markdown.
-  const answer = (m: Shown) => {
-    const run = m.runId && !m.pending ? session?.doc?.aiRuns?.find((r) => r.id === m.runId) : undefined
-    if (!run?.parts || !session) return <Markdown text={m.content} />
+  const runOf = (id?: string) => (id ? session?.doc?.aiRuns?.find((r) => r.id === id) : undefined)
+  const answered = new Set(entries.filter((e) => e.role === 'assistant' && e.runId).map((e) => e.runId))
+  const waiting = (text?: string) => (
+    <div className="msg assistant">{text ? <Markdown text={text} /> : <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} />}</div>
+  )
+
+  // A card's answer, with its finding cards and actions (when it was asked in this version); anything else as Markdown.
+  const answer = (e: ChatEntry) => {
+    const run = runOf(e.runId)
+    if (!run?.parts || !session || e.failed) return <Markdown text={e.content} />
     return <AiAnswer parts={run.parts} session={session} onChange={onChange} onShow={(ids) => onShowText(run.blockIds, run.quote, ids)} />
   }
 
+  const last = entries[entries.length - 1]
   return (
     <div className="chat">
       <div className="chat-log" ref={logRef}>
-        {!history.length && (
+        {!entries.length && !asking && (
           <div className="muted" style={{ fontSize: 13 }}>
-            <p style={{ marginTop: 0 }}>The assistant can see the whole contract and everything the checks found. It cannot make decisions; you do.</p>
+            <p style={{ marginTop: 0 }}>
+              One conversation for this contract, across its versions. The assistant can see the contract as it now reads and everything the checks found. It cannot make decisions; you do.
+            </p>
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
                 <button key={s} onClick={() => send(s)}>
@@ -125,32 +104,62 @@ export function ChatPanel({
             </div>
           </div>
         )}
-        {history.map((m, i) =>
-          m.role === 'user' ? (
-            <div key={i} className="msg user">
-              {m.runId ? <CardQuestion text={m.content} run={session?.doc?.aiRuns?.find((r) => r.id === m.runId)} onShowText={onShowText} /> : m.content}
-            </div>
-          ) : (
-            // The AI's answer: Markdown, in the flow of the page, not in a bubble.
-            <div key={i} className="msg assistant">
-              {m.pending && !m.content ? <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} /> : answer(m)}
-              {/* An answer to a card, until the chat goes on: back to the review, where it's on the card too. */}
-              {m.runId && !m.pending && i === history.length - 1 && (
-                <button className="btn sm msg-return" onClick={onReturn}>
-                  <span className="back-chevron">
-                    <Chevron size={10} />
-                  </span>{' '}
-                  Return to review
+        {entries.length > 0 && (
+          <div className="chat-tools">
+            {clearing ? (
+              <>
+                <span className="faint">Clear the whole conversation?</span>
+                <button
+                  className="link-btn danger-link"
+                  onClick={async () => {
+                    if (session) await window.api.chat.clear(session.id)
+                    setClearing(false)
+                  }}
+                >
+                  Clear
                 </button>
-              )}
-            </div>
-          )
-        )}
-        {busy && history[history.length - 1]?.role === 'user' && (
-          <div className="msg assistant">
-            <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} />
+                <button className="link-btn" onClick={() => setClearing(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button className="link-btn" onClick={() => setClearing(true)} disabled={!!asking}>
+                Clear conversation
+              </button>
+            )}
           </div>
         )}
+        {entries.map((e, i) => {
+          const prev = entries[i - 1]
+          const version = e.version && prev?.version !== undefined && e.version !== prev.version ? <div className="chat-divider">Version {e.version}</div> : null
+          const summarised = chat?.summary && prev?.id === chat.summary.through ? <div className="chat-divider" title="To keep each request a manageable size, the AI is sent a summary of the messages above, then the rest as written.">Earlier messages are summarised for the AI</div> : null
+          return (
+            <div key={e.id} className="chat-entry">
+              {summarised}
+              {version}
+              {e.role === 'user' ? (
+                <div className="msg user">{e.runId ? <CardQuestion text={e.content} run={runOf(e.runId)} onShowText={onShowText} /> : e.content}</div>
+              ) : (
+                // The AI's answer: in the flow of the page, not in a bubble.
+                <div className={`msg assistant ${e.failed ? 'failed' : ''}`}>
+                  {answer(e)}
+                  {/* An answer to a card, until the conversation goes on: back to the review, where it's on the card too. */}
+                  {e.runId && e === last && !asking && (
+                    <button className="btn sm msg-return" onClick={onReturn}>
+                      <span className="back-chevron">
+                        <Chevron size={10} />
+                      </span>{' '}
+                      Return to review
+                    </button>
+                  )}
+                </div>
+              )}
+              {/* A card's question still being answered. */}
+              {e.role === 'user' && e.runId && !answered.has(e.runId) && runOf(e.runId)?.status === 'running' && waiting(streams[e.runId])}
+            </div>
+          )
+        })}
+        {asking && last?.role === 'user' && !last.runId && waiting(streams[asking])}
       </div>
       <form
         className="chat-input"
@@ -171,7 +180,7 @@ export function ChatPanel({
             }
           }}
         />
-        <button className="btn primary" disabled={busy || !input.trim()}>
+        <button className="btn primary" disabled={!!asking || !input.trim()}>
           Send
         </button>
       </form>

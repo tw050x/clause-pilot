@@ -842,3 +842,12 @@ del.us-del ins.th-ins { color: inherit; }
 .msg.assistant .ai-answer { margin-top: 2px; }
 @keyframes ed-flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 16%, transparent); } 100% { background: transparent; } }
 .ed-p.ed-flash { animation: ed-flash 1.6s ease-out; border-radius: 3px; }
+
+/* ---- Ask AI: one conversation per contract ---- */
+.chat-tools { display: flex; justify-content: flex-end; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 4px; }
+.chat-tools .link-btn { font-size: 12px; }
+.link-btn.danger-link { color: var(--rejected); }
+.chat-divider { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 11.5px; color: var(--text-3); }
+.chat-divider::before, .chat-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.msg.assistant.failed { color: var(--rejected); }
+.chat-entry { display: flex; flex-direction: column; gap: 10px; }

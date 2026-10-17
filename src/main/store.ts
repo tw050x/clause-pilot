@@ -1,7 +1,7 @@
 import { rejectedCount, stillOpen, theyChanged } from '@shared/changes'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Account, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
+import type { Account, ChatConversation, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
 
 const SEEDED = ['library.json', 'precedents.json', 'playbook.json', 'accounts.json', 'contracts.json']
 
@@ -53,6 +53,17 @@ export class Store {
       .map((f) => JSON.parse(readFileSync(join(this.dir, 'sessions', f), 'utf8')) as ReviewSession)
       .filter((s) => s.contractId === contractId)
       .sort((a, b) => (a.version ?? 0) - (b.version ?? 0))
+  }
+
+  /** A contract's Ask AI conversation (empty until the first question). */
+  chat(key: string): ChatConversation {
+    const f = join(this.dir, 'chats', `${key.replace(/[^\w.-]/g, '_')}.json`)
+    return existsSync(f) ? (JSON.parse(readFileSync(f, 'utf8')) as ChatConversation) : { key, entries: [] }
+  }
+
+  saveChat(c: ChatConversation): void {
+    mkdirSync(join(this.dir, 'chats'), { recursive: true })
+    this.write(join('chats', `${c.key.replace(/[^\w.-]/g, '_')}.json`), c)
   }
 
   saveSecurityAlerts(a: SecurityAlert[]): void {
