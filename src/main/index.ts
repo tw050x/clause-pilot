@@ -196,8 +196,9 @@ ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
 
 /**
  * Clear all data: every account, contract, review, the library, playbook, precedents, approvals,
- * security alerts, recorded AI answers and the audit log. Settings and API keys are kept, so the
- * AI stays set up. The workspace starts again empty and the window reloads.
+ * security alerts, recorded AI answers and the audit log, and the AI settings (provider, model,
+ * vLLM server, both API keys) so the AI has to be set up again. Your name and the other settings
+ * are kept. The workspace starts again empty and the window reloads.
  */
 ipcMain.handle('workspace:clear', () => {
   const dir = join(userDir, 'workspaces', 'live')
@@ -205,7 +206,13 @@ ipcMain.handle('workspace:clear', () => {
   sessionWs.clear()
   rmSync(dir, { recursive: true, force: true })
   Object.assign(ws, openWorkspace())
-  ws.audit.append(actor(), 'workspace.cleared', null, {})
+  // Back to the AI defaults: Claude, the default model, no vLLM server, no keys.
+  const kept: Partial<StoredSettings> = loadSettings()
+  for (const k of ['aiProvider', 'model', 'vllmUrl', 'vllmModel'] as const) delete kept[k]
+  writeFileSync(settingsFile, JSON.stringify(kept, null, 2))
+  rmSync(keyFile, { force: true })
+  rmSync(vllmKeyFile, { force: true })
+  ws.audit.append(actor(), 'workspace.cleared', null, { aiSettingsReset: true })
   win?.webContents.reload()
   return true
 })

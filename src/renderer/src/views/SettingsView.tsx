@@ -202,7 +202,7 @@ function ClearData() {
         <div className="banner danger clear-confirm">
           <div>
             <strong>Delete everything in this workspace?</strong> All accounts, contracts and reviews, the library, playbook and precedents, approvals, security alerts,
-            recorded AI answers and the audit log. This can’t be undone. Export the library and playbook first if you want to keep them.
+            recorded AI answers and the audit log. The AI settings and API keys are reset too. This can’t be undone. Export the library and playbook first if you want to keep them.
           </div>
           <div className="row-gap">
             <button
@@ -221,7 +221,7 @@ function ClearData() {
           </div>
         </div>
       )}
-      <span className="hint">Resets the app to an empty workspace, for example to run the demos again from the start. Your settings and API keys are kept.</span>
+      <span className="hint">Resets the app to an empty workspace with no AI set up, for example to run the demos again from the start. Your name and the other settings are kept.</span>
     </div>
   )
 }

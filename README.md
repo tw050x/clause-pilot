@@ -37,7 +37,7 @@ Settings, the encrypted API keys and the workspace (reviews, library, playbook, 
 
 Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example for a throwaway test run.
 
-**Settings → Data → Clear all data…** deletes the workspace (accounts, contracts, reviews, library, playbook, precedents, approvals, alerts, recorded AI answers and the audit log) and starts again empty. Settings and API keys are kept. It asks for confirmation first.
+**Settings → Data → Clear all data…** deletes the workspace (accounts, contracts, reviews, library, playbook, precedents, approvals, alerts, recorded AI answers and the audit log) and resets the AI settings and API keys, so the app starts again as on first run. Your name and the other settings are kept. It asks for confirmation first.
 
 ## CI and releases
 
