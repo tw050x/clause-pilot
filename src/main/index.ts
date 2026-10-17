@@ -423,18 +423,53 @@ const blockWhere = (s: ReviewSession, blockId: string) => {
   return b?.label ? `§${b.label.replace(/\.$/, '')}` : (b?.text.slice(0, 40) ?? blockId)
 }
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
+/** Typed text as the editor has it: spacing kept (the caret may be after a space), no line breaks. */
+const clean = (t: string) => t.replace(/\u00a0/g, ' ').replace(/[\r\n]+/g, ' ')
 
 /** Our wording for a paragraph (null clears our edit). Saving their wording unchanged clears it too. */
 ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string | null) => {
   const { s, d } = docOf(sessionId)
   const b = d.blocks.find((x) => x.id === blockId)
   if (!b) throw new Error('Unknown paragraph.')
-  const next = text === null ? null : tidy(text)
-  const same = next === null || (b.kind !== 'deleted' && next === tidy(b.text))
+  const next = text === null ? null : clean(text)
+  const same = next === null || (!b.ours && b.kind !== 'deleted' && tidy(next) === tidy(b.text))
   if (same) delete d.edits[blockId]
   else d.edits[blockId] = next
   ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
   recordTouching(s, blockId)
+  persist(s)
+  return s
+})
+
+/**
+ * Enter in the document: the paragraph keeps the text before the caret, and a new paragraph
+ * of ours, after it, gets the rest. Both are our tracked changes.
+ */
+ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string) => {
+  const { s, d } = docOf(sessionId)
+  const at = d.blocks.findIndex((x) => x.id === blockId)
+  if (at < 0) throw new Error('Unknown paragraph.')
+  const b = d.blocks[at]
+  const id = `n${Date.now().toString(36)}`
+  d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level })
+  const keep = clean(head)
+  if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep
+  else delete d.edits[blockId]
+  d.edits[id] = clean(tail)
+  ws.audit.append(actor(), 'doc.paragraph-added', s.id, { after: blockWhere(s, blockId) })
+  persist(s)
+  return { session: s, id }
+})
+
+/** Remove a paragraph we added. */
+ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
+  const { s, d } = docOf(sessionId)
+  const b = d.blocks.find((x) => x.id === blockId)
+  if (!b?.ours) throw new Error('Only paragraphs you added can be removed.')
+  d.blocks = d.blocks.filter((x) => x.id !== blockId)
+  delete d.edits[blockId]
+  d.comments = d.comments.filter((c) => c.blockId !== blockId)
+  ws.audit.append(actor(), 'doc.paragraph-removed', s.id, {})
   persist(s)
   return s
 })

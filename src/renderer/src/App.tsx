@@ -29,7 +29,6 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [session, setSession] = useState<ReviewSession | null>(null)
   const [navOpen, setNavOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
@@ -220,13 +219,6 @@ export function App() {
         <button className="icon-btn" onClick={() => setNavOpen((o) => !o)} title={navOpen ? 'Hide menu' : 'Show menu'}>
           <SidebarIcon side="left" open={navOpen} />
         </button>
-        <button className={`account-switch ${activeAccount ? '' : 'none'}`} onClick={() => setPickerOpen(true)} title="Choose the active account (⌘K)">
-          <Icon name="users" size={15} />
-          <span>{activeAccount?.name ?? 'Choose an account'}</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
         <div className="spacer" />
         {!online && (
           <span className="mode-pill offline has-tip" tabIndex={0}>
@@ -251,14 +243,6 @@ export function App() {
             </span>
           </button>
         )}
-        <button
-          className="icon-btn"
-          onClick={() => setRightOpen((o) => !o)}
-          disabled={!reviewing}
-          title={rightOpen ? 'Hide review panel' : 'Show review panel'}
-        >
-          <SidebarIcon side="right" open={rightOpen && reviewing} />
-        </button>
       </header>
       <div className="body">
         <NavDrawer
@@ -392,7 +376,7 @@ export function App() {
             />
           )}
         </main>
-        <aside className={`rightbar ${rightOpen && reviewing ? '' : 'closed'}`} aria-hidden={!(rightOpen && reviewing)}>
+        <aside className="rightbar" hidden={!reviewing}>
           <div className="rightbar-switch">
             <div className="seg full">
               <button className={rightTab === 'review' ? 'on' : ''} onClick={() => setRightTab('review')}>
@@ -446,7 +430,6 @@ export function App() {
           ctx={{
             showReviewPanels: () => {
               setNavOpen(true)
-              setRightOpen(true)
             },
             setRightTab
           }}

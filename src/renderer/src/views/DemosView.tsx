@@ -1,4 +1,5 @@
 import type { Account } from '@shared/types'
+import { DEMO_TOURS } from '../onboarding'
 import { DEMO_SCENARIOS, type DemoScenario } from '@shared/demoScenarios'
 import { Chevron, Icon } from '../lib/icons'
 
@@ -59,9 +60,11 @@ export function DemosView({ demoMode, account, onGuided, onSimulate, onEnableDem
                   </span>
                 )}
                 <div className="row-gap" style={{ marginTop: 'auto', paddingTop: 6 }}>
-                  <button className="btn sm primary" disabled={!demoMode} onClick={() => onGuided(d)}>
-                    Guided demo <Chevron />
-                  </button>
+                  {DEMO_TOURS[d.id] && (
+                    <button className="btn sm primary" disabled={!demoMode} onClick={() => onGuided(d)}>
+                      Guided demo <Chevron />
+                    </button>
+                  )}
                   {d.upload && (
                     <button className="btn sm" disabled={!demoMode} onClick={() => onSimulate(d)}>
                       Simulate upload <Chevron />

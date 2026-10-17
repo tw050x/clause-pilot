@@ -44,6 +44,10 @@ export interface Api {
     decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
     comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
     uncomment(id: string, commentId: string): Promise<ReviewSession>
+    /** Enter: split a paragraph at the caret; the rest goes into a new paragraph of ours. */
+    split(id: string, blockId: string, head: string, tail: string): Promise<{ session: ReviewSession; id: string }>
+    /** Remove a paragraph we added. */
+    unsplit(id: string, blockId: string): Promise<ReviewSession>
     /** Earlier negotiations per change set (identical first, then similar). */
     seen(id: string): Promise<Record<string, SeenHit[]>>
     /** Ask the AI about these change sets (one request each). Results arrive as session updates. */

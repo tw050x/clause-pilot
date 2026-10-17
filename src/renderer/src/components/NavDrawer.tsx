@@ -45,6 +45,13 @@ export function NavDrawer(p: Props) {
 
   return (
     <nav className={`nav ${open ? '' : 'closed'}`} aria-hidden={!open}>
+      <button className={`account-switch ${account ? '' : 'none'}`} onClick={p.onChooseAccount} title="Choose the active account (⌘K)">
+        <Icon name="users" size={15} />
+        <span>{account?.name ?? 'Choose an account'}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
       {item('home', 'home', 'Start')}
       {p.demoMode && item('demos', 'bolt', 'Demos')}
       <div className="nav-section">Contracts</div>
@@ -73,7 +80,6 @@ export function NavDrawer(p: Props) {
                   <span className="recent-name">{c.title}</span>
                   <span className="sub">
                     {v ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}` : 'No drafts yet'}
-                    {v && v.rejected > 0 && ` · ${v.rejected} rejected`}
                   </span>
                 </span>
                 <span className="nav-chevron">

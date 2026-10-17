@@ -57,7 +57,22 @@ export function diffWords(old: string, next: string): DiffOp[] {
     if (atEnd && old && op.to === op.from && !/\s$/.test(old)) op.insert = ' ' + op.insert.trimEnd()
     else if (!atEnd && !/\s$/.test(op.insert)) op.insert += ' '
   }
-  return ops
+  // Within a replaced word, mark only the characters that changed ("regarded" → "regar": "ded"
+  // struck), as Word does. Only shared runs of two or more characters are kept.
+  for (const op of ops) {
+    if (op.to === op.from || !op.insert) continue
+    const gone = old.slice(op.from, op.to)
+    let p = 0
+    while (p < gone.length && p < op.insert.length && gone[p] === op.insert[p]) p++
+    if (p < 2) p = 0
+    let q = 0
+    while (q < gone.length - p && q < op.insert.length - p && gone[gone.length - 1 - q] === op.insert[op.insert.length - 1 - q]) q++
+    if (q < 2) q = 0
+    op.from += p
+    op.to -= q
+    op.insert = op.insert.slice(p, op.insert.length - q)
+  }
+  return ops.filter((op) => op.to > op.from || op.insert)
 }
 
 /** One run of text as shown: their redline and ours, layered. */

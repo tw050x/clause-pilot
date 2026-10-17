@@ -276,6 +276,8 @@ export interface DocBlock {
   approved?: string
   /** Before their change it was word for word this pre-approved clause. */
   wasApproved?: string
+  /** A paragraph we added (by pressing Enter): its wording is in `edits`, all of it our insertion. */
+  ours?: boolean
 }
 
 /** A comment of ours, in the margin. */

@@ -37,7 +37,7 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
   const d = s.doc!
   const source = s.sourceType === 'docx' && d.blocks.some((b) => b.paras?.length) ? 'original' : 'generated'
   // Paragraphs they removed without tracking aren't in the file; restoring one inserts it again.
-  const received = d.blocks.filter((b) => !(b.untracked && b.kind === 'deleted'))
+  const received = d.blocks.filter((b) => !(b.untracked && b.kind === 'deleted') && !b.ours)
   const zip = await JSZip.loadAsync(source === 'original' ? original : await docxFromBlocks(received))
   const doc = await xml(zip, 'word/document.xml')
   if (!doc) throw new Error('Not a Word document (word/document.xml missing).')
@@ -56,10 +56,27 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     for (const b of set.blocks) resolveTheirChanges(parasOf(b), 'accept')
     stats.acceptedChanges++
   }
+  const added = new Map<string, Element>()
   for (const b of d.blocks) {
     const edit = d.edits[b.id]
     if (edit === undefined) continue
     const paras = parasOf(b)
+    if (b.ours) {
+      // A paragraph we added: inserted after the nearest paragraph before it that's in the file.
+      if (!edit.trim()) continue
+      const at = d.blocks.indexOf(b)
+      // After the paragraph before it (one we've just added, or one in the file).
+      const prev = d.blocks
+        .slice(0, at)
+        .reverse()
+        .map((x) => (added.has(x.id) ? [added.get(x.id)!] : parasOf(x)))
+        .find((p) => p.length)
+      const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, edit.trim())
+      if (p) added.set(b.id, p)
+      stats.replaced++
+      continue
+    }
     if (!paras.length && b.untracked && b.kind === 'deleted') {
       // Put it back where it was: after the nearest paragraph before it that's in the file.
       if (!edit) continue
@@ -347,9 +364,9 @@ class Markup {
   }
 
   /** A whole new paragraph as our tracked insertion, after `after` (or before `before`), styled like its neighbour. */
-  insertParagraph(after: Element | null, before: Element | null, text: string) {
+  insertParagraph(after: Element | null, before: Element | null, text: string): Element | null {
     const near = after ?? before
-    if (!near) return
+    if (!near) return null
     const p = this.el('p')
     const pPr = near.getElementsByTagNameNS(W, 'pPr')[0]
     const ppr = pPr && pPr.parentNode === near ? (pPr.cloneNode(true) as Element) : this.el('pPr')
@@ -369,6 +386,7 @@ class Markup {
     p.appendChild(ins)
     if (after) after.parentNode!.insertBefore(p, after.nextSibling)
     else before!.parentNode!.insertBefore(p, before)
+    return p
   }
 
   // ---- comments ----
