@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Settings } from '@shared/types'
+import { SETUP_DISMISSED } from './Home'
 
 const MODELS = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (default)' },
@@ -210,6 +211,11 @@ function ClearData() {
               disabled={busy}
               onClick={async () => {
                 setBusy(true)
+                try {
+                  localStorage.removeItem(SETUP_DISMISSED)
+                } catch {
+                  /* nothing stored */
+                }
                 await window.api.workspace.clear()
               }}
             >

@@ -31,6 +31,21 @@ export function Home({
   }, [])
 
   const browse = onOpenLive
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(SETUP_DISMISSED) === '1'
+    } catch {
+      return false
+    }
+  })
+  const dismiss = () => {
+    setDismissed(true)
+    try {
+      localStorage.setItem(SETUP_DISMISSED, '1')
+    } catch {
+      /* not remembered; hidden until the app restarts */
+    }
+  }
 
   return (
     <div className="page">
@@ -55,8 +70,9 @@ export function Home({
         </div>
       ) : null}
 
-      {ws && (
+      {ws && !dismissed && (
         <SetupChecklist
+          onDismiss={dismiss}
           items={[
             {
               title: 'Choose or create a client account',
@@ -98,8 +114,11 @@ interface ChecklistItem {
   cta?: { label: string; onClick: () => void }
 }
 
-/** Live-mode setup, ticked from the workspace's real state rather than by hand. */
-function SetupChecklist({ items }: { items: ChecklistItem[] }) {
+/** Remembers that the finished setup card was dismissed. Clear all data forgets it. */
+export const SETUP_DISMISSED = 'cp.setupDismissed'
+
+/** Live-mode setup, ticked from the workspace's real state rather than by hand. Once every step is done it can be dismissed. */
+function SetupChecklist({ items, onDismiss }: { items: ChecklistItem[]; onDismiss: () => void }) {
   const done = items.filter((i) => i.done).length
   const complete = done === items.length
   const next = items.findIndex((i) => !i.done)
@@ -114,9 +133,15 @@ function SetupChecklist({ items }: { items: ChecklistItem[] }) {
               : 'The workspace starts from scratch, as it would for a real team. These steps make reviews useful.'}
           </p>
         </div>
-        <span className="faint checklist-count">
-          {done} of {items.length} done
-        </span>
+        {complete ? (
+          <button className="icon-btn" title="Dismiss" aria-label="Dismiss" onClick={onDismiss}>
+            <Icon name="x" size={16} />
+          </button>
+        ) : (
+          <span className="faint checklist-count">
+            {done} of {items.length} done
+          </span>
+        )}
       </div>
       <div className="progress" style={{ margin: '10px 0 6px' }}>
         <div style={{ width: `${(done / items.length) * 100}%`, background: 'var(--exact)' }} />
