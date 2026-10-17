@@ -13,6 +13,8 @@ interface Props {
   accountName?: string
   contractTitle?: string
   onOpenReview: (id: string) => void
+  /** An AI card was used: show Ask AI with its question (the task is already running). */
+  onAskAi: (runId: string, question: string) => void
 }
 
 /** A review: the document screen. Reviews saved by earlier versions (clause by clause) can't be reopened. */

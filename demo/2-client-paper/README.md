@@ -33,7 +33,7 @@ There is no second round.
 
    Nothing here is our wording, so almost every paragraph has a **grey bar** ("To read"). The right-hand column says *Not on our paper* and counts the paragraphs to read. When the file was opened, the app found the closest of our approved clauses for each paragraph, up to three, by keywords and on your machine. Nothing was sent anywhere.
 
-7. Press **Intent check with AI**. Each paragraph goes to the AI with its shortlist of our clauses. Paragraphs it finds equivalent to one of ours turn **dashed green**.
+7. Select the whole agreement (click in it and press ⌘A). The **AI** section of the right-hand column, which says *Select text for options* until you select something, now offers cards. Press **Is the intent the same?**. Each paragraph goes to the AI with its shortlist of our clauses; the question appears in **Ask AI** and the answer comes back there and on the card (go back to the **Review** tab to see it). Paragraphs it finds equivalent to one of ours turn **dashed green**.
 
    Expect these to pass:
 
@@ -62,8 +62,8 @@ There is no second round.
    | 4.06 | Delaware law and courts |
    | 4.07 | Only Kestrel may assign in a merger |
 
-8. Select the text of a paragraph, for example Section 2.03. The right-hand column shows the **Intent check**: which of our clauses it matched, how confident the AI is, its reasoning, and any differences and who they favour.
-9. Press **Check against playbook with AI**. The whole contract is checked against each position that applies to an NDA, one request per position. The results are listed in the right-hand column, worst first, and each one links to the sections it is about.
+8. Select the text of one paragraph, for example Section 2.03, and press **Is the intent the same?** again: the card shows which of our clauses it matched, how confident the AI is, its reasoning, and any differences and who they favour. **Raw response** shows exactly what the server returned.
+9. Select the whole agreement again and press **Check against our playbook**. The selected text is checked against each position that applies to an NDA, one request per position. The answer lists the positions worst first, with the sections each is about.
 
    Expect deviations on:
    - **Residuals:** Section 2.05.
@@ -71,7 +71,7 @@ There is no second round.
    - **Non-solicitation of staff:** Section 4.04.
    - **Governing law and jurisdiction:** Section 4.06, Delaware.
 
-   Click a section link to jump to it.
+   Try **Explain in plain English** on a paragraph too, and ask your own questions in **Ask AI**.
 
 10. Now read the agreement. The AI only advises; a person clears each paragraph:
     - **If a paragraph is fine as it is** (for example the dashed-green ones, once you've read them), click into it and press **Mark as checked** in the right-hand column. The bar turns solid green.
@@ -81,7 +81,7 @@ There is no second round.
       - Section 2.05: strike the whole paragraph (select it and delete) and comment *We cannot accept a residuals clause.*
       - Section 4.07: make the merger exception apply to either party.
 11. Press **History** to see everything you did, including each paragraph you marked as checked. Any of it can be undone.
-12. After editing, press **Check against playbook again**. The results update for the contract as it now reads, with your edits.
+12. After editing, select the agreement and press **Check against our playbook** (now *Ask again*). It checks the contract as it now reads, with your edits.
 13. Create the response:
     - **Marked-up copy** is their Word file with your edits as tracked changes and your comments. Press **Save .docx…** to keep it.
     - **Draft response** is the cover email listing each change you propose and why.

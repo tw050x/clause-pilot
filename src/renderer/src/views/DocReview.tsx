@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, contractDigest, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, proposedText, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
+import type { AiTaskKind, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
+import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
-import { DocEditor, type SelectedChange } from '../components/DocEditor'
+import { DocEditor, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
 import { diffSegments } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
 import { Redline } from '../components/Redline'
+import { Markdown } from '../components/Markdown'
 
 interface Props {
   session: ReviewSession
@@ -23,6 +24,8 @@ interface Props {
   contractTitle?: string
   onOpenReview: (id: string) => void
   onNominationsChanged: () => void
+  /** An AI card was used: show Ask AI with its question (the task is already running). */
+  onAskAi: (runId: string, question: string) => void
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
@@ -43,7 +46,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
+export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, onAskAi }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -72,11 +75,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     }
   }
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
-  const [highlight, setHighlight] = useState<{ blockId: string; quote: string } | null>(null)
+  const [highlight, setHighlight] = useState<Highlight | null>(null)
   const highlighted = !!highlight
   /** A paragraph whose comments were asked for (its comment badge). */
   const [commentsFor, setCommentsFor] = useState<string | null>(null)
-  const onSelectChanges = useCallback((x: SelectedChange[] | null, hl?: { blockId: string; quote: string }) => {
+  const onSelectChanges = useCallback((x: SelectedChange[] | null, hl?: Highlight) => {
     setPicked(x)
     setHighlight(x && hl ? hl : null)
     if (x) {
@@ -121,8 +124,6 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const cleared = d.blocks.filter((b) => b.kind !== 'heading' && !hasOpenChanges(d, b) && d.edits[b.id] === undefined && (isCleared(d, b) || segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)]))).length
   const onHold = alert?.status === 'open'
   // Paragraphs the AI could check for meaning that it hasn't checked as they now read.
-  const toCheck = d.blocks.filter((b) => intentCandidate(d, b) && d.intent?.[b.id]?.text !== proposedText(d, b))
-  const checking = Object.values(d.intent ?? {}).some((x) => x.status === 'running')
   const aiOk = d.blocks.filter((b) => intentCandidate(d, b) && aiSame(d, b)).length
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
   const jumpTo = (blockId: string) => {
@@ -240,18 +241,29 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             </button>
           </div>
         )}
-        {(toCheck.length > 0 || checking) && (
-          <button
-            className="btn sm"
-            disabled={onHold || checking}
-            title={onHold ? 'On security hold: nothing goes to the AI' : 'Asks the AI, for each paragraph that differs from our approved wording, whether it means the same. Nothing is accepted by it.'}
-            onClick={() => act(window.api.doc.checkIntent(session.id, toCheck.map((b) => b.id)))}
-          >
-            {checking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {checking ? 'Checking intent…' : `Intent check with AI (${toCheck.length})`}
-          </button>
-        )}
-        <PlaybookCheckBlock session={session} act={act} onHold={onHold} onJump={jumpTo} />
       </section>
+
+      {!showHistory && (
+        <AiSection
+          session={session}
+          highlight={highlight}
+          onHold={onHold}
+          run={async (kind) => {
+            if (!highlight) return
+            // The task starts; its question goes to Ask AI, and the answer arrives as session updates.
+            let asked: { runId: string; question: string } | null = null
+            const ok = await act(
+              window.api.ai.run(session.id, { kind, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => {
+                const q = r.session.doc?.aiRuns?.find((x) => x.id === r.runId)?.question
+                if (q) asked = { runId: r.runId, question: q }
+                return r.session
+              })
+            )
+            const a = asked as { runId: string; question: string } | null
+            if (ok && a) onAskAi(a.runId, a.question)
+          }}
+        />
+      )}
 
       {showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
@@ -469,12 +481,6 @@ function SelectionPanel({
           )
         })}
       </div>
-      {/* Intent check: only for text you've highlighted, per paragraph it covers. */}
-      {highlighted &&
-        [...new Set(items.map((x) => x.blockId))].map((id) => {
-          const b = blocks.get(id)!
-          return <IntentSection key={id} session={session} b={b} act={act} many={new Set(items.map((x) => x.blockId)).size > 1} />
-        })}
     </section>
   )
 }
@@ -717,7 +723,6 @@ function ParagraphPanel({
         )}
       </div>
 
-      {quote !== undefined && <IntentSection session={session} b={b} act={act} />}
       {!showComments && !showResolved && resolvedHere > 0 && (
         <button className="link-btn dr-small" onClick={() => setShowResolved(true)}>
           {resolvedHere} resolved comment{resolvedHere === 1 ? '' : 's'}
@@ -802,65 +807,6 @@ function CommentsBlock({
         )}
       </div>
     </>
-  )
-}
-
-/** The AI's meaning check for a paragraph that differs from our approved wording: ask, and its answer. */
-function IntentSection({ session, b, act, many }: { session: ReviewSession; b: DocBlock; act: (p: Promise<ReviewSession>) => Promise<boolean>; many?: boolean }) {
-  const d = session.doc!
-  const r = d.intent?.[b.id]
-  const current = r && r.text === proposedText(d, b)
-  const canAsk = intentCandidate(d, b)
-  const lib = useLibrary()
-  const toRead = needsReading(d, b)
-  if (!canAsk && !(r && current)) return null
-  const against = b.standard ?? b.wasApproved
-  const names = (b.matches ?? []).map((id) => lib.get(id)?.title).filter(Boolean)
-  return (
-    <div className="dr-ai">
-      <div className="dr-mini-h">
-        Intent check{many ? ` · ${whereOf(d, b)}` : ''}
-        {canAsk && r?.status !== 'running' && (
-          <button className="btn sm" onClick={() => act(window.api.doc.checkIntent(session.id, [b.id]))}>
-            <Icon name="sparkle" size={13} /> {r && current ? 'Check again' : 'Check intent'}
-          </button>
-        )}
-      </div>
-      {(!r || !current) &&
-        (against ? (
-          <p className="faint dr-small">Ask the AI whether this means the same as our approved “{against}”. It only advises: if it agrees, the bar turns dashed green until you accept or reject the changes yourself.</p>
-        ) : (
-          <p className="faint dr-small">
-            Not our wording. Ask the AI whether it means the same as the closest of our clauses{names.length ? `: ${names.map((n) => `“${n}”`).join(', ')}` : ''}. It only advises: if it agrees, the bar turns dashed green until you mark it as checked yourself.
-          </p>
-        ))}
-      {r?.status === 'running' && current && (
-        <p className="faint dr-small">
-          <span className="spinner sm" /> Comparing with our approved wording…
-        </p>
-      )}
-      {r?.status === 'error' && current && <p className="dr-small dr-err">{r.error}</p>}
-      {r?.status === 'done' && current && (
-        <div className={`dr-ai-card ${r.same ? 'same' : 'differs'}`}>
-          <div className="dr-ai-chips">
-            <span className={`dr-chip ${r.same ? 'rec-accept' : 'rec-escalate'}`}>{r.same ? 'Same intent' : 'Differs'}</span>
-            {r.confidence && <span className="dr-chip">{r.confidence} confidence</span>}
-          </div>
-          <p className="dr-ai-summary">{r.note}</p>
-          {r.reasoning && <p className="dr-small">{r.reasoning}</p>}
-          {!!r.differences?.length && (
-            <div className="dr-ai-list">
-              {r.differences.map((x, i) => (
-                <div key={i} className={x.favours === 'counterparty' ? 'conflict' : 'ok'}>
-                  • {x.description} <span className="faint">({x.favours === 'us' ? 'favours us' : x.favours === 'counterparty' ? 'favours them' : 'neutral'})</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {r.same && <p className="faint dr-small">The AI only advises. {toRead ? 'Read it and mark it as checked yourself.' : 'Accept or reject their changes here yourself to mark it checked.'}</p>}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -965,81 +911,79 @@ function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (te
   )
 }
 
-// ---- the whole contract against our playbook ------------------------------------------------------
+// ---- AI tasks on highlighted text ------------------------------------------------------------------
 
-const PB_STATUS = { compliant: 'Meets our standard', deviation: 'Deviates', missing: 'Missing', 'not-applicable': 'Not applicable', error: 'Failed' } as const
+const AI_TASKS: { kind: AiTaskKind; title: string; detail: string }[] = [
+  { kind: 'intent', title: 'Is the intent the same?', detail: 'Compares it with our approved wording' },
+  { kind: 'playbook', title: 'Check against our playbook', detail: 'Each standard position that applies' },
+  { kind: 'changes', title: 'Review their changes', detail: 'What they do, who they favour, what to do' },
+  { kind: 'explain', title: 'Explain in plain English', detail: 'What it means for PortSwigger' }
+]
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
 
 /**
- * On request: the AI checks the whole contract, as it now reads, against each playbook position
- * that applies. Each result links to the paragraphs it's about. It only advises.
+ * The AI section: a card for each task that fits the highlighted text. Using a card asks the AI
+ * (the question goes to Ask AI too), and the answer, written from the server's response, comes
+ * back onto the card, with the response as returned.
  */
-function PlaybookCheckBlock({ session, act, onHold, onJump }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onHold: boolean; onJump: (blockId: string) => void }) {
+function AiSection({ session, highlight, onHold, run }: { session: ReviewSession; highlight: Highlight | null; onHold: boolean; run: (kind: AiTaskKind) => Promise<unknown> }) {
   const d = session.doc!
-  const pc = d.playbookCheck
-  const [open, setOpen] = useState(true)
-  const stale = !!pc && pc.status === 'done' && pc.digest !== contractDigest(d)
-  const running = pc?.status === 'running'
-  const rank = (r: { status: string; severity: string }) => (r.status === 'deviation' || r.status === 'missing' ? (r.severity === 'high' ? 0 : r.severity === 'medium' ? 1 : 2) : r.status === 'error' ? 3 : 4)
-  const results = [...(pc?.results ?? [])].sort((a, b) => rank(a) - rank(b))
-  const issues = results.filter((r) => r.status === 'deviation' || r.status === 'missing').length
+  const lib = useLibrary()
+  if (!highlight?.quote)
+    return (
+      <section className="rc-section ai-section">
+        <div className="dr-mini-h">AI</div>
+        <p className="faint dr-small">Select text for options.</p>
+      </section>
+    )
+  const blocks = d.blocks.filter((b) => highlight.blockIds.includes(b.id) && b.kind !== 'deleted')
+  const candidates = blocks.filter((b) => intentCandidate(d, b))
+  const against = [...new Set(candidates.flatMap((b) => (b.standard ?? b.wasApproved ? [b.standard ?? b.wasApproved!] : (b.matches ?? []).map((id) => lib.get(id)?.title ?? id))))]
+  const fits = (kind: AiTaskKind) => (kind === 'intent' ? candidates.length > 0 : kind === 'changes' ? d.blocks.some((b) => highlight.blockIds.includes(b.id) && hasOpenChanges(d, b)) : true)
+  const detail = (kind: AiTaskKind, base: string) =>
+    kind === 'intent' && against.length ? `Compares it with our ${against.slice(0, 3).map((t) => `“${t}”`).join(', ')}${against.length > 3 ? ` and ${against.length - 3} more` : ''}` : base
+  const latest = (kind: AiTaskKind) =>
+    [...(d.aiRuns ?? [])].reverse().find((r) => r.kind === kind && r.quote === highlight.quote && sameIds(r.blockIds, highlight.blockIds))
   return (
-    <div className="pbc">
-      <div className="pbc-head">
-        <button
-          className="btn sm"
-          disabled={onHold || running}
-          title={onHold ? 'On security hold: nothing goes to the AI' : 'Sends the contract as it now reads to the AI, once per playbook position that applies. Nothing is changed by it.'}
-          onClick={() => act(window.api.doc.checkPlaybook(session.id))}
-        >
-          {running ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {running ? 'Checking against the playbook…' : pc?.status === 'done' ? 'Check against playbook again' : 'Check against playbook with AI'}
-        </button>
-        {pc?.status === 'done' && (
-          <button className="link-btn" onClick={() => setOpen((v) => !v)}>
-            {open ? 'Hide' : 'Show'} results
-          </button>
-        )}
-      </div>
-      {pc?.status === 'error' && <p className="dr-small dr-err">{pc.error}</p>}
-      {pc?.status === 'done' && open && (
-        <div className="pbc-results">
-          <p className="faint dr-small">
-            {issues ? `${issues} of ${results.length} positions need attention` : `All ${results.length} positions met`} · {new Date(pc.at).toLocaleString()}
-            {stale && ' · the contract has changed since: check again to update'}
-          </p>
-          {results.map((r) => (
-            <div key={r.positionId} className={`pbc-row ${r.status} sev-${r.severity}`}>
-              <div className="pbc-row-head">
-                <strong>{r.title}</strong>
-                <span className={`dr-chip ${r.status === 'compliant' ? 'rec-accept' : r.status === 'deviation' || r.status === 'missing' ? 'rec-escalate' : ''}`}>
-                  {PB_STATUS[r.status]}
-                  {(r.status === 'deviation' || r.status === 'missing') && ` · ${r.severity}`}
-                </span>
-              </div>
-              {r.status === 'deviation' && <div className="faint dr-small">{r.withinFallback ? 'Within our acceptable fallback' : 'Outside our acceptable fallback'}</div>}
-              {r.deviation && <p className="dr-small">{r.deviation}</p>}
-              {r.error && <p className="dr-small dr-err">{r.error}</p>}
-              {r.suggestedRedline && (
-                <div className="dr-small pbc-redline">
-                  <span className="faint">Suggested wording: </span>
-                  {r.suggestedRedline}
-                </div>
-              )}
-              {r.blockIds.length > 0 && (
-                <div className="pbc-links">
-                  {r.blockIds.map((id) => {
-                    const b = d.blocks.find((x) => x.id === id)
-                    return b ? (
-                      <button key={id} className="link-btn" onClick={() => onJump(id)}>
-                        {whereOf(d, b)}
-                      </button>
-                    ) : null
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
+    <section className="rc-section ai-section">
+      <div className="dr-mini-h">AI</div>
+      {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
+      {AI_TASKS.filter((t) => fits(t.kind)).map((t) => (
+        <AiCard key={t.kind} title={t.title} detail={detail(t.kind, t.detail)} result={latest(t.kind)} disabled={onHold} onRun={() => run(t.kind)} />
+      ))}
+    </section>
+  )
+}
+
+function AiCard({ title, detail, result, disabled, onRun }: { title: string; detail: string; result?: AiTaskRun; disabled: boolean; onRun: () => void }) {
+  const [raw, setRaw] = useState(false)
+  const running = result?.status === 'running'
+  return (
+    <div className={`ai-card ${result ? 'has-result' : ''}`}>
+      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title="Asks the AI; the question and the answer also appear in Ask AI">
+        <Icon name="sparkle" size={14} />
+        <span className="ai-card-text">
+          <strong>{title}</strong>
+          <span className="faint">{detail}</span>
+        </span>
+        <span className="ai-card-go">{running ? <span className="spinner sm" /> : result ? 'Ask again' : 'Ask'}</span>
+      </button>
+      {result?.status === 'done' && (
+        <div className="ai-card-body">
+          <Markdown text={result.answer ?? ''} />
+          <div className="ai-card-foot">
+            <span className="faint">
+              {result.by} · {new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <button className="link-btn" onClick={() => setRaw((v) => !v)}>
+              {raw ? 'Hide' : 'Raw'} response
+            </button>
+          </div>
+          {raw && <pre className="ai-raw">{typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw, null, 2)}</pre>}
         </div>
       )}
+      {result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
   )
 }

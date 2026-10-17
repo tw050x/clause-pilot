@@ -3,7 +3,7 @@ import type { Account, ContractRecord, Nomination, PlaybookProposal, ReviewSessi
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
-import { ChatPanel } from './components/ChatDrawer'
+import { ChatPanel, type ChatInject } from './components/ChatDrawer'
 import { Home } from './views/Home'
 import { Review } from './views/Review'
 import { HistoryView, LibraryView } from './views/KnowledgeView'
@@ -26,6 +26,8 @@ export function App() {
   const [session, setSession] = useState<ReviewSession | null>(null)
   const [navOpen, setNavOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
+  // A question posted to Ask AI from an AI card in the review column.
+  const [chatInject, setChatInject] = useState<ChatInject | null>(null)
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
@@ -236,6 +238,10 @@ export function App() {
               accountName={reviews.find((r) => r.id === session.id)?.accountName}
               contractTitle={reviews.find((r) => r.id === session.id)?.contractTitle}
               onOpenReview={openSession}
+              onAskAi={(runId, question) => {
+                setChatInject({ runId, question })
+                setRightTab('chat')
+              }}
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}
@@ -308,7 +314,7 @@ export function App() {
           {/* The Review view renders its controls into this element through a portal. */}
           <div className="rightbar-body" ref={setReviewPanel} style={{ display: rightTab === 'review' ? undefined : 'none' }} />
           <div className="rightbar-chat" style={{ display: rightTab === 'chat' ? undefined : 'none' }}>
-            <ChatPanel session={session} />
+            <ChatPanel session={session} inject={chatInject} />
           </div>
         </aside>
       </div>

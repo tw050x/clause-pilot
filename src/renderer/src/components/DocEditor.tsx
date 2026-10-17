@@ -33,13 +33,16 @@ interface Props {
   /** "Comment" on selected text. */
   onComment: (blockId: string, quote: string) => void
   /** The redlines inside a selection (null when you click elsewhere). */
-  onSelectChanges: (changes: SelectedChange[] | null, highlight?: { blockId: string; quote: string }) => void
+  onSelectChanges: (changes: SelectedChange[] | null, highlight?: Highlight) => void
   /** Commented text was clicked: show that paragraph's comments. */
   onShowComments: (blockId: string) => void
   readOnly?: boolean
 }
 
 /** A redline picked out by selecting text: one of their changes, or one of ours. */
+/** Highlighted text: the paragraph it starts in, every paragraph it touches, and the text. */
+export type Highlight = { blockId: string; blockIds: string[]; quote: string }
+
 export type SelectedChange = { blockId: string; kind: 'theirs'; seg: number } | { blockId: string; kind: 'ours'; op: 'ins' | 'del'; text: string }
 
 const SAVE_AFTER_MS = 450
@@ -328,7 +331,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         return
       }
       focused.current = null
-      cb.current.onSelectChanges(changesIn(state), { blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to, ' ').trim() })
+      // Every paragraph the selection touches, for the AI cards.
+      const blockIds: string[] = []
+      state.doc.nodesBetween(sel.from, sel.to, (n) => {
+        if (n.type.name === 'para' && n.attrs.id) blockIds.push(n.attrs.id)
+        return false
+      })
+      cb.current.onSelectChanges(changesIn(state), { blockId: sel.$from.parent.attrs.id, blockIds, quote: state.doc.textBetween(sel.from, sel.to, ' ').trim() })
       v.dispatch(state.tr.setMeta('redraw', true))
       // Within one paragraph, offer a comment on the selected text: in the gutter, level with it.
       if (sel.$from.parent === sel.$to.parent) {
@@ -437,6 +446,14 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             'Mod-z': undo,
             'Shift-Mod-z': redo,
             'Mod-y': redo,
+            // Select all: the document's text, first paragraph to last (a text selection, so it
+            // reads like any other highlight: the AI cards, comments).
+            'Mod-a': (state, dispatch) => {
+              const last = state.doc.lastChild
+              if (!last || !dispatch) return false
+              dispatch(state.tr.setSelection(TextSelection.create(state.doc, 1, state.doc.content.size - 1)))
+              return true
+            },
             Enter: split,
             'Shift-Enter': split,
             Tab: indent(1),
@@ -494,6 +511,11 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           const anchor = t.closest<HTMLElement>('[data-anchor]')
           if (!anchor || !v.state.selection.empty || t.closest('ins, del')) return false
           setTimeout(() => cb.current.onShowComments(anchor.dataset.anchor!), 0)
+          return false
+        },
+        // A selection made with the keyboard (Shift and the arrows, select all) is reported like one made with the mouse.
+        keyup: (v, e) => {
+          if (e.shiftKey || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a')) report(v)
           return false
         },
         mousedown: (_v, e) => {

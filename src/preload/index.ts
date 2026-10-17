@@ -17,7 +17,10 @@ const api: Api = {
     setApiKey: (key) => invoke('settings:setApiKey', key),
     setVllmKey: (key) => invoke('settings:setVllmKey', key)
   },
-  ai: { vllmModels: (url) => invoke('ai:vllmModels', url) },
+  ai: {
+    vllmModels: (url) => invoke('ai:vllmModels', url),
+    run: (id, task) => invoke('ai:run', id, task)
+  },
   workspace: {
     clear: () => invoke('workspace:clear'),
     summary: () => invoke('workspace:summary')
@@ -56,9 +59,7 @@ const api: Api = {
     split: (id, blockId, head, tail, newId, list) => invoke('doc:split', id, blockId, head, tail, newId, list),
     setList: (id, blockId, list) => invoke('doc:setList', id, blockId, list),
     unsplit: (id, blockId) => invoke('doc:unsplit', id, blockId),
-    checkIntent: (id, blockIds) => invoke('doc:checkIntent', id, blockIds),
     check: (id, blockIds, on) => invoke('doc:check', id, blockIds, on),
-    checkPlaybook: (id) => invoke('doc:checkPlaybook', id),
     resolve: (id, blockId, seg, outcome, group) => invoke('doc:resolve', id, blockId, seg, outcome, group),
     undoOurs: (id, blockId, mark, group) => invoke('doc:undoOurs', id, blockId, mark, group),
     undo: (id, actionId) => invoke('doc:undo', id, actionId),

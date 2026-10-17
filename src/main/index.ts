@@ -12,9 +12,11 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { beforeTheirs, changeKey, changeSets, contractDigest, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
-import type { ChangeStatus, DocBlock, ListStyle, OurComment, PlaybookCheckResult } from '@shared/types'
-import type { ClauseRef, IntentInput } from './ai/tasks'
+import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import type { AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
+import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
+import { changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
+import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, parseImport, playbookFile } from './transfer'
@@ -791,7 +793,7 @@ ipcMain.handle('doc:nominate', (_e, sessionId: string, setId: string, note: stri
  * paragraphs and edits it spans), with the whole contract as a cached prefix, our
  * playbook and how we answered the same or similar changes before.
  */
-async function askAi(s: ReviewSession, setIds: string[]) {
+async function askAi(s: ReviewSession, setIds: string[], raws?: Record<string, unknown>) {
   const w = wsFor(s)
   const d = s.doc!
   const ai = provider()
@@ -804,6 +806,7 @@ async function askAi(s: ReviewSession, setIds: string[]) {
   const one = async (set: ChangeSet) => {
     try {
       const out = await ai.change(changeInput(s, set, positions, seen[set.id] ?? []))
+      if (raws) raws[set.id] = out
       const review = toChangeReview(s, set, positions, out)
       d.ai![set.id] = { status: 'done', data: review }
       if (out.injection_suspected && out.injection_notes.trim()) {
@@ -823,109 +826,135 @@ async function askAi(s: ReviewSession, setIds: string[]) {
   for (let i = 0; i < rest.length; i += 4) await Promise.all(rest.slice(i, i + 4).map(one))
 }
 
+const HOLD = 'On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.'
+
 /**
- * Ask the AI, on request, whether paragraphs mean the same as the approved clauses they differ
- * from. One request per paragraph; results arrive as session updates. Nothing is decided by it.
+ * The intent check: for each paragraph, does it mean the same as our approved clause it differs
+ * from (or, on their paper, one of our closest)? One request per paragraph; each answer is
+ * checked in code before it can show as the same (dashed green bar). Nothing is decided by it.
  */
-ipcMain.handle('doc:checkIntent', (_e, sessionId: string, blockIds: string[]) => {
-  const { s, d } = docOf(sessionId)
-  if (alertFor(s.id)?.status === 'open')
-    throw new Error('On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.')
+async function runIntent(s: ReviewSession, blocks: DocBlock[]) {
   const w = wsFor(s)
+  const d = s.doc!
   const library = w.store.library()
-  const jobs = blockIds
-    .map((id) => d.blocks.find((b) => b.id === id))
-    .filter((b): b is DocBlock => !!b && intentCandidate(d, b))
-    .map((b) => ({ b, input: intentInput(d, b, library) }))
-    .filter((j): j is { b: DocBlock; input: IntentInput } => !!j.input)
-  if (!jobs.length) throw new Error('Nothing to check: the AI compares paragraphs that differ from our approved wording.')
+  const jobs = blocks.map((b) => ({ b, input: intentInput(d, b, library) })).filter((j): j is { b: DocBlock; input: IntentInput } => !!j.input)
   d.intent ??= {}
   const at = new Date().toISOString()
   for (const j of jobs) d.intent[j.b.id] = { status: 'running', text: j.input.clause.text, at }
-  w.audit.append(actor(), 'ai.intent-requested', s.id, { paragraphs: jobs.map((j) => blockWhere(s, j.b.id)) })
   persist(s)
   const ai = provider()
+  const results: { b: DocBlock; check?: ReturnType<typeof intentResult>; out?: IntentOut; error?: string }[] = []
   const one = async ({ b, input }: { b: DocBlock; input: IntentInput }) => {
     try {
       const out = await ai.intent(input)
       const r = intentResult(input, out)
       d.intent![b.id] = { status: 'done', ...r, at: new Date().toISOString() }
+      results.push({ b, check: r, out })
       if (out.injection_suspected && out.injection_notes.trim()) {
         s.aiInjectionReports.push(`Meaning check of ${blockWhere(s, b.id)}: ${out.injection_notes.trim()}`)
         syncSecurityAlert(w, s)
       }
       w.audit.append('system', 'ai.intent', s.id, { paragraph: blockWhere(s, b.id), against: r.title, same: r.same, confidence: r.confidence, note: r.note })
     } catch (e) {
-      d.intent![b.id] = { status: 'error', text: input.clause.text, error: e instanceof Error ? e.message : String(e), at: new Date().toISOString() }
+      const error = e instanceof Error ? e.message : String(e)
+      d.intent![b.id] = { status: 'error', text: input.clause.text, error, at: new Date().toISOString() }
+      results.push({ b, error })
       w.audit.append('system', 'ai.intent.error', s.id, { paragraph: blockWhere(s, b.id), error: String(e) })
     }
     persist(s)
   }
-  ;(async () => {
-    for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(one))
-  })()
-  return s
-})
+  for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(one))
+  const order = new Map(d.blocks.map((b, i) => [b.id, i]))
+  return results.sort((x, y) => order.get(x.b.id)! - order.get(y.b.id)!)
+}
+
+/** What each task asks, as posted to Ask AI. */
+function questionFor(kind: AiTaskKind, places: string, quote: string): string {
+  const q = quote.length > 400 ? `${quote.slice(0, 400).trimEnd()}…` : quote
+  const quoted = `\n\n> ${q.replace(/\n+/g, ' ')}`
+  if (kind === 'intent') return `Is the intent the same as our approved wording? (${places})${quoted}`
+  if (kind === 'playbook') return `Does this meet our playbook? (${places})${quoted}`
+  if (kind === 'changes') return `Review their changes here: what do they do, who do they favour, and what should we do? (${places})${quoted}`
+  return `Explain this in plain English: what does it mean for PortSwigger? (${places})${quoted}`
+}
 
 /**
- * The whole contract (as it now reads, with our edits) checked against each playbook position
- * that applies, one request per position. Results cite paragraphs; only ids in the contract count.
+ * Run an AI task on highlighted text (a card in the review column). The question is recorded
+ * as asked; the answer is written from the server's response, as Markdown, with the response
+ * itself kept as returned. Results arrive as session updates (and, for Explain, as streamed
+ * text with the run's id).
  */
-ipcMain.handle('doc:checkPlaybook', (_e, sessionId: string) => {
+ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; blockIds: string[]; quote: string }) => {
   const { s, d } = docOf(sessionId)
-  if (alertFor(s.id)?.status === 'open')
-    throw new Error('On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.')
+  if (alertFor(s.id)?.status === 'open') throw new Error(HOLD)
   const w = wsFor(s)
-  const positions = applicable(w.store.playbook(), s.contractType)
-  if (!positions.length) throw new Error('No playbook positions apply to this kind of contract. Add or import some on the Playbook page.')
-  if (d.playbookCheck?.status === 'running') return s
-  const clauses: ClauseRef[] = d.blocks
-    .filter((b) => b.kind !== 'deleted')
-    .map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) }))
-    .filter((c) => c.text.trim())
-  const digest = contractDigest(d)
-  d.playbookCheck = { status: 'running', at: new Date().toISOString(), digest, results: [] }
-  w.audit.append(actor(), 'ai.playbook-requested', s.id, { positions: positions.map((p) => p.id) })
+  const blocks = d.blocks.filter((b) => task.blockIds.includes(b.id) && b.kind !== 'deleted')
+  if (!blocks.length) throw new Error('Select some text in the document first.')
+  // Where it is, for the question: the numbered paragraphs, or a range when there are many.
+  const named = [...new Set(blocks.filter((b) => b.kind !== 'heading').map((b) => whereOf(d, b)))]
+  const places = named.length <= 5 ? named.join(', ') : `${named[0]} to ${named[named.length - 1]}, ${named.length} paragraphs`
+  const run: AiTaskRun = {
+    id: uid('ai'),
+    kind: task.kind,
+    // As highlighted (so the card for this highlight finds it), deleted paragraphs included.
+    blockIds: task.blockIds,
+    quote: task.quote,
+    question: questionFor(task.kind, places, task.quote),
+    status: 'running',
+    by: actor(),
+    at: new Date().toISOString()
+  }
+  d.aiRuns = [...(d.aiRuns ?? []), run]
+  w.audit.append(actor(), 'ai.task-requested', s.id, { kind: task.kind, paragraphs: places })
   persist(s)
-  const ai = provider()
-  const ids = new Set(clauses.map((c) => c.id))
+  const finish = (patch: Partial<AiTaskRun>) => {
+    const r = d.aiRuns!.find((x) => x.id === run.id)!
+    Object.assign(r, patch, { at: new Date().toISOString() })
+    w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
+    persist(s)
+  }
   ;(async () => {
-    const results: PlaybookCheckResult[] = []
-    for (let i = 0; i < positions.length; i += 4) {
-      await Promise.all(
-        positions.slice(i, i + 4).map(async (p) => {
+    if (task.kind === 'intent') {
+      const results = await runIntent(s, blocks.filter((b) => intentCandidate(d, b)))
+      finish({ status: 'done', answer: intentAnswer(results.map((r) => ({ where: whereOf(d, r.b), ...r }))), raw: results.map((r) => ({ paragraph: whereOf(d, r.b), response: r.out ?? null, error: r.error })) })
+    } else if (task.kind === 'playbook') {
+      const ai = provider()
+      const clauses: ClauseRef[] = blocks.map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) })).filter((c) => c.text.trim())
+      const ids = new Set(clauses.map((c) => c.id))
+      const where = (xs: string[]) => [...new Set(xs.filter((x) => ids.has(x)).map((x) => whereOf(d, d.blocks.find((b) => b.id === x)!)))].join(', ')
+      const results = await Promise.all(
+        applicable(w.store.playbook(), s.contractType).map(async (position) => {
           try {
-            const out = await ai.position({ clauses, position: p })
-            results.push({
-              positionId: p.id,
-              title: p.title,
-              status: out.status,
-              blockIds: out.clause_ids.filter((id) => ids.has(id)),
-              deviation: out.deviation.trim(),
-              severity: out.severity,
-              withinFallback: out.within_fallback,
-              suggestedRedline: out.suggested_redline.trim()
-            })
+            const out = await ai.position({ clauses, position })
             if (out.injection_suspected && out.injection_notes.trim()) {
-              s.aiInjectionReports.push(`Playbook check (${p.title}): ${out.injection_notes.trim()}`)
+              s.aiInjectionReports.push(`Playbook check (${position.title}): ${out.injection_notes.trim()}`)
               syncSecurityAlert(w, s)
             }
+            return { position, out: { ...out, clause_ids: out.clause_ids.filter((x) => ids.has(x)) }, raw: out, where }
           } catch (e) {
-            results.push({ positionId: p.id, title: p.title, status: 'error', blockIds: [], deviation: '', severity: 'low', withinFallback: false, suggestedRedline: '', error: e instanceof Error ? e.message : String(e) })
+            return { position, error: e instanceof Error ? e.message : String(e), where }
           }
         })
       )
+      finish({ status: 'done', answer: playbookAnswer(results), raw: results.map((r) => ({ position: r.position.id, response: 'raw' in r ? r.raw : null, error: 'error' in r ? r.error : undefined })) })
+    } else if (task.kind === 'changes') {
+      // Their changes in the highlight, deleted paragraphs included.
+      const sets = changeSets(d).filter((x) => x.blocks.some((b) => task.blockIds.includes(b.id)) && x.blocks.some((b) => hasOpenChanges(d, b)))
+      const raws: Record<string, unknown> = {}
+      await askAi(s, sets.map((x) => x.id), raws)
+      const results = sets.map((x) => {
+        const r = d.ai?.[x.id]
+        return { where: x.where, review: r?.status === 'done' ? r.data : undefined, error: r?.status === 'error' ? r.error : undefined }
+      })
+      finish({ status: 'done', answer: changesAnswer(results), raw: sets.map((x) => ({ change: x.where, response: raws[x.id] ?? null })) })
+    } else {
+      const model = chatModel()
+      if (!model) throw new Error(loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
+      const text = await model.chat(chatSystem(s), [{ role: 'user', content: run.question }], (t) => send('chat:delta', { requestId: run.id, text: t }))
+      finish({ status: 'done', answer: text, raw: text })
     }
-    const order = new Map(positions.map((p, i) => [p.id, i]))
-    results.sort((a, b) => order.get(a.positionId)! - order.get(b.positionId)!)
-    d.playbookCheck = { status: 'done', at: new Date().toISOString(), digest, results }
-    w.audit.append('system', 'ai.playbook', s.id, { results: results.map((r) => ({ position: r.positionId, status: r.status, severity: r.severity })) })
-    persist(s)
-  })().catch((e) => {
-    d.playbookCheck = { status: 'error', at: new Date().toISOString(), digest, results: [], error: String(e) }
-    persist(s)
-  })
-  return s
+  })().catch((e) => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) }))
+  return { session: s, runId: run.id }
 })
 
 ipcMain.handle('doc:ask', (_e, sessionId: string, setIds: string[]) => {

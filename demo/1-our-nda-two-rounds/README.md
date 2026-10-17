@@ -49,7 +49,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
    | 5.10 | Inserted a non-solicitation clause | Tracked insertion |
    | Signature paragraph | Their signatory | Not in our template |
 
-8. Press **Intent check with AI**. The AI compares each changed paragraph with the approved clause it started from. 1.3 and 2.2 should turn **dashed green**, meaning the AI thinks they still mean the same. It only advises: they stay unaccepted until you decide.
+8. Select from 1.3 to 2.2 (or the whole document with ⌘A). The **AI** section of the right-hand column offers cards for what you selected; press **Is the intent the same?**. The question appears in **Ask AI** and the answer comes back there and on the card in the **Review** tab. The AI compares each changed paragraph with the approved clause it started from: 1.3 and 2.2 should turn **dashed green**, meaning the AI thinks they still mean the same. It only advises: they stay unaccepted until you decide. Try **Review their changes** on 2.4 (the residuals clause) too.
 9. Decide each change. Select some text (a word, a paragraph or several paragraphs), and the right-hand column lists the changes in the selection with one **Accept** and one **Reject** for all of them. Clicking inside a change selects the whole change. To match the client's round-2 reply, decide as follows:
    - **Accept** the parties paragraph, 1.3, 2.1, 2.2 and the signature paragraph.
    - **Reject** 2.4, 3.3, 5.4, 5.8, 5.9 and 5.10.
@@ -82,7 +82,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
     | 5.10 | Added an anti-bribery clause | Tracked insertion and a comment |
 
 16. Click into 5.4. The right-hand column shows the change and, under **Last round we proposed**, the wording we sent. Reject it again.
-17. Decide the rest as you see fit. Edit, comment, and use the intent check on anything you select.
+17. Decide the rest as you see fit. Edit, comment, and use the AI cards on anything you select.
 18. Create the response: **Marked-up copy** and **Draft response**. Because of 5.4, the email also asks them to track every change in their next draft.
 
 If you made different decisions in round 1, the paragraphs you decided differently show in round 2 as changes made without Track Changes. That's the comparison working: the client's draft differs from what you sent.

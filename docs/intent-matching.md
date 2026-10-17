@@ -1,6 +1,6 @@
 # Intent matching: the AI response schema
 
-The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks the AI (Claude, or a vLLM server, as chosen in Settings) whether a paragraph has the **same legal effect** as one of our pre-approved clauses. That covers two cases:
+The **intent check** (the **Is the intent the same?** card in the review column's AI section, for highlighted text) asks the AI (Claude, or a vLLM server, as chosen in Settings) whether a paragraph has the **same legal effect** as one of our pre-approved clauses. That covers two cases:
 
 - **On our paper:** a paragraph that differs from the approved clause it started as (their tracked edit, or a difference found by comparison). There is one candidate, that clause.
 - **On their paper:** a paragraph that isn't our wording at all. On upload, each one gets a shortlist of up to three of our clauses that are closest by keywords (BM25 search over the library, limited to clauses for this kind of contract, in `LibrarySearch` in `src/main/engine/matcher.ts`). Those are the candidates. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.

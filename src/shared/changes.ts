@@ -242,14 +242,6 @@ export function changeGroups(b: DocBlock): number[][] {
 /** The group (replacement or single change) a segment belongs to. */
 export const groupOf = (b: DocBlock, seg: number) => changeGroups(b).find((g) => g.includes(seg)) ?? [seg]
 
-/** A short fingerprint of the contract as it now reads (with our edits), to tell when an AI check is out of date. */
-export function contractDigest(doc: DocReview): string {
-  const text = doc.blocks.filter((b) => b.kind !== 'deleted').map((b) => shownText(marksFor(doc, b))).join('\n')
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
-  return `${text.length.toString(36)}-${(h >>> 0).toString(36)}`
-}
-
 /**
  * Their changes here still to decide. A change found by comparison (not tracked in their file)
  * is rejected by restoring the wording with our edit, so a paragraph we put back exactly as

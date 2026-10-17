@@ -398,8 +398,33 @@ export interface DocReview {
   commentsDone?: Record<string, CommentDone>
   /** Paragraphs with nothing to accept or reject that the reviewer has read and marked as checked. */
   checked?: Record<string, CheckedMark>
-  /** The AI's check of the whole contract against each playbook position, when asked. */
-  playbookCheck?: PlaybookCheck
+  /** AI tasks run on highlighted text (the cards in the review column, and Ask AI), newest last. */
+  aiRuns?: AiTaskRun[]
+}
+
+/** The AI tasks offered for highlighted text. */
+export type AiTaskKind = 'intent' | 'playbook' | 'changes' | 'explain'
+
+/**
+ * One AI task on highlighted text: what was asked (posted to Ask AI as the user's question),
+ * and what the server answered, as Markdown and as returned.
+ */
+export interface AiTaskRun {
+  id: string
+  kind: AiTaskKind
+  /** The paragraphs the highlight covered, and its text. */
+  blockIds: string[]
+  quote: string
+  /** The question, as posted to Ask AI. */
+  question: string
+  status: 'running' | 'done' | 'error'
+  by: string
+  at: string
+  /** The answer, in Markdown, written from the server's response. */
+  answer?: string
+  /** The server's response(s), exactly as returned (structured tasks: the JSON). */
+  raw?: unknown
+  error?: string
 }
 
 /** A comment thread resolved or reopened, by whom and when. */
@@ -414,29 +439,6 @@ export interface CheckedMark {
   by: string
   at: string
   text: string
-}
-
-/** The whole contract checked against our playbook, one AI request per position. */
-export interface PlaybookCheck {
-  status: 'running' | 'done' | 'error'
-  at: string
-  /** The contract text that was checked: results are marked out of date once it changes. */
-  digest: string
-  results: PlaybookCheckResult[]
-  error?: string
-}
-
-export interface PlaybookCheckResult {
-  positionId: string
-  title: string
-  status: 'compliant' | 'deviation' | 'missing' | 'not-applicable' | 'error'
-  /** Paragraphs the AI said this position is about (checked to exist). */
-  blockIds: string[]
-  deviation: string
-  severity: 'high' | 'medium' | 'low'
-  withinFallback: boolean
-  suggestedRedline: string
-  error?: string
 }
 
 /** The AI's view of whether a paragraph has the same legal effect as our approved clause. */

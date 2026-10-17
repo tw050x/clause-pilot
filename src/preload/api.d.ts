@@ -1,5 +1,5 @@
 import type {
-  Account, ContractRecord,
+  Account, ContractRecord, AiTaskKind,
   AuditEntry, ChatMessage, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
@@ -13,7 +13,11 @@ export interface Api {
     setApiKey(key: string | null): Promise<Settings>
     setVllmKey(key: string | null): Promise<Settings>
   }
-  ai: { vllmModels(url: string): Promise<string[]> }
+  ai: {
+    vllmModels(url: string): Promise<string[]>
+    /** Run an AI task on highlighted text; the answer arrives as session updates (Explain also streams, as chat deltas with the run's id). */
+    run(id: string, task: { kind: AiTaskKind; blockIds: string[]; quote: string }): Promise<{ session: ReviewSession; runId: string }>
+  }
   workspace: {
     summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }>
     /** Delete every account, contract, review and the knowledge base (settings and keys are kept); the window reloads. */
@@ -66,12 +70,8 @@ export interface Api {
     /** Undo an action in the history (and later ones that depend on it). */
     undo(id: string, actionId: string): Promise<ReviewSession>
     redo(id: string, actionId: string): Promise<ReviewSession>
-    /** Ask the AI whether paragraphs mean the same as the approved clauses they differ from. */
-    checkIntent(id: string, blockIds: string[]): Promise<ReviewSession>
     /** Mark paragraphs with nothing to accept or reject as checked (or unmark them). */
     check(id: string, blockIds: string[], on: boolean): Promise<ReviewSession>
-    /** Check the whole contract against each playbook position that applies (AI, in the background). */
-    checkPlaybook(id: string): Promise<ReviewSession>
     /** Remove a paragraph we added. */
     unsplit(id: string, blockId: string): Promise<ReviewSession>
     /** Earlier negotiations per change set (identical first, then similar). */
