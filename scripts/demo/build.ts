@@ -41,13 +41,42 @@ async function writeDocx(c: ContractFile, path: string) {
   const ins = (text: string, bold = false) => new InsertedTextRun({ text, bold, id: changeId++, ...who })
   const del = (text: string, bold = false) => new DeletedTextRun({ text, bold, id: changeId++, ...who })
 
-  const runs = (b: Extract<Block, { kind: 'para' }>): Run[] => {
+  type Piece = { op: 'same' | 'ins' | 'del'; text: string }
+  const make = (p: Piece): Run => (p.op === 'same' ? new TextRun(p.text) : p.op === 'ins' ? ins(p.text) : del(p.text))
+
+  /**
+   * The paragraph's runs, with its comment's range around `anchor` (words in the text as
+   * proposed) or, without one, around the whole paragraph, as Word does.
+   */
+  const runs = (b: Extract<Block, { kind: 'para' }>, commentId: number | null): (Run | CommentRangeStart | CommentRangeEnd)[] => {
     const num = b.number ? `${b.number} ` : ''
-    if (b.tracked?.inserted) return [...(num ? [ins(num, true)] : []), ins(b.text)]
-    if (b.tracked?.deleted) return [...(num ? [del(num, true)] : []), del(b.text)]
-    const out: Run[] = num ? [new TextRun({ text: num, bold: true })] : []
-    if (!b.tracked?.base) return [...out, new TextRun(b.text)]
-    for (const t of diffSegments(b.tracked.base, b.text)) out.push(t.op === 'same' ? new TextRun(t.text) : t.op === 'ins' ? ins(t.text) : del(t.text))
+    const op = b.tracked?.inserted ? 'ins' : b.tracked?.deleted ? 'del' : 'same'
+    const head: Run[] = num ? [op === 'ins' ? ins(num, true) : op === 'del' ? del(num, true) : new TextRun({ text: num, bold: true })] : []
+    const pieces: Piece[] = b.tracked?.base ? wholeWords(diffSegments(b.tracked.base, b.text)) : [{ op, text: b.text }]
+    if (commentId === null) return [...head, ...pieces.map(make)]
+    if (!b.anchor) return [new CommentRangeStart(commentId), ...head, ...pieces.map(make), new CommentRangeEnd(commentId)]
+    // Split the pieces where the anchor starts and ends (counted in the proposed text: deletions take no room).
+    const from = b.text.indexOf(b.anchor)
+    if (from < 0) throw new Error(`Anchor not found in ${b.number}: ${b.anchor}`)
+    const to = from + b.anchor.length
+    const out: (Run | CommentRangeStart | CommentRangeEnd)[] = [...head]
+    let at = 0
+    for (const p of pieces) {
+      if (p.op === 'del') {
+        out.push(make(p))
+        continue
+      }
+      const cuts = [from, to].filter((x) => x > at && x < at + p.text.length).map((x) => x - at)
+      let i = 0
+      for (const cut of [...cuts, p.text.length]) {
+        if (at + i === from) out.push(new CommentRangeStart(commentId))
+        if (at + i === to) out.push(new CommentRangeEnd(commentId))
+        if (cut > i) out.push(make({ ...p, text: p.text.slice(i, cut) }))
+        i = cut
+      }
+      at += p.text.length
+    }
+    if (at === to) out.push(new CommentRangeEnd(commentId))
     return out
   }
 
@@ -55,12 +84,11 @@ async function writeDocx(c: ContractFile, path: string) {
     if (b.kind === 'title') return new Paragraph({ children: [new TextRun({ text: b.text, bold: true, size: 28 })], alignment: AlignmentType.CENTER, spacing: { after: 240 } })
     if (b.kind === 'heading')
       return new Paragraph({ children: [b.inserted ? ins(b.text, true) : new TextRun({ text: b.text, bold: true })], heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 } })
-    const r = runs(b)
-    if (!b.comment) return new Paragraph({ children: r, spacing: { after: 120 }, alignment: AlignmentType.JUSTIFIED })
+    if (!b.comment) return new Paragraph({ children: runs(b, null), spacing: { after: 120 }, alignment: AlignmentType.JUSTIFIED })
     const id = comments.length
     comments.push({ id, author: c.author, date: new Date(c.date), children: [new Paragraph({ children: [new TextRun(b.comment)] })] })
     return new Paragraph({
-      children: [new CommentRangeStart(id), ...r, new CommentRangeEnd(id), new TextRun({ children: [new CommentReference(id)] })],
+      children: [...runs(b, id), new TextRun({ children: [new CommentReference(id)] })],
       spacing: { after: 120 },
       alignment: AlignmentType.JUSTIFIED
     })
@@ -72,6 +100,44 @@ async function writeDocx(c: ContractFile, path: string) {
     styles: { default: { document: { run: { font: 'Calibri', size: 22 } } } }
   })
   writeFileSync(path, await Packer.toBuffer(doc))
+}
+
+/**
+ * A redline as a person makes it in Word: whole words. The diff can cut a change mid-word
+ * ("three (3" for "five (5", sharing the ")"); move the shared part of the word into the change.
+ */
+function wholeWords(segs: { op: 'same' | 'ins' | 'del'; text: string }[]): { op: 'same' | 'ins' | 'del'; text: string }[] {
+  const out: { op: 'same' | 'ins' | 'del'; text: string }[] = []
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].op === 'same') {
+      out.push({ ...segs[i] })
+      continue
+    }
+    // One change: the run of insertions and deletions between two unchanged stretches.
+    let j = i
+    while (j + 1 < segs.length && segs[j + 1].op !== 'same') j++
+    const group = segs.slice(i, j + 1)
+    const del = group.filter((s) => s.op === 'del').map((s) => s.text).join('')
+    const ins = group.filter((s) => s.op === 'ins').map((s) => s.text).join('')
+    const before = out[out.length - 1]
+    const after = segs[j + 1] ? { ...segs[j + 1] } : undefined
+    // Only where the change cuts a word: it starts (or ends) mid-word on both sides of the cut.
+    const starts = (t: string) => !!t && !/^\s/.test(t)
+    const ends = (t: string) => !!t && !/\s$/.test(t)
+    const cutsStart = before?.op === 'same' && /\S$/.test(before.text) && [del, ins].some(starts)
+    const cutsEnd = after?.op === 'same' && /^\S/.test(after.text) && [del, ins].some(ends)
+    const head = cutsStart ? before!.text.match(/\S+$/)![0] : ''
+    const tail = cutsEnd ? after!.text.match(/^\S+/)![0] : ''
+    if (head) before!.text = before!.text.slice(0, -head.length)
+    if (tail) after!.text = after!.text.slice(tail.length)
+    if (head || tail || del) out.push({ op: 'del', text: head + del + tail })
+    if (head || tail || ins) out.push({ op: 'ins', text: head + ins + tail })
+    if (after) {
+      out.push(after)
+      i = j + 1
+    } else i = j
+  }
+  return out.filter((s) => s.text)
 }
 
 async function main() {

@@ -5,7 +5,7 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
 import { history, undo, redo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
-import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
+import type { DocBlock, DocReview, ListStyle, OurComment, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
@@ -258,6 +258,11 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             )
           }
         }
+        // The text each comment is anchored to, highlighted as in Word: theirs (the comment's range
+        // in their file) and ours (the text selected when it was made). Found in the paragraph as it
+        // now reads; if the words have changed since, there's nothing to highlight.
+        for (const r of anchorRanges(b, d.comments, node.textContent))
+          decos.push(Decoration.inline(start + r.from, start + r.to, { class: `ed-anchor ${r.ours ? 'ours' : 'theirs'}`, 'data-anchor': b.id }))
         const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
         if (comments)
           decos.push(
@@ -484,6 +489,14 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           e.clipboardData?.setData('text/plain', v.state.doc.textBetween(v.state.selection.from, v.state.selection.to, ' '))
           return replaceAcross(v.state, v.dispatch)
         },
+        // A click (not a drag) on commented text, outside a change, shows its comments, as in Word.
+        click: (v, e) => {
+          const t = e.target as HTMLElement
+          const anchor = t.closest<HTMLElement>('[data-anchor]')
+          if (!anchor || !v.state.selection.empty || t.closest('ins, del')) return false
+          setTimeout(() => cb.current.onShowComments(anchor.dataset.anchor!), 0)
+          return false
+        },
         mousedown: (_v, e) => {
           const t = e.target as HTMLElement
           const badge = t.closest<HTMLElement>('[data-badge]')
@@ -669,4 +682,22 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       )}
     </>
   )
+}
+
+/** Where in a paragraph's text (as now shown) its comments are anchored, theirs and ours. */
+function anchorRanges(b: DocBlock, ours: OurComment[], text: string): { from: number; to: number; ours: boolean }[] {
+  const out: { from: number; to: number; ours: boolean }[] = []
+  const find = (quote: string | undefined, isOurs: boolean) => {
+    let q = (quote ?? '').replace(/\s+/g, ' ').trim()
+    // A typed number ("2.4") is drawn beside the paragraph, not in its text.
+    if (b.label && q.startsWith(b.label)) q = q.slice(b.label.length).trim()
+    if (!q) return
+    const flat = text.replace(/\s/g, ' ')
+    let at = flat.indexOf(q)
+    if (at < 0) at = flat.toLowerCase().indexOf(q.toLowerCase())
+    if (at >= 0) out.push({ from: at, to: at + q.length, ours: isOurs })
+  }
+  for (const c of b.comments ?? []) find(c.quote, false)
+  for (const c of ours) if (c.blockId === b.id) find(c.quote, true)
+  return out
 }

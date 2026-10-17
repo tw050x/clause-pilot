@@ -19,6 +19,8 @@ export type Block =
       tracked?: { base?: string; inserted?: boolean; deleted?: boolean }
       /** Their margin comment on the paragraph. */
       comment?: string
+      /** The words the comment is on (in the text as proposed); without it, the whole paragraph. */
+      anchor?: string
     }
 
 export interface ContractFile {
@@ -31,10 +33,10 @@ export interface ContractFile {
 
 const title = (text: string): Block => ({ kind: 'title', text })
 const h = (text: string, inserted?: boolean): Block => ({ kind: 'heading', text, inserted })
-const p = (number: string | undefined, text: string, comment?: string): Block => ({ kind: 'para', number, text, comment })
+const p = (number: string | undefined, text: string, comment?: string, anchor?: string): Block => ({ kind: 'para', number, text, comment, anchor })
 /** They edited it with Track Changes on, from `base`. */
-const edited = (number: string, base: string, text: string, comment?: string): Block => ({ kind: 'para', number, text, tracked: { base }, comment })
-const inserted = (number: string, text: string, comment?: string): Block => ({ kind: 'para', number, text, tracked: { inserted: true }, comment })
+const edited = (number: string, base: string, text: string, comment?: string, anchor?: string): Block => ({ kind: 'para', number, text, tracked: { base }, comment, anchor })
+const inserted = (number: string, text: string, comment?: string, anchor?: string): Block => ({ kind: 'para', number, text, tracked: { inserted: true }, comment, anchor })
 const deleted = (number: string, text: string): Block => ({ kind: 'para', number, text, tracked: { deleted: true } })
 
 // ---------------------------------------------------------------------------------------------
@@ -80,16 +82,16 @@ export const BRIGHTWATER_V1: ContractFile = {
     p('1.2', lib('nda-definition')),
     edited('1.3', lib('nda-exclusions'), EXCLUSIONS_REWORDED, 'Tidied the drafting; no change in substance intended.'),
     h('2. OBLIGATIONS'),
-    edited('2.1', lib('nda-obligations'), OBLIGATIONS_AFFILIATES, 'Our engineering team sits in a subsidiary, so Affiliates need access.'),
+    edited('2.1', lib('nda-obligations'), OBLIGATIONS_AFFILIATES, 'Our engineering team sits in a subsidiary, so Affiliates need access.', "and its Affiliates'"),
     p('2.2', CARE_REWORDED),
     p('2.3', lib('nda-compelled')),
-    inserted('2.4', RESIDUALS, 'Standard in all Brightwater NDAs: our engineers cannot unlearn what they have seen.'),
+    inserted('2.4', RESIDUALS, 'Standard in all Brightwater NDAs: our engineers cannot unlearn what they have seen.', 'free to use for any purpose the Residuals'),
     h('3. RETURN AND OWNERSHIP'),
     p('3.1', lib('nda-return')),
     p('3.2', lib('nda-ownership')),
     deleted('3.3', lib('nda-no-warranty')),
     h('4. TERM'),
-    edited('4.1', lib('nda-term'), TERM_FIVE, 'Our board requires a five-year term for all supplier NDAs.'),
+    edited('4.1', lib('nda-term'), TERM_FIVE, 'Our board requires a five-year term for all supplier NDAs.', 'five (5) years'),
     h('5. GENERAL'),
     p('5.1', lib('nda-remedies')),
     p('5.2', lib('nda-no-commitment')),
@@ -98,7 +100,7 @@ export const BRIGHTWATER_V1: ContractFile = {
     p('5.5', lib('gen-notices')),
     p('5.6', lib('gen-third-parties')),
     p('5.7', lib('gen-counterparts')),
-    edited('5.8', lib('gen-law'), LAW_NY, 'We contract under New York law as standard.'),
+    edited('5.8', lib('gen-law'), LAW_NY, 'We contract under New York law as standard.', 'the laws of the State of New York'),
     edited('5.9', lib('gen-jurisdiction'), COURTS_NY),
     inserted('5.10', NON_SOLICIT),
     p(undefined, SIGN)
@@ -135,8 +137,8 @@ export const BRIGHTWATER_V2: ContractFile = {
     h('2. OBLIGATIONS'),
     p('2.1', SENT.obligations),
     p('2.2', SENT.care),
-    edited('2.3', lib('nda-compelled'), COMPELLED_NO_ASSIST, 'We will always give notice where we can, but we cannot commit to helping with protective orders.'),
-    inserted('2.4', RESIDUALS_NARROW, 'Narrowed in response to your comments: no patent or copyright licence, and it excludes source code, vulnerability details and personal data.'),
+    edited('2.3', lib('nda-compelled'), COMPELLED_NO_ASSIST, 'We will always give notice where we can, but we cannot commit to helping with protective orders.', 'prompt written notice'),
+    inserted('2.4', RESIDUALS_NARROW, 'Narrowed in response to your comments: no patent or copyright licence, and it excludes source code, vulnerability details and personal data.', 'does not apply to source code, security vulnerability information or personal data'),
     h('3. RETURN AND OWNERSHIP'),
     p('3.1', lib('nda-return')),
     p('3.2', lib('nda-ownership')),
@@ -152,8 +154,8 @@ export const BRIGHTWATER_V2: ContractFile = {
     p('5.5', lib('gen-notices')),
     p('5.6', lib('gen-third-parties')),
     p('5.7', lib('gen-counterparts')),
-    p('5.8', lib('gen-law'), 'English law is fine.'),
-    edited('5.9', lib('gen-jurisdiction'), COURTS_NON_EXCLUSIVE, 'We accept English courts, but we need to be able to enforce in the US as well.'),
+    p('5.8', lib('gen-law'), 'English law is fine.', 'the law of England and Wales'),
+    edited('5.9', lib('gen-jurisdiction'), COURTS_NON_EXCLUSIVE, 'We accept English courts, but we need to be able to enforce in the US as well.', 'non-exclusive jurisdiction'),
     inserted('5.10', ANTI_BRIBERY, 'Our compliance team requires this in every agreement.'),
     p(undefined, SIGN)
   ]

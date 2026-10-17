@@ -784,3 +784,7 @@ del.us-del ins.th-ins { color: inherit; }
 .pbc-row p { margin: 0; }
 .pbc-links { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
 .pbc-redline { font-family: var(--doc-font); }
+
+/* Text a comment is anchored to, highlighted as in Word. */
+.ed-doc .ed-anchor { background: color-mix(in srgb, #f5c542 28%, transparent); border-bottom: 2px solid color-mix(in srgb, #e0a800 70%, transparent); cursor: text; }
+.ed-doc .ed-anchor.ours { background: color-mix(in srgb, var(--rejected) 10%, transparent); border-bottom-color: color-mix(in srgb, var(--rejected) 45%, transparent); }

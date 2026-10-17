@@ -138,7 +138,7 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     const b = d.blocks.find((x) => x.id === c.blockId)
     const paras = b ? parasOf(b) : []
     if (!b || !paras.length) continue
-    m.comment(paras, c.text, where(b), c.replyTo ? { id: Number(c.replyTo) } : null, c.quote ?? b.text)
+    m.comment(paras, c.text, where(b), c.replyTo ? { id: Number(c.replyTo) } : null, c.quote ?? b.text, !!c.quote)
   }
   stats.commentedOnly = d.comments.filter((c) => d.edits[c.blockId] === undefined).length
   stats.comments = m.added
@@ -510,7 +510,7 @@ class Markup {
   }
 
   /** Add our comment on these paragraphs, or as a reply to `parent` (anchored on the same text). */
-  comment(paras: Element[], text: string, where: string, parent?: Comment | null, quote = '') {
+  comment(paras: Element[], text: string, where: string, parent?: Comment | null, quote = '', onQuote = false) {
     const id = this.nextComment++
     this.added++
     this.log.push({ where, text, quote, author: this.author, replyTo: parent ? this.commentText(parent.id) : undefined })
@@ -532,6 +532,10 @@ class Markup {
       else placeBefore(parentRef.parentNode as Element, end)
       placeAfter(parentRef.parentNode as Element, refRun)
       this.thread(paraId, this.parentParaId(parent.id))
+    } else if (onQuote && this.anchorOn(paras, quote, start, end)) {
+      // On the words it was made on, as Word does when you comment on a selection.
+      placeAfter(end, refRun)
+      this.thread(paraId, null)
     } else {
       const first = paras[0]
       const pPr = first.getElementsByTagNameNS(W, 'pPr')[0]
@@ -541,6 +545,62 @@ class Markup {
       last.appendChild(refRun)
       this.thread(paraId, null)
     }
+  }
+
+  /**
+   * Put a comment's range around `quote` in the paragraphs (the text as it now reads, our edits
+   * in). Runs are split where the quote starts and ends. False if the words aren't there.
+   */
+  private anchorOn(paras: Element[], quote: string, start: Element, end: Element): boolean {
+    const q = quote.replace(/\s+/g, ' ').trim()
+    if (!q) return false
+    for (const p of paras) {
+      // The visible text, run by run: w:t (not deleted text), in order.
+      const ts = Array.from(p.getElementsByTagNameNS(W, 't'))
+      const text = ts.map((t) => t.textContent ?? '').join('')
+      const flat = text.replace(/\s/g, ' ')
+      const from = flat.indexOf(q)
+      if (from < 0) continue
+      const to = from + q.length
+      const startRun = this.runAt(ts, from, 'start')
+      const endRun = this.runAt(Array.from(p.getElementsByTagNameNS(W, 't')), to, 'end')
+      if (!startRun || !endRun) return false
+      // Inside a tracked change, the range goes round the whole change (it can't start mid-way).
+      const outer = (r: Element) => (['ins', 'del', 'moveFrom', 'moveTo'].includes((r.parentNode as Element)?.localName ?? '') ? (r.parentNode as Element) : r)
+      placeBefore(outer(startRun), start)
+      placeAfter(outer(endRun), end)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * The run that starts (or ends) exactly at a character offset in the paragraph's visible text,
+   * splitting a run in two when the offset falls inside it.
+   */
+  private runAt(ts: Element[], offset: number, side: 'start' | 'end'): Element | null {
+    let at = 0
+    for (const t of ts) {
+      const s = t.textContent ?? ''
+      const run = t.parentNode as Element
+      if (side === 'start' ? offset < at + s.length : offset <= at + s.length) {
+        const cut = offset - at
+        if (cut === 0 && side === 'start') return run
+        if (cut === s.length && side === 'end') return run
+        // Split: this run keeps the text before the cut, a copy after it gets the rest.
+        if (run.getElementsByTagNameNS(W, 't').length !== 1) return run
+        const copy = run.cloneNode(true) as Element
+        t.textContent = s.slice(0, cut)
+        t.setAttribute('xml:space', 'preserve')
+        const t2 = copy.getElementsByTagNameNS(W, 't')[0]
+        t2.textContent = s.slice(cut)
+        t2.setAttribute('xml:space', 'preserve')
+        placeAfter(run, copy)
+        return side === 'start' ? copy : run
+      }
+      at += s.length
+    }
+    return null
   }
 
   private commentText(id: number): { author: string; text: string } | undefined {

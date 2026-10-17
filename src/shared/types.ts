@@ -19,6 +19,8 @@ export interface DocComment {
   author: string
   date?: string
   text: string
+  /** The text in this paragraph the comment is anchored to in Word (its comment range), as proposed. */
+  quote?: string
 }
 
 export interface Clause {

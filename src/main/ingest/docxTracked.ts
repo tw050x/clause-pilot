@@ -39,14 +39,26 @@ export async function readDocx(buf: Buffer): Promise<DocxParagraph[]> {
   const numbering = await readNumbering(zip)
 
   const order = new Map(Array.from(doc.getElementsByTagNameNS(W, 'p')).map((p, i) => [p, i]))
+  // Comment ranges open at the moment, in document order: a range can span paragraphs.
+  const open = new Set<string>()
   const styleIds = await headingStyles(zip)
   // One paragraph: its proposed text, redline and comments (null when there's nothing in it).
   const read = (p: Element): DocxParagraph | null => {
     const segments: TrackedSegment[] = []
     const anchored = new Set<string>()
-    walk(p, null, segments, anchored)
+    const covered = new Map<string, { shown: string; all: string }>()
+    walk(p, null, segments, { anchored, open, covered })
     const merged = merge(segments)
-    const commentList = [...anchored].map((id) => comments.get(id)).filter((c): c is DocComment => !!c)
+    // Each comment with the text it covers here (what's proposed; what was deleted, if that's all there is).
+    const commentList = [...anchored]
+      .map((id) => {
+        const c = comments.get(id)
+        if (!c) return null
+        const t = covered.get(id)
+        const quote = clean(t?.shown ?? '') || clean(t?.all ?? '')
+        return quote ? { ...c, quote } : c
+      })
+      .filter((c): c is DocComment => !!c)
     // Word's automatic numbering ("1.", "4.2", "(a)") isn't in the text: work it out and put it back in front.
     // No number for deleted paragraphs or empty ones (often just a section break).
     const label = numbering.label(p, merged.every((s) => s.op === 'del' || !s.text.trim()))
@@ -158,7 +170,26 @@ function looks(p: Element, headings: Set<string>): Pick<DocxParagraph, 'heading'
 
 type Track = { op: 'ins' | 'del'; author?: string; date?: string } | null
 
-function walk(node: Element, track: Track, out: TrackedSegment[], anchored: Set<string>) {
+interface CommentState {
+  /** Comments anchored in this paragraph. */
+  anchored: Set<string>
+  /** Comment ranges open at this point in the document. */
+  open: Set<string>
+  /** The text each comment covers in this paragraph: as proposed, and including deletions. */
+  covered: Map<string, { shown: string; all: string }>
+}
+
+function walk(node: Element, track: Track, out: TrackedSegment[], cs: CommentState) {
+  const text = (t: string) => {
+    out.push({ op: track?.op ?? 'same', text: t, author: track?.author, date: track?.date })
+    for (const id of cs.open) {
+      const c = cs.covered.get(id) ?? { shown: '', all: '' }
+      c.all += t
+      if (track?.op !== 'del') c.shown += t
+      cs.covered.set(id, c)
+      cs.anchored.add(id)
+    }
+  }
   for (let child = node.firstChild; child; child = child.nextSibling) {
     if (child.nodeType !== 1) continue
     const el = child as Element
@@ -167,25 +198,31 @@ function walk(node: Element, track: Track, out: TrackedSegment[], anchored: Set<
       case 'ins':
       case 'del':
         // The paragraph-mark markers live in w:rPr and carry no text; skip their contents there.
-        walk(el, { op: el.localName, author: el.getAttributeNS(W, 'author') || undefined, date: el.getAttributeNS(W, 'date') || undefined }, out, anchored)
+        walk(el, { op: el.localName, author: el.getAttributeNS(W, 'author') || undefined, date: el.getAttributeNS(W, 'date') || undefined }, out, cs)
         break
       case 't':
       case 'delText':
-        out.push({ op: track?.op ?? 'same', text: el.textContent ?? '', author: track?.author, date: track?.date })
+        text(el.textContent ?? '')
         break
       case 'tab':
-        out.push({ op: track?.op ?? 'same', text: ' ', author: track?.author, date: track?.date })
+        text(' ')
         break
       case 'commentRangeStart':
+        cs.open.add(el.getAttributeNS(W, 'id') ?? '')
+        cs.anchored.add(el.getAttributeNS(W, 'id') ?? '')
+        break
+      case 'commentRangeEnd':
+        cs.open.delete(el.getAttributeNS(W, 'id') ?? '')
+        break
       case 'commentReference':
-        anchored.add(el.getAttributeNS(W, 'id') ?? '')
+        cs.anchored.add(el.getAttributeNS(W, 'id') ?? '')
         break
       case 'pPr':
       case 'rPr':
       case 'p': // nested paragraphs (text boxes) are visited as their own paragraphs
         break
       default:
-        walk(el, track, out, anchored)
+        walk(el, track, out, cs)
     }
   }
 }

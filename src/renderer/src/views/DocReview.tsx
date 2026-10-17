@@ -810,6 +810,7 @@ function TheirComment({ c, children }: { c: DocComment; children: ReactNode }) {
         <strong>{c.author}</strong>
         {c.date && <span className="faint">{new Date(c.date).toLocaleDateString()}</span>}
       </div>
+      {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
       <div>{c.text}</div>
       {children}
     </div>
@@ -827,7 +828,7 @@ function OurCommentCard({ c, reply, onDelete }: { c: OurComment; reply?: boolean
           <Icon name="x" size={12} />
         </button>
       </div>
-      {c.quote && <div className="dr-quote">“{c.quote}”</div>}
+      {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
       <div>{c.text}</div>
     </div>
   )
