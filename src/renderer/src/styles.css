@@ -62,6 +62,11 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .btn.sm { padding: 3px 9px; font-size: 12.5px; }
 .btn.accept { border-color: var(--accepted); color: var(--accepted); }
 .btn.reject { border-color: var(--rejected); color: var(--rejected); }
+.btn.danger-outline { border-color: var(--conflict); color: var(--conflict); }
+.btn.danger-outline:hover { background: var(--conflict-tint); }
+.btn.danger { background: var(--conflict); border-color: var(--conflict); color: #fff; }
+.btn.danger:hover { background: color-mix(in srgb, var(--conflict) 85%, #000); }
+.clear-confirm { flex-direction: column; align-items: flex-start; gap: 10px; max-width: 640px; }
 .btn.accept.on { background: var(--accepted); color: #fff; }
 .btn.reject.on { background: var(--rejected); color: #fff; }
 .icon-btn { border: none; background: transparent; padding: 6px; border-radius: 7px; cursor: pointer; display: inline-flex; color: var(--text-2); }

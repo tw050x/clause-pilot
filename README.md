@@ -37,6 +37,8 @@ Settings, the encrypted API keys and the workspace (reviews, library, playbook, 
 
 Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example for a throwaway test run.
 
+**Settings → Data → Clear all data…** deletes the workspace (accounts, contracts, reviews, library, playbook, precedents, approvals, alerts, recorded AI answers and the audit log) and starts again empty. Settings and API keys are kept. It asks for confirmation first.
+
 ## CI and releases
 
 - **Prerequisites** (`.github/workflows/prerequisites.yml`) runs on every push to every branch. It installs dependencies, typechecks, builds, and checks that the documented AI schemas match the code.

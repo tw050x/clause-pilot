@@ -18,7 +18,10 @@ const api: Api = {
     setVllmKey: (key) => invoke('settings:setVllmKey', key)
   },
   ai: { vllmModels: (url) => invoke('ai:vllmModels', url) },
-  workspace: { summary: () => invoke('workspace:summary') },
+  workspace: {
+    clear: () => invoke('workspace:clear'),
+    summary: () => invoke('workspace:summary')
+  },
   accounts: {
     list: () => invoke('accounts:list'),
     create: (name) => invoke('accounts:create', name)

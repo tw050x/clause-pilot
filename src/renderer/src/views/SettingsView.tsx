@@ -176,6 +176,52 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
         </label>
         <span className="hint">Only the security team can resolve prompt-injection alerts and release a review from security hold.</span>
       </div>
+
+      <h2 className="settings-h">Data</h2>
+      <ClearData />
+    </div>
+  )
+}
+
+/**
+ * Start again with an empty workspace. Two steps, in the page rather than a native dialog:
+ * the button asks, and the second button does it.
+ */
+function ClearData() {
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="field">
+      {!asking ? (
+        <div>
+          <button className="btn danger-outline" onClick={() => setAsking(true)}>
+            Clear all data…
+          </button>
+        </div>
+      ) : (
+        <div className="banner danger clear-confirm">
+          <div>
+            <strong>Delete everything in this workspace?</strong> All accounts, contracts and reviews, the library, playbook and precedents, approvals, security alerts,
+            recorded AI answers and the audit log. This can’t be undone. Export the library and playbook first if you want to keep them.
+          </div>
+          <div className="row-gap">
+            <button
+              className="btn danger"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                await window.api.workspace.clear()
+              }}
+            >
+              {busy ? 'Clearing…' : 'Delete everything'}
+            </button>
+            <button className="btn" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <span className="hint">Resets the app to an empty workspace, for example to run the demos again from the start. Your settings and API keys are kept.</span>
     </div>
   )
 }

@@ -194,6 +194,22 @@ ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
   return settings()
 })
 
+/**
+ * Clear all data: every account, contract, review, the library, playbook, precedents, approvals,
+ * security alerts, recorded AI answers and the audit log. Settings and API keys are kept, so the
+ * AI stays set up. The workspace starts again empty and the window reloads.
+ */
+ipcMain.handle('workspace:clear', () => {
+  const dir = join(userDir, 'workspaces', 'live')
+  sessions.clear()
+  sessionWs.clear()
+  rmSync(dir, { recursive: true, force: true })
+  Object.assign(ws, openWorkspace())
+  ws.audit.append(actor(), 'workspace.cleared', null, {})
+  win?.webContents.reload()
+  return true
+})
+
 ipcMain.handle('workspace:summary', () => ({
   library: ws.store.library().length,
   playbook: ws.store.playbook().length,

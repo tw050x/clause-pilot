@@ -14,7 +14,11 @@ export interface Api {
     setVllmKey(key: string | null): Promise<Settings>
   }
   ai: { vllmModels(url: string): Promise<string[]> }
-  workspace: { summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }> }
+  workspace: {
+    summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }>
+    /** Delete every account, contract, review and the knowledge base (settings and keys are kept); the window reloads. */
+    clear(): Promise<boolean>
+  }
   accounts: {
     list(): Promise<Account[]>
     create(name: string): Promise<Account>
