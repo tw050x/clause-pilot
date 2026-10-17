@@ -251,17 +251,6 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           </button>
         )}
         <PlaybookCheckBlock session={session} act={act} onHold={onHold} onJump={jumpTo} />
-        <div className="rc-actions">
-          <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
-            <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
-          </button>
-          <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
-            <Icon name="doc" size={14} /> Marked-up copy
-          </button>
-          <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
-            <Icon name="mail" size={14} /> Draft response
-          </button>
-        </div>
       </section>
 
       {showHistory ? (
@@ -290,6 +279,20 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
       )}
+      {/* Fixed at the bottom of the column: what you do with the review as a whole. */}
+      <div className="rc-footer">
+          <div className="rc-actions">
+            <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
+              <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
+            </button>
+            <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
+              <Icon name="doc" size={14} /> Marked-up copy
+            </button>
+            <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
+              <Icon name="mail" size={14} /> Draft response
+            </button>
+          </div>
+      </div>
     </div>
   )
 
