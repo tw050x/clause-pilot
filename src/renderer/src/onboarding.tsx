@@ -6,12 +6,14 @@ const q = (sel: string) => document.querySelector(sel)
 const all = (sel: string) => Array.from(document.querySelectorAll(sel))
 const withText = (sel: string, text: string) => all(sel).find((e) => e.textContent?.includes(text)) ?? null
 
-/** A change in the sidebar list, by where it is ("§2.4") or how its text starts ("Signed for"). */
+/** A change in the document (its first paragraph), by where it is ("§2.4") or how its text starts ("Signed for"). */
 const change = (where: string) =>
-  all('.dr-set').find((e) => {
-    const w = e.querySelector('.dr-set-where')?.textContent ?? ''
-    return w.split(' ')[0] === where || w.startsWith(where)
-  }) ?? null
+  all('.dr-row[data-change]')
+    .find((e) => {
+      const w = e.getAttribute('data-change') ?? ''
+      return w.split(' ')[0] === where || w.startsWith(where)
+    })
+    ?.querySelector('.dr-block') ?? null
 /** The change open in the card below the list. */
 const openChange = () => q('.dr-card .rp-h')?.firstChild?.textContent ?? ''
 const isOpen = (where: string) => openChange().split(' ')[0] === where || openChange().startsWith(where)
@@ -42,8 +44,8 @@ const openStep = (where: string, title: string, body: React.ReactNode): TourStep
   title,
   body,
   target: () => change(where),
-  placement: 'left',
-  action: `Click ${where} in the list of changes.`,
+  placement: 'right',
+  action: where.startsWith('§') ? `Click ${where.slice(1)} in the document.` : 'Click it in the document.',
   done: () => isOpen(where),
   prepare: reviewPanel
 })
@@ -63,7 +65,7 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
   {
     title: 'Draft the response',
     body,
-    target: () => withText('.rp-actions .btn', 'Draft response'),
+    target: () => withText('.dr-bar .btn', 'Draft response'),
     placement: 'left',
     action: 'Click Draft response.',
     done: () => !!q('.modal'),
@@ -83,7 +85,7 @@ const markedUpCopy = (body: React.ReactNode): TourStep[] => [
   {
     title: 'And a marked-up copy',
     body: 'Lawyers reply in Word. The same edits and comments mark up their own document, ready to attach to the email.',
-    target: () => withText('.rp-actions .btn', 'Marked-up copy'),
+    target: () => withText('.dr-bar .btn', 'Marked-up copy'),
     placement: 'left',
     action: 'Click Marked-up copy.',
     done: () => !!q('.redline-modal'),
@@ -120,7 +122,7 @@ const reviewInitech: Tour = {
       title: 'Compared with our wording',
       body: 'There are no tracked changes, but the document is on our paper, so every paragraph was compared with our approved wording. 18 match word for word. Only 3 differ, and they’re listed as changes to decide.',
       target: () => q('.dr-baseline'),
-      placement: 'left',
+      placement: 'bottom',
       prepare: reviewPanel
     },
     openStep('§2.2', 'One clause was reworded', 'The party details and the signature block are different in every deal. Clause 2.2 is the interesting one.'),
@@ -149,16 +151,16 @@ const reviewInitech: Tour = {
       title: 'Now the party details',
       body: 'Check the names and addresses against the deal, then accept them.',
       target: () => change('This Agreement'),
-      placement: 'left',
-      action: 'Click the party details in the list, then Accept theirs.',
+      placement: 'right',
+      action: 'Click the party details at the top of the contract, then Accept theirs.',
       done: () => status('This Agreement', 'accepted')
     },
     {
       title: 'And the signature block',
       body: 'Last one.',
       target: () => change('Signed for'),
-      placement: 'left',
-      action: 'Click the signature block in the list, then Accept theirs.',
+      placement: 'right',
+      action: 'Click the signature block at the end of the contract, then Accept theirs.',
       done: () => status('Signed for', 'accepted')
     },
     ...draftEmail('Nothing needed changing, so the response is a simple “happy to proceed”.'),
@@ -188,9 +190,9 @@ const reviewAcme: Tour = {
     },
     {
       title: 'Grouped into changes',
-      body: 'Every edit in a paragraph, and the paragraphs of one clause, are a single change to decide, however many edits it has. Their new section 5 (heading and clause) is one change, not two.',
-      target: () => q('.dr-sets'),
-      placement: 'left',
+      body: 'Every edit in a paragraph, and the paragraphs of one clause, are a single change to decide, however many edits it has: their new section 5 (heading and clause) is one change, not two. The bar above the contract counts them; the sidebar shows whatever you select.',
+      target: () => q('.dr-bar'),
+      placement: 'bottom',
       prepare: reviewPanel
     },
     openStep('§3.3', 'They deleted one of our clauses', 'Deletions are the easiest edits to miss when reading a redline.'),
@@ -267,7 +269,7 @@ const reviewGlobex: Tour = {
       title: 'Compared with our wording',
       body: 'With no tracked changes, the PDF was compared with our approved wording. 17 paragraphs match word for word. Eight don’t, including a whole “Special conditions” section that isn’t in our template at all.',
       target: () => q('.dr-baseline'),
-      placement: 'left',
+      placement: 'bottom',
       prepare: reviewPanel
     },
     {
@@ -357,15 +359,15 @@ const secondDraft: Tour = {
       title: 'Compared with what we sent',
       body: 'Version 2 was compared with what we sent back: their text with our edits. They took our wording in 3.3, 5.1 and 6.8. One paragraph was changed without Track Changes.',
       target: () => q('.dr-baseline'),
-      placement: 'left',
+      placement: 'bottom',
       prepare: reviewPanel
     },
     {
       title: 'Only what changed',
       body: 'Fold away everything that is as we sent it.',
       target: () => q('.dr-toggle'),
-      placement: 'left',
-      action: 'Tick Show only what changed.',
+      placement: 'bottom',
+      action: 'Tick Only what changed.',
       done: () => !!q('.dr-fold')
     },
     openStep('§6.9', 'A change they didn’t track', 'Clause 6.9 isn’t what we sent, and it wasn’t shown as a tracked change.'),
@@ -408,7 +410,7 @@ const thirdDraft: Tour = {
       title: 'The last fix landed',
       body: 'They took our English-courts wording in 6.9. But one paragraph was added without Track Changes.',
       target: () => q('.dr-baseline'),
-      placement: 'left',
+      placement: 'bottom',
       prepare: reviewPanel
     },
     openStep('§6.10', 'Something new appeared', 'A clause that wasn’t in what we sent. Easy to miss in a late round, when everyone assumes the contract is done.'),

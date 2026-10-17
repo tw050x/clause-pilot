@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChangeReview, DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert, SeenHit } from '@shared/types'
-import { authorsOf, beforeTheirs, changeSets, ourOtherEdits, segmentsOf, statusOf, theyChanged, type ChangeSet, type SetStatus } from '@shared/changes'
+import { authorsOf, beforeTheirs, changeSets, segmentsOf, statusOf, theyChanged, type ChangeSet, type SetStatus } from '@shared/changes'
 import { diffSegments, overlay, type Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
@@ -46,12 +46,19 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const [seen, setSeen] = useState<Record<string, SeenHit[]>>({})
   const [original, setOriginal] = useState<{ text: string; label: string } | null>(null)
   const [prefill, setPrefill] = useState<{ blockId: string; text: string } | null>(null)
-  const [focusComments, setFocusComments] = useState<string | null>(null)
+  const [selBlock, setSelBlock] = useState<string | null>(null)
   const page = useRef<HTMLDivElement>(null)
 
+  /** Select a paragraph: its change if it's part of one, else the paragraph itself. */
+  const selectBlock = (blockId: string, scroll = false) => {
+    const set = setOf.get(blockId)
+    setSelected(set?.id ?? null)
+    setSelBlock(set ? null : blockId)
+    if (scroll) scrollTo(blockId)
+  }
   /** Bring a paragraph's comments into view in the sidebar. */
   const showComments = (blockId: string) => {
-    setFocusComments(blockId)
+    selectBlock(blockId)
     requestAnimationFrame(() => panel?.querySelector(`[data-thread="${blockId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }
   /** Start a comment on a paragraph. On a paragraph they commented on, ours is a reply (threaded in Word). */
@@ -72,6 +79,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
 
   useEffect(() => {
     setSelected(null)
+    setSelBlock(null)
     setEditing(null)
     setDraft(null)
     setExpanded(new Set())
@@ -92,6 +100,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     requestAnimationFrame(() => page.current?.querySelector(`[data-block="${blockId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
   const select = (set: ChangeSet) => {
     setSelected(set.id)
+    setSelBlock(null)
     scrollTo(set.blocks[0].id)
   }
   const nextOpen = () => {
@@ -105,7 +114,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
       if (e.key === 'n') nextOpen()
-      if (e.key === 'Escape') setSelected(null)
+      if (e.key === 'Escape') {
+        setSelected(null)
+        setSelBlock(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -130,7 +142,6 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const asking = Object.values(d.ai ?? {}).some((x) => x.status === 'running')
   const unasked = sets.filter((s) => statusOf(d, s) === 'open' && d.ai?.[s.id]?.status !== 'done')
   const onHold = alert?.status === 'open'
-  const others = ourOtherEdits(d, sets)
   const current = sets.find((s) => s.id === selected) ?? null
 
   // With "changes only", runs of untouched paragraphs fold into a bar.
@@ -147,75 +158,23 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     return out
   }, [d, changesOnly, expanded])
 
+  const selectedPara = selBlock ? d.blocks.find((b) => b.id === selBlock) ?? null : null
+  const contextBlocks = new Set(current ? current.blocks.map((b) => b.id) : selectedPara ? [selectedPara.id] : [])
+
+  // The sidebar is contextual: it shows only what's selected in the document.
   const sidebar = (
     <div className="rp">
-      <section className="rp-section">
-        <div className="rp-doc">
-          <Icon name="doc" size={18} />
-          <div style={{ minWidth: 0 }}>
-            <div className="rp-docname">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
-            {session.version && (
-              <div className="rp-version">
-                Version {session.version}
-                {session.previous && (
-                  <>
-                    {' '}
-                    · after{' '}
-                    <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
-                      version {session.previous.version}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            {session.version && <div className="faint" style={{ fontSize: 12, wordBreak: 'break-word' }}>{session.docName}</div>}
-          </div>
+      {!current && !selectedPara && (
+        <div className="dr-empty">
+          <Icon name="doc" size={22} />
+          <p>Select a change or a paragraph in the document to see it here.</p>
+          {counts.open > 0 && (
+            <button className="btn sm" onClick={nextOpen}>
+              Go to the first change to decide <span className="kbd">N</span>
+            </button>
+          )}
         </div>
-      </section>
-
-      <section className="rp-section">
-        <h4 className="rp-h">
-          Their changes
-          <span className="faint">{sets.length ? `${sets.length}${authors.length ? ` · ${authors.join(', ')}` : ''}` : 'none'}</span>
-        </h4>
-        {d.baseline && <BaselineNote session={session} untrackedSets={untrackedSets} />}
-        {sets.length > 0 && (
-          <div className="dr-counts">
-            {(Object.keys(STATUS_LABEL) as SetStatus[]).map((k) => (
-              <span key={k} className={`dr-count st-${k}`}>
-                <i /> {STATUS_LABEL[k]} <strong>{counts[k]}</strong>
-              </span>
-            ))}
-          </div>
-        )}
-        <label className="row-gap dr-toggle">
-          <input type="checkbox" checked={changesOnly} onChange={(e) => setChangesOnly(e.target.checked)} /> Show only what changed
-        </label>
-        {!sets.length && (
-          <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-            {d.baseline ? 'Nothing changed: every paragraph is as we sent it or our approved wording.' : 'No tracked changes in this draft.'} Edit or comment anywhere in the document.
-          </p>
-        )}
-        <div className="dr-sets">
-          {sets.map((s) => {
-            const st = statusOf(d, s)
-            return (
-              <button key={s.id} className={`dr-set st-${st} ${selected === s.id ? 'on' : ''}`} onClick={() => select(s)}>
-                <span className="dr-set-st">
-                  <i /> {STATUS_LABEL[st]}
-                </span>
-                <span className="dr-set-where">{s.where}</span>
-                <span className="dr-set-what">
-                  {describe(s)}
-                  {seen[s.id]?.some((h) => h.match === 'identical') && <span className="dr-tag seen" title="We've answered this exact change before">seen before</span>}
-                  {d.ai?.[s.id]?.status === 'running' && <span className="spinner sm" />}
-                  {d.ai?.[s.id]?.status === 'done' && <span className={`dr-tag ai rec-${d.ai[s.id].data!.recommendation}`} title="The AI's suggestion">AI: {d.ai[s.id].data!.recommendation}</span>}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
+      )}
 
       {current && (
         <SetCard
@@ -238,86 +197,117 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             setEditing(blockId)
             scrollTo(blockId)
           }}
-          onJump={scrollTo}
+          onJump={(id) => selectBlock(id, true)}
           onNominated={onNominationsChanged}
-          onOriginal={(b) => setOriginal({ text: b.kind === 'deleted' ? b.text : b.text, label: b.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph' })}
+          onOriginal={(b) => setOriginal({ text: b.text, label: b.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph' })}
         />
       )}
 
-      <CommentsSection
-        session={session}
-        draft={draft}
-        focus={focusComments ?? (current ? current.blocks[0].id : null)}
-        highlight={new Set(current?.blocks.map((b) => b.id) ?? (focusComments ? [focusComments] : []))}
-        onReply={(blockId, replyTo) => {
-          setDraft({ blockId, replyTo })
-          showComments(blockId)
-        }}
-        onJump={(blockId) => {
-          setFocusComments(blockId)
-          scrollTo(blockId)
-        }}
-        onDone={async (text) => {
-          if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
-          setDraft(null)
-        }}
-        onDelete={(id) => act(window.api.doc.uncomment(session.id, id))}
-      />
+      {selectedPara && <ParagraphCard session={session} b={selectedPara} act={act} onEdit={() => setEditing(selectedPara.id)} onComment={() => startComment(selectedPara.id)} />}
 
-      {others.length > 0 && (
-        <section className="rp-section">
-          <h4 className="rp-h">Our other edits</h4>
-          <div className="dr-sets">
-            {others.map((b) => (
-              <button key={b.id} className="dr-set st-countered" onClick={() => scrollTo(b.id)}>
-                <span className="dr-set-st">
-                  <i /> Our edit
-                </span>
-                <span className="dr-set-where">{b.label ? `§${b.label.replace(/\.$/, '')}` : b.text.slice(0, 30)}</span>
-                <span className="dr-set-what">{d.edits[b.id] === '' ? 'Struck' : 'Reworded'}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+      {(current || selectedPara) && (
+        <CommentsSection
+          session={session}
+          blocks={contextBlocks}
+          draft={draft && contextBlocks.has(draft.blockId) ? draft : null}
+          onReply={(blockId, replyTo) => setDraft({ blockId, replyTo })}
+          onComment={(blockId) => startComment(blockId)}
+          onDone={async (text) => {
+            if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
+            setDraft(null)
+          }}
+          onDelete={(id) => act(window.api.doc.uncomment(session.id, id))}
+        />
       )}
+    </div>
+  )
 
-      {alert?.status === 'open' && (
-        <section className="rp-section">
-          <div className="banner danger">
-            <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found.{' '}
-            <button className="link-btn" onClick={onOpenSecurity}>
-              Security
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section className="rp-section rp-actions">
+  // The overview and the actions for the whole review sit above the document.
+  const bar = (
+    <div className="dr-bar">
+      <div className="dr-bar-row">
+        <div className="dr-bar-title">
+          <strong>{session.version ? `${accountName} · ${contractTitle}` : session.docName}</strong>
+          {session.version && (
+            <span className="faint">
+              {' '}
+              Version {session.version}
+              {session.previous && (
+                <>
+                  {' '}
+                  · after{' '}
+                  <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
+                    version {session.previous.version}
+                  </button>
+                </>
+              )}
+            </span>
+          )}
+        </div>
+        <span style={{ flex: 1 }} />
         {sets.length > 0 && (
           <button
-            className="btn"
+            className="btn sm"
             disabled={onHold || asking || !unasked.length}
-            title={onHold ? 'On security hold: nothing goes to the AI' : 'One request per change set, each with the whole contract for context'}
+            title={onHold ? 'On security hold: nothing goes to the AI' : 'One request per change, each with the whole contract for context'}
             onClick={() => act(window.api.doc.ask(session.id, unasked.map((s) => s.id)))}
           >
-            {asking ? <span className="spinner sm" /> : <Icon name="sparkle" />} {unasked.length ? `Ask AI about ${unasked.length} open change${unasked.length === 1 ? '' : 's'}` : 'AI has reviewed the open changes'}
+            {asking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {unasked.length ? `Ask AI about ${unasked.length} open` : 'AI has reviewed the open changes'}
           </button>
         )}
-        <button className="btn" onClick={nextOpen} disabled={!counts.open}>
-          <Icon name="next" /> Next change to decide <span className="kbd" style={{ marginLeft: 'auto' }}>N</span>
+        <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
+          <Icon name="doc" size={14} /> Marked-up copy
         </button>
-        <button className="btn primary" onClick={() => setEmailOpen(true)} disabled={alert?.status === 'open'}>
-          <Icon name="mail" /> Draft response
+        <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
+          <Icon name="mail" size={14} /> Draft response
         </button>
-        <button className="btn" onClick={() => setRedlineOpen(true)} disabled={alert?.status === 'open'}>
-          <Icon name="doc" /> Marked-up copy (.docx)
+      </div>
+      <div className="dr-bar-row">
+        <span className="dr-bar-changes">
+          <strong>
+            {sets.length} change{sets.length === 1 ? '' : 's'}
+          </strong>
+          {authors.length > 0 && <span className="faint"> by {authors.join(', ')}</span>}
+        </span>
+        {sets.length > 0 && (
+          <span className="dr-counts">
+            {(Object.keys(STATUS_LABEL) as SetStatus[])
+              .filter((k) => counts[k])
+              .map((k) => (
+                <span key={k} className={`dr-count st-${k}`}>
+                  <i /> {STATUS_LABEL[k]} <strong>{counts[k]}</strong>
+                </span>
+              ))}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <label className="row-gap dr-toggle">
+          <input type="checkbox" checked={changesOnly} onChange={(e) => setChangesOnly(e.target.checked)} /> Only what changed
+        </label>
+        <button className="btn sm" onClick={nextOpen} disabled={!counts.open} title="Next change to decide (N)">
+          Next to decide <Icon name="next" size={13} />
         </button>
-      </section>
+      </div>
+      {d.baseline && <BaselineNote session={session} untrackedSets={untrackedSets} />}
+      {!sets.length && (
+        <div className="dr-baseline">
+          {d.baseline ? 'Nothing changed: every paragraph is as we sent it or our approved wording.' : 'No tracked changes in this draft.'} Edit or comment anywhere in the document.
+        </div>
+      )}
+      {alert?.status === 'open' && (
+        <div className="banner danger">
+          <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found. Nothing goes to the AI or back to them until the security team has looked at it.{' '}
+          <button className="link-btn" onClick={onOpenSecurity}>
+            Security
+          </button>
+        </div>
+      )}
     </div>
   )
 
   return (
     <div className="dr-wrap" onScroll={() => setBubble(null)} ref={page}>
+      {bar}
       {error && (
         <div className="banner danger dr-error">
           <Icon name="alert" /> {error}
@@ -338,12 +328,12 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
               b={it.b}
               session={session}
               set={setOf.get(it.b.id) ?? null}
-              selected={!!selected && setOf.get(it.b.id)?.id === selected}
+              selected={(!!selected && setOf.get(it.b.id)?.id === selected) || selBlock === it.b.id}
               editing={editing === it.b.id}
               prefill={prefill?.blockId === it.b.id ? prefill.text : undefined}
-              commentsOpen={focusComments === it.b.id || draft?.blockId === it.b.id}
+              commentsOpen={contextBlocks.has(it.b.id)}
               flagged={!!session.injection[it.b.id]}
-              onSelect={(s) => setSelected(s?.id ?? null)}
+              onSelect={() => selectBlock(it.b.id)}
               onEdit={() => setEditing(it.b.id)}
               onEditDone={async (text) => {
                 if (text !== undefined && !(await act(window.api.doc.edit(session.id, it.b.id, text)))) return
@@ -416,7 +406,7 @@ function BlockRow(props: {
   commentsOpen: boolean
   prefill?: string
   flagged: boolean
-  onSelect: (s: ChangeSet | null) => void
+  onSelect: () => void
   onEdit: () => void
   onEditDone: (text?: string | null) => void
   onComment: (c: { blockId: string; quote?: string; replyTo?: string }) => void
@@ -431,11 +421,11 @@ function BlockRow(props: {
   const marks = useMemo(() => overlay(segmentsOf(b), edit), [b, edit])
 
   return (
-    <div className="dr-row" data-block={b.id}>
+    <div className="dr-row" data-block={b.id} data-change={set && set.blocks[0].id === b.id ? set.where : undefined}>
       <div
         className={`dr-block k-${b.kind} ${status ? `chg st-${status}` : ''} ${selected ? 'sel' : ''} ${edit !== undefined ? 'ours' : ''} ${b.center ? 'center' : ''} ${b.bold ? 'bold' : ''} ${!set && edit === undefined ? 'quiet' : ''} ${b.untracked ? 'untracked' : ''}`}
         style={b.level ? { paddingLeft: 14 + b.level * 22 } : undefined}
-        onClick={() => props.onSelect(set)}
+        onClick={() => props.onSelect()}
         onDoubleClick={() => !editing && props.onEdit()}
         onMouseUp={props.onMouseUp}
       >
@@ -545,32 +535,34 @@ function Editor({ b, edit, prefill, onDone }: { b: DocBlock; edit: string | unde
   )
 }
 
-/**
- * All comments, in document order, one thread per paragraph: theirs (with our replies) and ours.
- * Drafting a comment happens here too; the paragraph it's on is shown above it.
- */
+/** The comments on the selected paragraphs: theirs (with our replies) and ours, and drafting a new one. */
 function CommentsSection(props: {
   session: ReviewSession
+  blocks: Set<string>
   draft: { blockId: string; quote?: string; replyTo?: string; text?: string } | null
-  focus: string | null
-  highlight: Set<string>
   onReply: (blockId: string, replyTo: string) => void
-  onJump: (blockId: string) => void
+  onComment: (blockId: string) => void
   onDone: (text?: string) => void
   onDelete: (id: string) => void
 }) {
   const { session, draft } = props
   const d = session.doc!
-  const threads = d.blocks.filter((b) => b.comments?.length || d.comments.some((c) => c.blockId === b.id) || draft?.blockId === b.id)
-  const count = d.blocks.reduce((n, b) => n + (b.comments?.length ?? 0), 0) + d.comments.length
-  const where = (b: DocBlock) => (b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `${b.text.slice(0, 36)}…`)
+  const inContext = d.blocks.filter((b) => props.blocks.has(b.id))
+  const threads = inContext.filter((b) => b.comments?.length || d.comments.some((c) => c.blockId === b.id) || draft?.blockId === b.id)
+  const many = inContext.filter((b) => b.kind !== 'heading').length > 1
+  const where = (b: DocBlock) => (b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : 'This paragraph')
+  const target = inContext.find((b) => b.kind !== 'heading') ?? inContext[0]
   return (
     <section className="rp-section">
       <h4 className="rp-h">
         Comments
-        <span className="faint">{count || 'none'}</span>
+        {!draft && target && (
+          <button className="btn sm" onClick={() => props.onComment(target.id)}>
+            <Icon name="chat" size={13} /> Add
+          </button>
+        )}
       </h4>
-      {!threads.length && <p className="faint dr-small">Select text in the document, or use a paragraph’s comment button, to add one. Comments go to them in the marked-up copy.</p>}
+      {!threads.length && <p className="faint dr-small">No comments. Comments go to them in the marked-up copy; select text in the paragraph to comment on part of it.</p>}
       <div className="dr-threads">
         {threads.map((b) => {
           const theirs = b.comments ?? []
@@ -578,10 +570,8 @@ function CommentsSection(props: {
           const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
           const drafting = draft?.blockId === b.id
           return (
-            <div key={b.id} data-thread={b.id} className={`dr-thread ${props.highlight.has(b.id) || props.focus === b.id ? 'on' : ''}`}>
-              <button className="link-btn dr-thread-where" onClick={() => props.onJump(b.id)}>
-                {where(b)}
-              </button>
+            <div key={b.id} data-thread={b.id} className="dr-thread">
+              {many && <div className="dr-thread-where">{where(b)}</div>}
               {theirs.map((c) => (
                 <TheirComment key={c.id} c={c}>
                   {ours
@@ -610,6 +600,34 @@ function CommentsSection(props: {
             </div>
           )
         })}
+      </div>
+    </section>
+  )
+}
+
+/** A paragraph that isn't one of their changes: edit it, or comment on it. */
+function ParagraphCard({ session, b, act, onEdit, onComment }: { session: ReviewSession; b: DocBlock; act: (p: Promise<ReviewSession>) => Promise<boolean>; onEdit: () => void; onComment: () => void }) {
+  const edit = session.doc!.edits[b.id]
+  return (
+    <section className="rp-section dr-card">
+      <h4 className="rp-h">
+        {b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph'}
+        <span className={`dr-pill ${edit !== undefined ? 'st-countered' : ''}`}>{edit === undefined ? 'Unchanged' : edit === '' ? 'Struck by us' : 'Our edit'}</span>
+      </h4>
+      {b.approved && <div className="dr-facts"><span className="dr-fact ok">Our approved “{b.approved}”, word for word</span></div>}
+      <p className="faint dr-small">They didn’t change this. You can still edit it (your wording becomes a tracked change) or comment on it.</p>
+      <div className="dr-card-actions">
+        <button className="btn sm" onClick={onEdit}>
+          ✎ Edit
+        </button>
+        {edit !== undefined && (
+          <button className="btn sm ghost" onClick={() => act(window.api.doc.edit(session.id, b.id, null))}>
+            Undo my edit
+          </button>
+        )}
+        <button className="btn sm" onClick={onComment}>
+          <Icon name="chat" size={13} /> Comment
+        </button>
       </div>
     </section>
   )
@@ -691,7 +709,6 @@ function SetCard({ session, set, act, onEdit, onComment, seen, onHold, onPrefill
   const [note, setNote] = useState('')
   const [nominating, setNominating] = useState(false)
   const edited = set.blocks.filter((b) => d.edits[b.id] !== undefined)
-  const comments = set.blocks.flatMap((b) => b.comments ?? [])
   const first = set.blocks.find((b) => b.kind !== 'heading') ?? set.blocks[0]
   const last = set.blocks.map((b) => d.lastRound?.[b.id]).find((r) => r?.ourEdit || r?.comments.length)
   const ai = d.ai?.[set.id]
@@ -727,11 +744,6 @@ function SetCard({ session, set, act, onEdit, onComment, seen, onHold, onPrefill
           </button>
         )}
       </div>
-      {comments.map((c) => (
-        <div key={c.id} className="dr-card-comment">
-          <strong>{c.author}:</strong> {c.text}
-        </div>
-      ))}
       {last && (
         <div className="dr-last">
           <div className="dr-mini-h">Last round we proposed</div>
