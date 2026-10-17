@@ -1,7 +1,7 @@
 import type {
   Account, ContractRecord,
   AuditEntry, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination,
-  PlaybookPosition, PlaybookProposal, Precedent, RedlineComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
+  PlaybookPosition, PlaybookProposal, Precedent, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
 
 type Unsub = () => void
@@ -38,6 +38,15 @@ export interface Api {
     onUpdate(cb: (s: ReviewSession) => void): Unsub
   }
   email: { draft(id: string): Promise<EmailDraft> }
+  doc: {
+    /** Our wording for a paragraph; null clears it. */
+    edit(id: string, blockId: string, text: string | null): Promise<ReviewSession>
+    /** Undo their changes in a change set, as our redline. */
+    revert(id: string, setId: string): Promise<ReviewSession>
+    decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
+    comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
+    uncomment(id: string, commentId: string): Promise<ReviewSession>
+  }
   redline: {
     /** Build the marked-up .docx without saving it (for the in-app preview). */
     preview(id: string): Promise<{ bytes: Uint8Array; stats: RedlineStats; comments: RedlineComment[]; name: string }>

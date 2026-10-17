@@ -1,3 +1,4 @@
+import { changeSets, statusOf } from '@shared/changes'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Account, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
@@ -99,6 +100,9 @@ export class Store {
       .map((f) => {
         const s = JSON.parse(readFileSync(join(this.dir, 'sessions', f), 'utf8')) as ReviewSession
         const decisions = Object.values(s.decisions)
+        // Document reviews count change sets, not clauses.
+        const sets = s.doc ? changeSets(s.doc) : null
+        const statuses = s.doc && sets ? sets.map((x) => statusOf(s.doc!, x)) : []
         return {
           id: s.id,
           accountId: s.accountId,
@@ -110,9 +114,9 @@ export class Store {
           createdAt: s.createdAt,
           mode: s.mode,
           contractType: s.contractType,
-          clauses: s.clauses.length,
-          decided: decisions.length,
-          rejected: decisions.filter((d) => d.decision === 'rejected').length
+          clauses: sets ? sets.length : s.clauses.length,
+          decided: sets ? statuses.filter((x) => x !== 'open').length : decisions.length,
+          rejected: sets ? statuses.filter((x) => x === 'countered').length : decisions.filter((d) => d.decision === 'rejected').length
         }
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useState } from 'react'
+import { AutoTextarea } from '../lib/AutoTextarea'
 import type { Clause, DiffToken, PlaybookPosition, ReviewSession, SecurityAlert } from '@shared/types'
 import { Highlighted } from './Highlighted'
 import { Redline } from './Redline'
@@ -602,23 +603,4 @@ function usePlaybook(): PlaybookPosition[] {
     })
   }, [])
   return list
-}
-
-/** A textarea that grows to fit its text, so pre-filled wording is readable without scrolling. */
-function AutoTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const ref = useRef<HTMLTextAreaElement>(null)
-  const fit = () => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
-  }
-  useLayoutEffect(fit, [props.value])
-  useEffect(() => {
-    // Re-fit when the column changes width (text rewraps).
-    const ro = new ResizeObserver(fit)
-    if (ref.current) ro.observe(ref.current.parentElement ?? ref.current)
-    return () => ro.disconnect()
-  }, [])
-  return <textarea {...props} ref={ref} style={{ ...props.style, overflow: 'hidden' }} />
 }

@@ -13,8 +13,12 @@ import { createSession, runPipeline } from './pipeline'
 import { compareVersions } from './engine/versions'
 import { DEMO_SCENARIOS } from '@shared/demoScenarios'
 import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
-import { emailBrief, templateEmail } from './email'
-import { buildRedline } from './redline/docx'
+import { docEmail, emailBrief, templateEmail } from './email'
+import { buildDocRedline, buildRedline } from './redline/docx'
+import { readBlocks } from './ingest/blocks'
+import { injectionHits } from './engine/injection'
+import { beforeTheirs, changeSets } from '@shared/changes'
+import type { ChangeStatus, OurComment } from '@shared/types'
 import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
 
@@ -300,6 +304,17 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => 
   const doc = await parseFile(resolvePath(path))
   const ai = provider()
   const s = createSession(doc, path, ai.kind === 'replay' ? 'demo' : 'live')
+  // Live reviews use the document screen: the contract as written, decorated with their changes.
+  // Nothing goes to the AI until the reviewer asks; only the local security screen runs.
+  const documentReview = !loadSettings().demoMode
+  if (documentReview) {
+    const blocks = await readBlocks(resolvePath(path), doc.sourceType)
+    Object.assign(s, { doc: { blocks, edits: {}, comments: [], decisions: {} }, clauses: [], match: {}, trackedDeletions: undefined })
+    for (const b of blocks) {
+      const hits = injectionHits(b.text)
+      if (hits.length) s.injection[b.id] = hits
+    }
+  }
   const w = ws
   // A draft of a known contract becomes its next version, compared with the one before.
   const contract = contractId ? w.store.contracts().find((c) => c.id === contractId) : undefined
@@ -308,7 +323,8 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => 
     const versions = w.store.versionsOf(contract.id)
     const prev = versions[versions.length - 1]
     Object.assign(s, { accountId: contract.accountId, contractId: contract.id, version: (prev?.version ?? 0) + 1 })
-    if (prev) {
+    if (prev && documentReview) Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 } })
+    else if (prev) {
       const { links, removed } = compareVersions(sessions.get(prev.id) ?? prev, s.clauses)
       Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 }, versionLinks: links, removed })
     }
@@ -323,12 +339,17 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => 
     docName: s.docName,
     sha256: s.fileSha256,
     clauses: s.clauses.length,
+    blocks: s.doc?.blocks.length ?? null,
     mode: s.mode,
     contractId: s.contractId ?? null,
     version: s.version ?? null,
     comparedWith: s.previous?.sessionId ?? null
   })
   persist(s)
+  if (documentReview) {
+    syncSecurityAlert(w, s)
+    return s
+  }
   runPipeline(s, {
     ai,
     library: w.store.library(),
@@ -359,8 +380,10 @@ function syncSecurityAlert(w: Workspace, s: ReviewSession) {
   const alerts = w.store.securityAlerts()
   const existing = alerts.find((a) => a.sessionId === s.id)
   const clauses = flagged.map(([id, hits]) => {
-    const c = s.clauses.find((x) => x.id === id)!
-    return { clauseId: id, label: clauseLabel(c), text: c.text, hits }
+    const c = s.clauses.find((x) => x.id === id)
+    if (c) return { clauseId: id, label: clauseLabel(c), text: c.text, hits }
+    const b = s.doc?.blocks.find((x) => x.id === id)
+    return { clauseId: id, label: b?.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph', text: b?.text ?? '', hits }
   })
   // Each AI check reports separately ("Override check: …"); group identical notes and count the checks.
   const byNote = new Map<string, number>()
@@ -492,7 +515,8 @@ ipcMain.handle('email:draft', async (_e, sessionId: string): Promise<EmailDraft>
   const reviewer = actor()
   const key = apiKey()
   let draft: EmailDraft
-  if (loadSettings().demoMode || !key) draft = templateEmail(s, reviewer)
+  if (s.doc) draft = docEmail(s, reviewer)
+  else if (loadSettings().demoMode || !key) draft = templateEmail(s, reviewer)
   else {
     try {
       const out = await new AnthropicProvider(key, loadSettings().model).email(emailBrief(s, reviewer).prompt)
@@ -506,11 +530,86 @@ ipcMain.handle('email:draft', async (_e, sessionId: string): Promise<EmailDraft>
   return draft
 })
 
+// ---- IPC: document review (edits, comments, change-set decisions) ---------------------------
+
+function docOf(sessionId: string) {
+  const s = session(sessionId)
+  if (!s.doc) throw new Error('This review uses the clause screen.')
+  return { s, d: s.doc }
+}
+const blockWhere = (s: ReviewSession, blockId: string) => {
+  const b = s.doc?.blocks.find((x) => x.id === blockId)
+  return b?.label ? `§${b.label.replace(/\.$/, '')}` : (b?.text.slice(0, 40) ?? blockId)
+}
+const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
+
+/** Our wording for a paragraph (null clears our edit). Saving their wording unchanged clears it too. */
+ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string | null) => {
+  const { s, d } = docOf(sessionId)
+  const b = d.blocks.find((x) => x.id === blockId)
+  if (!b) throw new Error('Unknown paragraph.')
+  const next = text === null ? null : tidy(text)
+  const same = next === null || (b.kind !== 'deleted' && next === tidy(b.text))
+  if (same) delete d.edits[blockId]
+  else d.edits[blockId] = next
+  ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
+  persist(s)
+  return s
+})
+
+/** Undo their changes in a change set: restore what was there before, as our redline. */
+ipcMain.handle('doc:revert', (_e, sessionId: string, setId: string) => {
+  const { s, d } = docOf(sessionId)
+  const set = changeSets(d).find((x) => x.id === setId)
+  if (!set) throw new Error('Unknown change.')
+  for (const b of set.blocks) d.edits[b.id] = b.kind === 'deleted' ? tidy(b.text) : beforeTheirs(b)
+  delete d.decisions[setId]
+  ws.audit.append(actor(), 'doc.reverted', s.id, { change: set.where })
+  persist(s)
+  return s
+})
+
+ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: ChangeStatus | null, note?: string) => {
+  const { s, d } = docOf(sessionId)
+  const set = changeSets(d).find((x) => x.id === setId)
+  if (!set) throw new Error('Unknown change.')
+  if (status === 'accepted' && alertFor(s.id)?.status === 'open' && set.blocks.some((b) => s.injection[b.id]))
+    throw new Error('On security hold: only the security team can release this text.')
+  if (status === null) delete d.decisions[setId]
+  else {
+    // Accepting their change means not answering it: our edits in it go.
+    if (status === 'accepted') for (const b of set.blocks) delete d.edits[b.id]
+    d.decisions[setId] = { status, note: note?.trim() || undefined, by: actor(), at: new Date().toISOString() }
+  }
+  ws.audit.append(actor(), status ? `doc.change-${status}` : 'doc.change-reopened', s.id, { change: set.where, note: note?.trim() || null })
+  persist(s)
+  return s
+})
+
+ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>) => {
+  const { s, d } = docOf(sessionId)
+  if (!c.text.trim()) throw new Error('Write a comment first.')
+  const comment: OurComment = { id: `oc-${Date.now().toString(36)}`, blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
+  d.comments.push(comment)
+  ws.audit.append(actor(), 'doc.commented', s.id, { block: blockWhere(s, c.blockId), text: comment.text, replyTo: c.replyTo ?? null })
+  persist(s)
+  return s
+})
+
+ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
+  const { s, d } = docOf(sessionId)
+  d.comments = d.comments.filter((c) => c.id !== commentId)
+  ws.audit.append(actor(), 'doc.comment-deleted', s.id, { commentId })
+  persist(s)
+  return s
+})
+
 /** Our response as a marked-up Word copy: tracked changes for our wording, comments for our reasons. */
 async function redline(sessionId: string) {
   const s = session(sessionId)
   if (alertFor(s.id)?.status === 'open') throw new Error('This review is on security hold. Nothing can go back to the counterparty until the security team has reviewed the alert.')
-  const out = await buildRedline(s, actor(), await readFile(resolvePath(s.filePath)))
+  const original = await readFile(resolvePath(s.filePath))
+  const out = s.doc ? await buildDocRedline(s, actor(), original) : await buildRedline(s, actor(), original)
   return { s, ...out, name: `${s.docName.replace(/\.[a-z]+$/i, '')} - PortSwigger comments.docx` }
 }
 const savedRedlines = new Set<string>()

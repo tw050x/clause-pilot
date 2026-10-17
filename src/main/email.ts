@@ -1,4 +1,5 @@
-import type { EmailDraft, ReviewSession } from '@shared/types'
+import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
+import { beforeTheirs, changeSets, statusOf, type ChangeSet } from '@shared/changes'
 import { clauseLabel } from '@shared/derive'
 
 /** Everything the email needs, in a form that is both the AI prompt and the template's input. */
@@ -90,3 +91,61 @@ export function templateEmail(s: ReviewSession, reviewer: string): EmailDraft {
 }
 
 const title = (h: string) => h.charAt(0) + h.slice(1).toLowerCase()
+
+/**
+ * The cover email for a document review: one numbered point per change of
+ * theirs we answered, and per edit or comment of ours elsewhere, each with our
+ * comments as the reason. Their changes we accepted are acknowledged in a
+ * line; changes flagged for internal review are left out.
+ */
+export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
+  const d = s.doc!
+  const name = s.docName.replace(/\.[a-z]+$/i, '').replace(/[-_]+/g, ' ')
+  const sets = changeSets(d)
+  const inSet = new Map(sets.flatMap((set) => set.blocks.map((b) => [b.id, set] as const)))
+  const notesFor = (ids: string[]) => d.comments.filter((c) => ids.includes(c.blockId)).map((c) => c.text)
+  const whereOf = (b: DocBlock) => (b.label ? `Clause ${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `"${b.text.slice(0, 40)}…"`)
+
+  const points: string[] = []
+  const covered = new Set<string>()
+  for (const set of sets) {
+    const status = statusOf(d, set)
+    if (status !== 'countered') continue
+    const ids = set.blocks.map((b) => b.id)
+    ids.forEach((id) => covered.add(id))
+    const edited = set.blocks.filter((b) => d.edits[b.id] !== undefined)
+    const removal = edited.length > 0 && edited.every((b) => d.edits[b.id] === '')
+    const restored = edited.length > 0 && edited.every((b) => d.edits[b.id] === (b.kind === 'deleted' ? b.text : beforeTheirs(b)))
+    const added = set.blocks.every((b) => !beforeTheirs(b))
+    const ask = removal && added
+      ? 'We can’t accept this addition and have struck it.'
+      : restored
+        ? 'We can’t accept this change and have restored the original wording.'
+        : removal
+          ? 'We ask for this to be removed.'
+        : `We propose instead: "${edited.map((b) => d.edits[b.id]).join(' ')}"`
+    points.push([`${whereOfSet(set)}`, ...notesFor(ids).map((n) => `   ${n}`), `   ${ask}`].join('\n'))
+  }
+  // Our own edits and comments outside their changes.
+  for (const b of d.blocks) {
+    if (covered.has(b.id)) continue
+    const set = inSet.get(b.id)
+    if (set && statusOf(d, set) === 'accepted') continue
+    const edit = d.edits[b.id]
+    const notes = notesFor([b.id])
+    if (edit === undefined && !notes.length) continue
+    const ask = edit === undefined ? '' : edit === '' ? 'We ask for this to be removed.' : `We propose: "${edit}"`
+    points.push([whereOf(b), ...notes.map((n) => `   ${n}`), ask && `   ${ask}`].filter(Boolean).join('\n'))
+  }
+  const accepted = sets.filter((set) => statusOf(d, set) === 'accepted').length
+  const numbered = points.map((p, i) => `${i + 1}. ${p}`).join('\n\n')
+  const subject = points.length ? `${name}: PortSwigger comments` : `${name}: approved`
+  const body = points.length
+    ? `Hello,\n\nThank you for sending this through. We have reviewed the draft${accepted ? ' and accepted most of your changes' : ''}. Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
+    : `Hello,\n\nThank you for sending this through. We have reviewed the draft and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
+  return { subject, body, generatedBy: 'template' }
+
+  function whereOfSet(set: ChangeSet) {
+    return set.where.startsWith('§') ? `Clause ${set.where.slice(1)}` : set.where
+  }
+}

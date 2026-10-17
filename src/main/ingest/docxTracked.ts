@@ -14,6 +14,14 @@ export interface DocxParagraph {
   deleted?: { text: string; author?: string; date?: string }
   /** A table row of key terms (cells joined with " — "): a clause of its own. */
   row?: boolean
+  /** Word's automatic number, when it has one (also at the start of `text`). */
+  label?: string
+  /** Where it is in the file: indexes into the document's paragraphs, in order. */
+  paras?: number[]
+  heading?: boolean
+  center?: boolean
+  bold?: boolean
+  level?: number
 }
 
 /**
@@ -30,6 +38,8 @@ export async function readDocx(buf: Buffer): Promise<DocxParagraph[]> {
   const comments = await readComments(zip)
   const numbering = await readNumbering(zip)
 
+  const order = new Map(Array.from(doc.getElementsByTagNameNS(W, 'p')).map((p, i) => [p, i]))
+  const styleIds = await headingStyles(zip)
   // One paragraph: its proposed text, redline and comments (null when there's nothing in it).
   const read = (p: Element): DocxParagraph | null => {
     const segments: TrackedSegment[] = []
@@ -48,10 +58,10 @@ export async function readDocx(buf: Buffer): Promise<DocxParagraph[]> {
     // A paragraph whose content is all tracked deletion (and nothing proposed) was deleted outright.
     if (!text && removedText && merged.every((s) => s.op === 'del' || !s.text.trim())) {
       const by = merged.find((s) => s.op === 'del')
-      return { text: '', deleted: { text: removedText, author: by?.author, date: by?.date }, comments: commentList.length ? commentList : undefined }
+      return { text: '', deleted: { text: removedText, author: by?.author, date: by?.date }, comments: commentList.length ? commentList : undefined, paras: [order.get(p)!], label: label || undefined }
     }
     if (!text && !commentList.length) return null
-    return { text, segments: hasChanges ? trimSegments(merged) : undefined, comments: commentList.length ? commentList : undefined }
+    return { text, segments: hasChanges ? trimSegments(merged) : undefined, comments: commentList.length ? commentList : undefined, label: label || undefined, paras: [order.get(p)!], ...looks(p, styleIds) }
   }
 
   const out: DocxParagraph[] = []
@@ -100,12 +110,50 @@ export async function readDocx(buf: Buffer): Promise<DocxParagraph[]> {
       text: filled.map((c) => c.map((x) => x.text).filter(Boolean).join(' ')).join(' — '),
       segments: all.some((x) => x.segments) ? segments : undefined,
       comments: comments.length ? comments : undefined,
-      row: true
+      row: true,
+      paras: all.flatMap((x) => x.paras ?? [])
     })
   }
   const body = doc.getElementsByTagNameNS(W, 'body')[0]
   if (body) visit(body)
   return out
+}
+
+/** Paragraph styles that are headings (by name or outline level), following basedOn. */
+async function headingStyles(zip: JSZip): Promise<Set<string>> {
+  const xml = await zip.file('word/styles.xml')?.async('string')
+  const out = new Set<string>()
+  if (!xml) return out
+  const doc = new DOMParser().parseFromString(xml, 'text/xml')
+  const based = new Map<string, string>()
+  for (const st of Array.from(doc.getElementsByTagNameNS(W, 'style'))) {
+    const id = st.getAttributeNS(W, 'styleId') ?? ''
+    const name = val(st, 'name') ?? ''
+    if (/^(heading|title|subtitle)/i.test(name) || /^(heading|title)/i.test(id) || st.getElementsByTagNameNS(W, 'outlineLvl').length) out.add(id)
+    const b = val(st, 'basedOn')
+    if (b) based.set(id, b)
+  }
+  for (const [id, b] of based) if (out.has(b)) out.add(id)
+  return out
+}
+
+/** How a paragraph looks, roughly: enough to lay the page out like the original. */
+function looks(p: Element, headings: Set<string>): Pick<DocxParagraph, 'heading' | 'center' | 'bold' | 'level'> {
+  const pPr = Array.from(p.childNodes).find((n) => (n as Element).localName === 'pPr') as Element | undefined
+  const style = pPr ? val(pPr, 'pStyle') : null
+  const jc = pPr ? val(pPr, 'jc') : null
+  const ilvl = pPr ? val(pPr, 'ilvl') : null
+  const runs = Array.from(p.getElementsByTagNameNS(W, 'r')).filter((r) => r.getElementsByTagNameNS(W, 't').length)
+  const isBold = (r: Element) => {
+    const b = r.getElementsByTagNameNS(W, 'b')[0]
+    return !!b && !['0', 'false'].includes(b.getAttributeNS(W, 'val') ?? '')
+  }
+  return {
+    heading: !!style && headings.has(style),
+    center: jc === 'center',
+    bold: runs.length > 0 && runs.every(isBold),
+    level: ilvl !== null ? Number(ilvl) : undefined
+  }
 }
 
 type Track = { op: 'ins' | 'del'; author?: string; date?: string } | null

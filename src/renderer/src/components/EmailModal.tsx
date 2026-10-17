@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { EmailDraft, ReviewSession } from '@shared/types'
 import { flagsFor, isCleared } from '@shared/derive'
+import { changeSets, statusOf } from '@shared/changes'
 import { Icon } from '../lib/icons'
 
 export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSession; onClose: () => void; onMarkup: () => void }) {
@@ -15,9 +16,14 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
   }
   useEffect(generate, [session.id])
 
-  const rejected = Object.values(session.decisions).filter((d) => d.decision === 'rejected').length
+  const doc = session.doc
+  const sets = doc ? changeSets(doc) : []
+  const rejected = doc ? (sets.some((x) => statusOf(doc, x) === 'countered') || Object.keys(doc.edits).length || doc.comments.length ? 1 : 0) : Object.values(session.decisions).filter((d) => d.decision === 'rejected').length
   // Cleared clauses are accepted by default, so only the rest can be undecided.
-  const undecided = session.clauses.filter((c) => { const f = flagsFor(session, c); return !f.decision && !isCleared(f) }).length
+  const undecided = doc
+    ? sets.filter((x) => statusOf(doc, x) === 'open').length
+    : session.clauses.filter((c) => { const f = flagsFor(session, c); return !f.decision && !isCleared(f) }).length
+  const flagged = doc ? sets.filter((x) => statusOf(doc, x) === 'flagged').length : 0
 
   return (
     <div className="modal-back" onClick={onClose}>
@@ -34,7 +40,15 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
         <div className="modal-body">
           {undecided > 0 && (
             <div className="banner info" style={{ marginBottom: 12 }}>
-              <Icon name="alert" /> {undecided} clause{undecided === 1 ? '' : 's'} still undecided. The email covers only the {rejected} rejected clause{rejected === 1 ? '' : 's'} so far.
+              <Icon name="alert" />{' '}
+              {doc
+                ? `${undecided} of their change${undecided === 1 ? '' : 's'} still to decide. The email covers what you've answered so far.`
+                : `${undecided} clause${undecided === 1 ? '' : 's'} still undecided. The email covers only the ${rejected} rejected clause${rejected === 1 ? '' : 's'} so far.`}
+            </div>
+          )}
+          {flagged > 0 && (
+            <div className="banner info" style={{ marginBottom: 12 }}>
+              <Icon name="alert" /> {flagged} change{flagged === 1 ? ' is' : 's are'} flagged for internal review and left out of the email.
             </div>
           )}
           {error && <div className="banner danger">{error}</div>}

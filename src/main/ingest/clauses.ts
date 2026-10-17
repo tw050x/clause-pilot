@@ -7,7 +7,7 @@ const NUMBERED = /^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(?=[A-Z("'“])/
 const SCHEDULE = /^(SCHEDULE|ANNEX|APPENDIX|EXHIBIT)\b/i
 const SIGNATURE = /^(SIGNED|IN WITNESS|Signed for and on behalf|Executed)/i
 
-function isHeading(text: string): boolean {
+export function isHeading(text: string): boolean {
   const words = text.split(/\s+/)
   if (words.length > 8) return false
   if (/[.;:]$/.test(text)) return false
@@ -16,7 +16,7 @@ function isHeading(text: string): boolean {
 }
 
 /** "2. Service", "4. Privacy & Security": a short, unpunctuated title after a top-level number is a section heading. */
-function isSectionTitle(number: string, text: string): boolean {
+export function isSectionTitle(number: string, text: string): boolean {
   return !number.includes('.') && text.split(/\s+/).length <= 6 && !/[.;:,]$/.test(text) && /^[A-Z]/.test(text)
 }
 

@@ -230,6 +230,62 @@ export interface RemovedClause {
   prevNote?: string
 }
 
+// ---- Document review: the contract as written, decorated with changes ------------------------
+
+/** One paragraph (or key-terms table row) of the contract, as received. */
+export interface DocBlock {
+  id: string
+  kind: 'para' | 'heading' | 'row' | 'deleted'
+  /** The printed number ("2.1", "a."), shown but never edited. */
+  label?: string
+  /** As received, without the label: their insertions in, their deletions out. For 'deleted', the text they deleted. */
+  text: string
+  /** Their redline, as tracked changes (without the label). */
+  segments?: TrackedSegment[]
+  comments?: DocComment[]
+  /** The Word paragraphs it came from (document order), for writing the marked-up copy. */
+  paras?: number[]
+  center?: boolean
+  bold?: boolean
+  /** List depth, for indenting. */
+  level?: number
+}
+
+/** A comment of ours, in the margin. */
+export interface OurComment {
+  id: string
+  blockId: string
+  /** The text it's on, when made on a selection. */
+  quote?: string
+  text: string
+  /** Their comment (id) this replies to. */
+  replyTo?: string
+  by: string
+  at: string
+}
+
+/**
+ * accepted: their change stands. countered: we answer it with our own edits (made in the document).
+ * flagged: someone else needs to look at it before we answer.
+ */
+export type ChangeStatus = 'accepted' | 'countered' | 'flagged'
+
+export interface ChangeDecision {
+  status: ChangeStatus
+  note?: string
+  by: string
+  at: string
+}
+
+export interface DocReview {
+  blocks: DocBlock[]
+  /** Our wording per block (without the label). Empty: we strike the paragraph. */
+  edits: Record<string, string>
+  comments: OurComment[]
+  /** Keyed by change-set id (its first block's id). */
+  decisions: Record<string, ChangeDecision>
+}
+
 export interface ReviewSession {
   id: string
   accountId?: string
@@ -256,6 +312,8 @@ export interface ReviewSession {
   injection: Record<string, string[]> // clause id -> local heuristic hits
   aiInjectionReports: string[] // notes from the model when it believes it saw an injection attempt
   decisions: Record<string, Decision>
+  /** Document review: present on reviews made with the document screen (no clause pipeline). */
+  doc?: DocReview
 }
 
 /** A comment we put in the marked-up response. */

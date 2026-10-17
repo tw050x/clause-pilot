@@ -6,6 +6,7 @@ import { Chevron, Icon } from '../lib/icons'
 import { ReviewGrid, type ReviewGridHandle, type RightMode } from '../components/ReviewGrid'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
+import { DocReview } from './DocReview'
 
 interface Props {
   session: ReviewSession
@@ -31,7 +32,12 @@ const STATUSES: { key: Visual; label: string }[] = [
   { key: 'rejected', label: 'Rejected' }
 ]
 
-export function Review({ session, panel, onChange, onNominationsChanged, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
+/** Document reviews (live) use the document screen; demo reviews still use the clause screen. */
+export function Review(props: Props) {
+  return props.session.doc ? <DocReview {...props} /> : <ClauseReview {...props} />
+}
+
+function ClauseReview({ session, panel, onChange, onNominationsChanged, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
   const [mode, setMode] = useState<RightMode>('issues')
   const [selected, setSelected] = useState<string | null>(null)
   const [emailOpen, setEmailOpen] = useState(false)

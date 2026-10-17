@@ -1,0 +1,119 @@
+import type { TrackedSegment } from './types'
+
+export interface DiffOp {
+  /** Character range of `old` to delete (empty for a pure insertion). */
+  from: number
+  to: number
+  /** Text inserted after that range. */
+  insert: string
+}
+
+/**
+ * Word-level diff from `old` to `next`, as replacements over character ranges
+ * of `old`. Used both to show our edits on screen and to write them into the
+ * Word file as tracked changes, so the two always agree.
+ */
+export function diffWords(old: string, next: string): DiffOp[] {
+  const tok = (s: string) => {
+    const out: { word: string; text: string; at: number }[] = []
+    for (const m of s.matchAll(/\S+\s*/g)) out.push({ word: m[0].trim(), text: m[0], at: m.index! })
+    return out
+  }
+  const a = tok(old)
+  const b = tok(next)
+  // LCS table on words.
+  const L = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1))
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) L[i][j] = a[i].word === b[j].word ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1])
+
+  const ops: DiffOp[] = []
+  let i = 0
+  let j = 0
+  let cur: { from: number; to: number; ins: string[] } | null = null
+  const flush = () => {
+    if (cur && (cur.to > cur.from || cur.ins.length)) ops.push({ from: cur.from, to: cur.to, insert: cur.ins.join('') })
+    cur = null
+  }
+  const pos = (k: number) => (k < a.length ? a[k].at : old.length)
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i].word === b[j].word) {
+      flush()
+      i++
+      j++
+    } else if (j < b.length && (i >= a.length || L[i][j + 1] >= L[i + 1][j])) {
+      cur ??= { from: pos(i), to: pos(i), ins: [] }
+      cur.ins.push(b[j].text)
+      j++
+    } else {
+      cur ??= { from: pos(i), to: pos(i), ins: [] }
+      cur.to = pos(i + 1)
+      i++
+    }
+  }
+  flush()
+  // Spacing: an insertion at the very end of text with no trailing space needs a leading one.
+  for (const op of ops) {
+    if (!op.insert) continue
+    const atEnd = op.to >= old.length
+    if (atEnd && old && op.to === op.from && !/\s$/.test(old)) op.insert = ' ' + op.insert.trimEnd()
+    else if (!atEnd && !/\s$/.test(op.insert)) op.insert += ' '
+  }
+  return ops
+}
+
+/** One run of text as shown: their redline and ours, layered. */
+export interface Mark {
+  text: string
+  theirs?: 'ins' | 'del'
+  ours?: 'ins' | 'del'
+  author?: string
+  date?: string
+}
+
+/**
+ * Their redline with our edit on top. `segments` is their tracked changes (or
+ * plain text); `ours` is our wording for the text as they proposed it. Their
+ * deletions stay as they are; our deletions and insertions are laid over what
+ * they proposed, the way Word shows two reviewers' changes.
+ */
+export function overlay(segments: TrackedSegment[], ours: string | undefined): Mark[] {
+  if (ours === undefined) return segments.map((s) => ({ text: s.text, theirs: s.op === 'same' ? undefined : s.op, author: s.author, date: s.date }))
+  // Proposed characters, each with the redline it came from.
+  type Ch = { c: string; seg: TrackedSegment }
+  const items: ({ kind: 'del'; seg: TrackedSegment } | { kind: 'ch'; ch: Ch })[] = []
+  for (const seg of segments) {
+    if (seg.op === 'del') items.push({ kind: 'del', seg })
+    else for (const c of seg.text) items.push({ kind: 'ch', ch: { c, seg } })
+  }
+  const proposed = segments.filter((s) => s.op !== 'del').map((s) => s.text).join('')
+  const ops = diffWords(proposed, ours)
+  const struck = new Uint8Array(proposed.length)
+  const inserts = new Map<number, string>()
+  for (const op of ops) {
+    struck.fill(1, op.from, op.to)
+    if (op.insert) inserts.set(op.to, (inserts.get(op.to) ?? '') + op.insert)
+  }
+  const out: Mark[] = []
+  const push = (m: Mark) => {
+    const last = out[out.length - 1]
+    if (last && last.theirs === m.theirs && last.ours === m.ours && last.author === m.author) last.text += m.text
+    else out.push(m)
+  }
+  let at = 0
+  for (const it of items) {
+    if (it.kind === 'del') {
+      push({ text: it.seg.text, theirs: 'del', author: it.seg.author, date: it.seg.date })
+      continue
+    }
+    // Our insertion goes right after the text we struck (or at its point, if we struck nothing).
+    const ins = inserts.get(at)
+    if (ins) {
+      push({ text: ins, ours: 'ins' })
+      inserts.delete(at)
+    }
+    const s = it.ch.seg
+    push({ text: it.ch.c, theirs: s.op === 'ins' ? 'ins' : undefined, ours: struck[at] ? 'del' : undefined, author: s.author, date: s.date })
+    at++
+  }
+  for (const v of inserts.values()) push({ text: v, ours: 'ins' }) // at the very end
+  return out
+}

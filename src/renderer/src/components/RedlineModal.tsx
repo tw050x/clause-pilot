@@ -47,11 +47,11 @@ export function RedlineModal({ session, onClose }: { session: ReviewSession; onC
   const s = built?.stats
   const parts = s
     ? [
-        s.replaced && `${s.replaced} clause${s.replaced === 1 ? '' : 's'} reworded`,
+        s.replaced && `${s.replaced} ${session.doc ? 'paragraph' : 'clause'}${s.replaced === 1 ? '' : 's'} reworded`,
         s.removed && `${s.removed} struck out`,
         s.reinstated && `${s.reinstated} reinstated`,
         s.commentedOnly && `${s.commentedOnly} comment-only`,
-        s.acceptedChanges && `their changes accepted in ${s.acceptedChanges} clause${s.acceptedChanges === 1 ? '' : 's'}`
+        s.acceptedChanges && `their changes accepted in ${s.acceptedChanges} ${session.doc ? 'place' : 'clause'}${s.acceptedChanges === 1 ? '' : 's'}`
       ].filter(Boolean)
     : []
 
