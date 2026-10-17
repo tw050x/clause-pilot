@@ -21,7 +21,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
 
    If you've already imported them for the other demo, the page says they're already up to date. That's fine.
 
-4. Press the account switcher at the top of the left sidebar (it says **Choose an account**, or ⌘K). Press **+ New account**, type **Brightwater Robotics** and press Enter.
+4. Press the account switcher at the top of the left sidebar (it shows the current account, or **Choose an account**; or press ⌘K). Press **+ New account**, type **Brightwater Robotics** and press Enter.
 5. In the sidebar, press **+ New contract**. Name it **Mutual NDA** and press **Create contract**.
 
 ## Round 1: their redline
