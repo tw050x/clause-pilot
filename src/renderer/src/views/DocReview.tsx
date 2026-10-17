@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { authorsOf, changeKey, marksFor, segmentsOf, theyChanged } from '@shared/changes'
+import { authorsOf, changeKey, hasOpenChanges, marksFor, segmentsOf, theyChanged } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -57,7 +57,8 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   )
   const onFocusBlock = useCallback((id: string | null) => setFocus(id), [])
 
-  const changed = useMemo(() => d.blocks.filter(theyChanged), [d])
+  const changed = useMemo(() => d.blocks.filter((b) => hasOpenChanges(d, b)), [d])
+  const decided = Object.keys(d.resolved ?? {}).length
   const authors = authorsOf(changed.filter((b) => !b.untracked))
   const untracked = changed.filter((b) => b.untracked).length
   const ourEdits = Object.keys(d.edits).length
@@ -85,8 +86,13 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         )}
         <div className="rc-stats">
           <span>
-            <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} changed{authors.length ? ` by ${authors.join(', ')}` : ''}
+            <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
           </span>
+          {decided > 0 && (
+            <span>
+              <i className="dot decided" /> {decided} of their changes accepted or rejected
+            </span>
+          )}
           {untracked > 0 && (
             <span>
               <i className="dot untracked" /> {untracked} of them without Track Changes

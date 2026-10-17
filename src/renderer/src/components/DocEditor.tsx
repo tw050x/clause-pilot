@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DocBlock, ReviewSession } from '@shared/types'
-import { marksFor, shownText } from '@shared/changes'
+import { hasOpenChanges, marksFor, shownText } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
@@ -435,13 +435,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       >
         {d.blocks.map((b) => {
           const edited = d.edits[b.id] !== undefined
-          const theirs = b.kind === 'deleted' || !!b.segments?.some((x) => x.op !== 'same')
+          const theirs = hasOpenChanges(d, b)
           const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
           // A paragraph they deleted, with the deletion accepted, is gone (as in Word).
           const gone = b.kind === 'deleted' && !marksFor(d, b).length
           return (
             <div key={b.id} className={`ed-row ${theirs ? 'theirs' : ''} ${edited ? 'ours' : ''} ${b.untracked ? 'untracked' : ''} ${gone ? 'gone' : ''}`} data-row={b.id}>
-              {b.untracked && (
+              {b.untracked && theirs && (
                 <div className="dr-untracked" contentEditable={false}>
                   {b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template'}
                 </div>

@@ -112,14 +112,34 @@ export const changeKey = (blockId: string, seg: number) => `${blockId}:${seg}`
  */
 export function effectiveSegments(doc: DocReview, b: DocBlock): TrackedSegment[] {
   const out: TrackedSegment[] = []
+  let resolved = false
   segmentsOf(b).forEach((s, i) => {
     const r = s.op === 'same' ? undefined : doc.resolved?.[changeKey(b.id, i)]
     if (!r) return out.push({ ...s, i })
+    resolved = true
     const keep = (s.op === 'ins') === (r === 'accepted')
     if (keep) out.push({ op: 'same', text: s.text, i })
   })
-  return out
+  if (!resolved) return out
+  // The text as it now reads: plain runs joined, and no double spaces where something went.
+  const tidy: TrackedSegment[] = []
+  for (const s of out) {
+    const last = tidy[tidy.length - 1]
+    if (last && last.op === 'same' && s.op === 'same') last.text += s.text
+    else tidy.push({ ...s })
+  }
+  let prevSpace = true // the start of the paragraph counts as a space
+  for (const s of tidy) {
+    if (s.op === 'del') continue
+    s.text = s.text.replace(/\s+/g, ' ')
+    if (prevSpace) s.text = s.text.replace(/^ /, '')
+    if (s.text) prevSpace = s.text.endsWith(' ')
+  }
+  return tidy.filter((s) => s.text)
 }
+
+/** Does the paragraph still have changes of theirs to decide (tracked or found by comparison)? */
+export const hasOpenChanges = (doc: DocReview, b: DocBlock) => effectiveSegments(doc, b).some((s) => s.op !== 'same')
 
 /** A paragraph as shown: their redline (as resolved) with our wording over it. */
 export function marksFor(doc: DocReview, b: DocBlock): Mark[] {

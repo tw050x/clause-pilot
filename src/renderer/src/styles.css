@@ -689,6 +689,7 @@ del.us-del ins.th-ins { color: inherit; }
 .dot.theirs { background: #1d4ed8; }
 .dot.ours { background: var(--rejected); }
 .dot.untracked { background: var(--review); }
+.dot.decided { background: var(--exact); }
 .rc-note { margin: 0; font-size: 12.5px; }
 .rc-actions { display: flex; gap: 6px; }
 .rc-actions .btn { flex: 1; justify-content: center; }
