@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { authorsOf, changeKey, hasOpenChanges, marksFor, segmentsOf, theyChanged } from '@shared/changes'
+import { authorsOf, changeKey, hasOpenChanges, isCleared, marksFor, segmentsOf, theyChanged } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -77,6 +77,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const authors = authorsOf(changed.filter((b) => !b.untracked))
   const untracked = changed.filter((b) => b.untracked).length
   const ourEdits = Object.keys(d.edits).length
+  const cleared = d.blocks.filter((b) => b.kind !== 'heading' && !hasOpenChanges(d, b) && d.edits[b.id] === undefined && (isCleared(d, b) || segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)]))).length
   const onHold = alert?.status === 'open'
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
 
@@ -115,6 +116,20 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           )}
           <span>
             <i className="dot ours" /> {ourEdits} edited by you
+          </span>
+        </div>
+        <div className="rc-key" title="The bar beside each paragraph">
+          <span>
+            <i className="bar checked" /> Nothing to check ({cleared})
+          </span>
+          <span>
+            <i className="bar theirs" /> To decide
+          </span>
+          <span>
+            <i className="bar ours" /> Your edits
+          </span>
+          <span>
+            <i className="bar none" /> Not checked
           </span>
         </div>
         {d.baseline && (

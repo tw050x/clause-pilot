@@ -7,7 +7,7 @@ import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
 import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
-import { changeKey, hasOpenChanges, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
+import { changeKey, hasOpenChanges, isCleared, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
@@ -187,13 +187,16 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         if (!marks) cache.set(key, (marks = marksNow(d, b, node.textContent)))
         const open = hasOpenChanges(d, b)
         // Their changes here have all been decided: checked.
-        const checked = !open && theyChanged(b) && segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
+        const decided = !open && theyChanged(b) && segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
         const edited = b.ours || tidy(node.textContent) !== tidy(plainOf(d, b))
         const gone = b.kind === 'deleted' && !marks.length && !node.textContent
+        // Nothing to look at: its changes all decided, or (untouched) it's our approved wording
+        // word for word, or exactly what we sent last round.
+        const checked = !open && !edited && (decided || isCleared(d, b))
         const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
         decos.push(
           Decoration.node(offset, offset + node.nodeSize, {
-            class: `${open ? 'chg-theirs' : ''} ${checked ? 'chg-checked' : edited ? 'chg-ours' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
+            class: `${open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
             ...(tag ? { 'data-tag': tag } : {})
           })
         )

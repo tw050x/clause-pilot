@@ -175,3 +175,7 @@ export function textWithout(marks: Mark[], pick: (m: Mark, i: number) => boolean
     })
     .join('')
 }
+
+/** Cleared without anyone reading it: word for word our approved wording, or exactly what we sent last round. */
+export const isCleared = (doc: DocReview, b: DocBlock) =>
+  !theyChanged(b) && !b.ours && (!!b.approved || (doc.baseline?.kind === 'sent' && !!doc.lastRound?.[b.id]))
