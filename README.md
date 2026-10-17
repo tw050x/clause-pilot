@@ -109,6 +109,10 @@ Each uploaded draft becomes a new **version** of its contract, compared with wha
 - **Auditability.** An append-only JSONL log in which each entry includes the hash of the previous one. The app verifies the chain and exports a per-review record (each change, how it was answered, by whom) as Markdown.
 - **Local-first.** Data is plain JSON in the app's user-data folder. The API key is encrypted with the OS keychain (Electron `safeStorage`) and never reaches the renderer. The renderer is sandboxed and context-isolated, with a strict CSP.
 
+## Documentation
+
+- [`docs/intent-matching.md`](docs/intent-matching.md): the AI meaning check: the request, the complete JSON Schema the model must answer in, what the API enforces, and the checks in code. CI fails if it drifts from the code (`npm run docs:check`).
+
 ## Code map
 
 ```
