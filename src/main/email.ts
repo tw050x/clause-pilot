@@ -11,11 +11,17 @@ import { labelOf } from '@shared/numbering'
 export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
   const d = s.doc!
   const name = s.docName.replace(/\.[a-z]+$/i, '').replace(/[-_]+/g, ' ')
+  // Where a point is: how the paragraph starts (works for any format), with its printed
+  // number in front when it has one. No page numbers: Word paginates differently everywhere.
   const whereOf = (b: DocBlock) => {
-    const l = labelOf(d, b)
-    if (l) return /^\d/.test(l) ? `Clause ${l.replace(/\.$/, '')}` : `Item ${l}`
-    if (b.ours) return 'A new paragraph'
-    return b.kind === 'row' ? b.text.split(' — ')[0] : `The paragraph beginning "${b.text.split(/\s+/).slice(0, 6).join(' ')}…"`
+    const text = (b.ours ? (d.edits[b.id] ?? '') : b.text).replace(/\s+/g, ' ').trim()
+    const words = text.split(' ')
+    const opening = words.length > 7 ? `${words.slice(0, 7).join(' ')}…` : text
+    const l = labelOf(d, b)?.replace(/\.$/, '')
+    const num = l ? (/^\d/.test(l) ? `clause ${l}` : `item ${l}`) : ''
+    if (b.ours) return `${num ? `New ${num}` : 'A new paragraph'}${opening ? ` ("${opening}")` : ''}`
+    if (num) return `${num.charAt(0).toUpperCase()}${num.slice(1)} ("${opening}")`
+    return `The paragraph beginning "${opening}"`
   }
   const quote = (t: string) => {
     const x = t.replace(/\s+/g, ' ').trim()
@@ -50,15 +56,17 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     lines.push(...notes)
     const body = lines.filter(Boolean)
     if (body.length) points.push([whereOf(b), ...body.map((l) => `   ${l}`)].join('\n'))
-    else if (accepted.length) acceptedIn.push(whereOf(b).replace(/^Clause /, ''))
+    else if (accepted.length) acceptedIn.push(labelOf(d, b) ? labelOf(d, b)!.replace(/\.$/, '') : whereOf(b))
   }
 
   // Changes they made without Track Changes since our last draft: worth saying, politely.
-  const silent = d.blocks.filter((b) => b.untracked === 'sent').map(whereOf)
+  const silent = d.blocks.filter((b) => b.untracked === 'sent').map((b) => whereOf(b).replace(/^The paragraph/, 'the paragraph'))
   const note = silent.length
     ? `\n\nOne more thing: ${list(silent)} ${silent.length === 1 ? 'was' : 'were'} changed without being shown as tracked changes. Please make sure every change is tracked in the next draft so nothing is missed on either side.`
     : ''
-  const acceptedLine = acceptedIn.length ? `We have accepted your changes to ${acceptedIn.length === 1 ? 'clause' : 'clauses'} ${list(acceptedIn)}.` : ''
+  const acceptedLine = acceptedIn.length
+    ? `We have accepted your changes to ${acceptedIn.every((x) => /^\d/.test(x)) ? `${acceptedIn.length === 1 ? 'clause' : 'clauses'} ` : ''}${list(acceptedIn)}.`
+    : ''
   const numbered = points.map((p, i) => `${i + 1}. ${p}`).join('\n\n')
   const subject = points.length ? `${name}: PortSwigger comments` : `${name}: approved`
   const body = points.length
