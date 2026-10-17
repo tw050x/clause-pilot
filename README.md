@@ -21,7 +21,7 @@ The title bar shows which AI is in use.
 | `npm run dev` | Run the app with hot reload |
 | `npm run build && npm start` | Production build and preview |
 | `npm run typecheck` | Type-check main, preload and renderer |
-| `npm run test-pack` | Regenerate the test pack (`test-pack/`): library, playbook and test contracts |
+| `npm run demo:build` | Regenerate the demo files (`demo/`): library, playbook and contracts |
 | `npm run docs:check` | Check the documented AI schemas match the code |
 | `npm run pack` | Build an unpacked app for this machine (in `release/`) |
 | `npm run release` | Build installers for this machine (in `release/`) |
@@ -44,14 +44,12 @@ Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example 
 
 Builds are not code-signed yet. On macOS, right-click the app and choose Open the first time; on Windows, choose "More info → Run anyway".
 
-## Test pack
+## Demos
 
-The app starts with an empty workspace, as a real team would. `test-pack/` has what's needed to test it as a user, with real AI: PortSwigger's approved clauses (`library.json`) and playbook (`playbook.json`) to import on the Library and Playbook pages, and test contracts to open from the filesystem:
+The app starts with an empty workspace, as a real team would. [`demo/`](demo/README.md) has two demos to follow step by step, with real AI. Each folder has the library and playbook to import, the contract files to open from the filesystem, and a guide:
 
-- **Test 1 (two rounds):** our mutual NDA as a client redlined it (tracked changes, comments, and changes made without Track Changes), then the client's next draft, which is compared with what you actually sent back.
-- **Test 2 (one round):** a confidentiality agreement on the client's own paper, with a different structure. Nothing matches our wording, so the intent check compares each paragraph with the closest of our clauses, and the playbook check reviews the whole contract against our positions.
-
-See `test-pack/README.md` for the steps and what to expect.
+- **[1. Our NDA, redlined by the client](demo/1-our-nda-two-rounds/README.md) (two rounds):** our mutual NDA as a client redlined it (tracked changes, comments, and changes made without Track Changes), then the client's next draft, which is compared with what you actually sent back.
+- **[2. A contract on the client's own paper](demo/2-client-paper/README.md) (one round):** a confidentiality agreement with a different structure. Nothing matches our wording, so the intent check compares each paragraph with the closest of our clauses, and the playbook check reviews the whole contract against our positions.
 
 ## Library and playbook: import and export
 
@@ -138,7 +136,7 @@ src/shared/
   changes.ts             change sets and their status
   diff.ts                word diff, and our edit layered over their redline
 src/renderer/            React UI (views/DocReview.tsx is the review screen)
-scripts/                 test-pack/ (the test pack generator), docs check; dev/ has small CLI checks
+scripts/                 demo/ (generates the demo files), docs check; dev/ has small CLI checks
 ```
 
 `npx tsx --tsconfig tsconfig.node.json scripts/dev/sets.ts <files…>` prints the change sets the app finds in contracts.

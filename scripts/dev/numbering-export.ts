@@ -1,5 +1,5 @@
 // Dev: add a numbered clause the way Enter does and print the result as Word would read it back:
-// for a document with typed numbers (the test pack's Brightwater NDA).
+// for a document with typed numbers (the Brightwater NDA in demo 1).
 import { readFileSync } from 'node:fs'
 import { parseFile } from '../../src/main/ingest/parse'
 import { readBlocks } from '../../src/main/ingest/blocks'
@@ -22,4 +22,4 @@ async function run(f: string, after: string, depth: number) {
   const i = back.findIndex((p) => p.text.includes('A new clause we added'))
   for (const p of back.slice(i - 1, i + 3)) console.log(' ', p.label ?? '', JSON.stringify((p.segments ?? [{ op: 'same', text: p.text }]).slice(0, 3).map((x) => [x.op, x.text.slice(0, 50)])))
 }
-await run('test-pack/test-1/Brightwater-Mutual-NDA-v1-client-redline.docx', '2.3', 2)
+await run('demo/1-our-nda-two-rounds/Brightwater-Mutual-NDA-v1-client-redline.docx', '2.3', 2)

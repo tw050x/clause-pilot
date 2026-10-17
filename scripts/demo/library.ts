@@ -1,4 +1,4 @@
-// PortSwigger's approved clauses for the test pack. `npm run test-pack` writes test-pack/library.json (import it on the Library page).
+// PortSwigger's approved clauses for the demos. `npm run demo:build` writes it into each demo folder as library.json (import it on the Library page).
 import type { LibraryClause } from '../../src/shared/types'
 
 const by = 'Legal team'

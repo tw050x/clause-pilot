@@ -1,4 +1,4 @@
-// PortSwigger's standard positions (the playbook) for the test pack. `npm run test-pack` writes test-pack/playbook.json (import it on the Playbook page).
+// PortSwigger's standard positions (the playbook) for the demos. `npm run demo:build` writes it into each demo folder as playbook.json (import it on the Playbook page).
 import type { PlaybookPosition } from '../../src/shared/types'
 
 export const PLAYBOOK: PlaybookPosition[] = [

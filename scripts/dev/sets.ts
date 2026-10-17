@@ -1,4 +1,4 @@
-// Dev: print the change sets the document screen finds in contracts (with the test-pack library).
+// Dev: print the change sets the document screen finds in contracts (with the demo library).
 //   npx tsx --tsconfig tsconfig.node.json scripts/dev/sets.ts <files…>
 import { readFileSync } from 'node:fs'
 import { parseFile } from '../../src/main/ingest/parse'
@@ -6,7 +6,7 @@ import { readBlocks } from '../../src/main/ingest/blocks'
 import { createDocSession } from '../../src/main/docreview'
 import { changeSets } from '../../src/shared/changes'
 
-const lib = JSON.parse(readFileSync('test-pack/library.json', 'utf8')).clauses
+const lib = JSON.parse(readFileSync('demo/1-our-nda-two-rounds/library.json', 'utf8')).clauses
 for (const f of process.argv.slice(2)) {
   const doc = await parseFile(f)
   const blocks = await readBlocks(f, doc.sourceType)

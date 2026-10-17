@@ -1,6 +1,6 @@
-// The test contracts. Paragraphs built with lib() are word for word PortSwigger's approved
-// clauses (library.ts); everything else is the client's drafting. See test-pack/README.md for
-// what each one is meant to test.
+// The demo contracts. Paragraphs built with lib() are word for word PortSwigger's approved
+// clauses (library.ts); everything else is the client's drafting. Each demo's README says what
+// each one is meant to show.
 import { lib } from './library'
 
 /** A paragraph of a contract, and how it arrives: as typed, or as one of their tracked changes. */

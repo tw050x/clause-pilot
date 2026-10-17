@@ -1,11 +1,12 @@
 /**
- * Builds the test pack (test-pack/), for testing the app as a user would, with real AI:
- *   library.json, playbook.json   our approved clauses and standard positions, in the app's
- *                                 export format (import them on the Library and Playbook pages)
- *   test-1/*.docx                 our NDA as a client redlined it, then their next draft
- *   test-2/*.docx                 a client's own confidentiality agreement
+ * Builds the demo files (demo/), for trying the app as a user would, with real AI. Each demo
+ * folder gets everything it needs; its README.md (written by hand, not generated) is the guide.
+ *   demo/1-our-nda-two-rounds/   library.json, playbook.json, the client's redline, their next draft
+ *   demo/2-client-paper/         library.json, playbook.json, the client's own agreement
+ * library.json and playbook.json are in the app's export format: import them on the Library and
+ * Playbook pages.
  *
- * Run: npm run test-pack
+ * Run: npm run demo:build
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,13 +17,15 @@ import { LIBRARY } from './library'
 import { PLAYBOOK } from './playbook'
 import { BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
 
-const root = join(process.cwd(), 'test-pack')
-for (const d of ['', 'test-1', 'test-2']) mkdirSync(join(root, d), { recursive: true })
+const DEMOS = [
+  { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V1, BRIGHTWATER_V2] },
+  { dir: 'demo/2-client-paper', contracts: [KESTREL] }
+]
 
 const by = 'PortSwigger Legal'
-writeFileSync(join(root, 'library.json'), JSON.stringify({ ...libraryFile(LIBRARY, by), exportedAt: '2026-10-01T09:00:00.000Z' }, null, 2) + '\n')
-writeFileSync(join(root, 'playbook.json'), JSON.stringify({ ...playbookFile(PLAYBOOK, by), exportedAt: '2026-10-01T09:00:00.000Z' }, null, 2) + '\n')
-console.log(`library.json: ${LIBRARY.length} clauses; playbook.json: ${PLAYBOOK.length} positions`)
+const at = '2026-10-01T09:00:00.000Z'
+const library = JSON.stringify({ ...libraryFile(LIBRARY, by), exportedAt: at }, null, 2) + '\n'
+const playbook = JSON.stringify({ ...playbookFile(PLAYBOOK, by), exportedAt: at }, null, 2) + '\n'
 
 type Run = TextRun | InsertedTextRun | DeletedTextRun
 
@@ -72,10 +75,14 @@ async function writeDocx(c: ContractFile, path: string) {
 }
 
 async function main() {
-  await writeDocx(BRIGHTWATER_V1, join(root, 'test-1', BRIGHTWATER_V1.file))
-  await writeDocx(BRIGHTWATER_V2, join(root, 'test-1', BRIGHTWATER_V2.file))
-  await writeDocx(KESTREL, join(root, 'test-2', KESTREL.file))
-  console.log(`test-1: ${BRIGHTWATER_V1.file}, ${BRIGHTWATER_V2.file}; test-2: ${KESTREL.file}`)
+  for (const demo of DEMOS) {
+    const dir = join(process.cwd(), demo.dir)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'library.json'), library)
+    writeFileSync(join(dir, 'playbook.json'), playbook)
+    for (const c of demo.contracts) await writeDocx(c, join(dir, c.file))
+    console.log(`${demo.dir}: library.json (${LIBRARY.length} clauses), playbook.json (${PLAYBOOK.length} positions), ${demo.contracts.map((c) => c.file).join(', ')}`)
+  }
 }
 
 main().catch((e) => {

@@ -9,7 +9,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test-pack": "tsx --tsconfig tsconfig.node.json scripts/test-pack/build.ts",
+    "demo:build": "tsx --tsconfig tsconfig.node.json scripts/demo/build.ts",
     "release": "electron-vite build && electron-builder",
     "pack": "electron-vite build && electron-builder --dir",
     "docs:check": "tsx --tsconfig tsconfig.node.json scripts/check-docs.ts"
