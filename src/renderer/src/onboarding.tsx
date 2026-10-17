@@ -182,7 +182,7 @@ const reviewAcme: Tour = {
     simulateUpload('This is the contract’s page for Acme’s NDA. Uploading their redlined draft creates version 1.'),
     {
       title: 'Their redline, as in Word',
-      body: 'The contract is shown as their Word file shows it: insertions underlined, deletions struck through, their comments in the margin. Unchanged text is greyed so the changes stand out.',
+      body: 'The contract is shown as their Word file shows it: their insertions underlined and deletions struck through in blue. Your own changes will be red. Unchanged text is greyed so the changes stand out, and the speech bubbles show where they commented.',
       target: () => q('.dr-doc'),
       placement: 'right'
     },
@@ -226,10 +226,10 @@ const reviewAcme: Tour = {
     },
     {
       title: 'Reply to their comment',
-      body: 'Use the suggested comment as your reply to Acme’s. It is threaded under theirs here, and in the Word file.',
+      body: 'Use the suggested comment as your reply to Acme’s. Comments are in the sidebar, one thread per paragraph; yours is threaded under theirs here and in the Word file.',
       target: () => cardButton('Use as my comment'),
       placement: 'left',
-      action: 'Click Use as my comment, then Comment in the margin.',
+      action: 'Click Use as my comment, then Comment under Acme’s comment in the sidebar.',
       done: () => !!q('.dr-comment.theirs .dr-comment.ours.reply')
     },
     openStep('§4.1', 'A longer confidentiality term', 'Acme wants confidentiality to last five years instead of three.'),

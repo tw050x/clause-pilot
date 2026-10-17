@@ -46,7 +46,20 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const [seen, setSeen] = useState<Record<string, SeenHit[]>>({})
   const [original, setOriginal] = useState<{ text: string; label: string } | null>(null)
   const [prefill, setPrefill] = useState<{ blockId: string; text: string } | null>(null)
+  const [focusComments, setFocusComments] = useState<string | null>(null)
   const page = useRef<HTMLDivElement>(null)
+
+  /** Bring a paragraph's comments into view in the sidebar. */
+  const showComments = (blockId: string) => {
+    setFocusComments(blockId)
+    requestAnimationFrame(() => panel?.querySelector(`[data-thread="${blockId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+  }
+  /** Start a comment on a paragraph. On a paragraph they commented on, ours is a reply (threaded in Word). */
+  const startComment = (blockId: string, opts: { quote?: string; text?: string } = {}) => {
+    const theirs = d.blocks.find((b) => b.id === blockId)?.comments?.[0]
+    setDraft({ blockId, ...opts, replyTo: opts.quote ? undefined : theirs?.id })
+    showComments(blockId)
+  }
 
   // Earlier negotiations change only when other reviews do, so once per review is enough.
   useEffect(() => {
@@ -215,9 +228,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             scrollTo(id)
           }}
           onComment={(id, text) => {
-            // On a paragraph they commented on, ours is a reply (threaded in Word).
-            const theirs = d.blocks.find((b) => b.id === id)?.comments?.[0]
-            setDraft({ blockId: id, text, replyTo: theirs?.id })
+            startComment(id, { text })
             scrollTo(id)
           }}
           seen={seen[current.id] ?? []}
@@ -232,6 +243,26 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           onOriginal={(b) => setOriginal({ text: b.kind === 'deleted' ? b.text : b.text, label: b.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph' })}
         />
       )}
+
+      <CommentsSection
+        session={session}
+        draft={draft}
+        focus={focusComments ?? (current ? current.blocks[0].id : null)}
+        highlight={new Set(current?.blocks.map((b) => b.id) ?? (focusComments ? [focusComments] : []))}
+        onReply={(blockId, replyTo) => {
+          setDraft({ blockId, replyTo })
+          showComments(blockId)
+        }}
+        onJump={(blockId) => {
+          setFocusComments(blockId)
+          scrollTo(blockId)
+        }}
+        onDone={async (text) => {
+          if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
+          setDraft(null)
+        }}
+        onDelete={(id) => act(window.api.doc.uncomment(session.id, id))}
+      />
 
       {others.length > 0 && (
         <section className="rp-section">
@@ -310,7 +341,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
               selected={!!selected && setOf.get(it.b.id)?.id === selected}
               editing={editing === it.b.id}
               prefill={prefill?.blockId === it.b.id ? prefill.text : undefined}
-              draft={draft?.blockId === it.b.id ? draft : null}
+              commentsOpen={focusComments === it.b.id || draft?.blockId === it.b.id}
               flagged={!!session.injection[it.b.id]}
               onSelect={(s) => setSelected(s?.id ?? null)}
               onEdit={() => setEditing(it.b.id)}
@@ -319,12 +350,8 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
                 setEditing(null)
                 setPrefill(null)
               }}
-              onComment={(c) => setDraft(c)}
-              onCommentDone={async (text) => {
-                if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
-                setDraft(null)
-              }}
-              onUncomment={(id) => act(window.api.doc.uncomment(session.id, id))}
+              onComment={(c) => startComment(c.blockId)}
+              onShowComments={() => showComments(it.b.id)}
               onMouseUp={() => onMouseUp(it.b)}
             />
           )
@@ -336,7 +363,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           style={{ left: bubble.x, top: bubble.y }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
-            setDraft({ blockId: bubble.blockId, quote: bubble.quote })
+            startComment(bubble.blockId, { quote: bubble.quote })
             setBubble(null)
             window.getSelection()?.removeAllRanges()
           }}
@@ -386,24 +413,21 @@ function BlockRow(props: {
   set: ChangeSet | null
   selected: boolean
   editing: boolean
-  draft: { blockId: string; quote?: string; replyTo?: string; text?: string } | null
+  commentsOpen: boolean
   prefill?: string
   flagged: boolean
   onSelect: (s: ChangeSet | null) => void
   onEdit: () => void
   onEditDone: (text?: string | null) => void
   onComment: (c: { blockId: string; quote?: string; replyTo?: string }) => void
-  onCommentDone: (text?: string) => void
-  onUncomment: (id: string) => void
+  onShowComments: () => void
   onMouseUp: () => void
 }) {
-  const { b, session, set, selected, editing, draft, flagged } = props
+  const { b, session, set, selected, editing, flagged } = props
   const d = session.doc!
   const edit = d.edits[b.id]
   const status = set ? statusOf(d, set) : null
-  const ours = d.comments.filter((c) => c.blockId === b.id)
-  const theirs = b.comments ?? []
-  const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
+  const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
   const marks = useMemo(() => overlay(segmentsOf(b), edit), [b, edit])
 
   return (
@@ -433,6 +457,18 @@ function BlockRow(props: {
             <Marks marks={marks} />
           </span>
         )}
+        {comments > 0 && !editing && (
+          <button
+            className={`dr-cbadge ${props.commentsOpen ? 'on' : ''}`}
+            title={`${comments} comment${comments === 1 ? '' : 's'}: show in the sidebar`}
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onShowComments()
+            }}
+          >
+            <Icon name="chat" size={12} /> {comments}
+          </button>
+        )}
         {!editing && (
           <span className="dr-tools" onClick={(e) => e.stopPropagation()}>
             <button className="icon-btn sm" title="Edit (double-click)" onClick={props.onEdit}>
@@ -442,33 +478,6 @@ function BlockRow(props: {
               <Icon name="chat" size={13} />
             </button>
           </span>
-        )}
-      </div>
-      <div className="dr-margin">
-        {theirs.map((c) => (
-          <TheirComment key={c.id} c={c}>
-            {ours
-              .filter((o) => o.replyTo === c.id)
-              .map((o) => (
-                <OurCommentCard key={o.id} c={o} reply onDelete={() => props.onUncomment(o.id)} />
-              ))}
-            {draft?.replyTo === c.id ? (
-              <CommentForm placeholder={`Reply to ${c.author}`} initial={draft.text} onDone={props.onCommentDone} />
-            ) : (
-              <button className="link-btn dr-reply" onClick={() => props.onComment({ blockId: b.id, replyTo: c.id })}>
-                Reply
-              </button>
-            )}
-          </TheirComment>
-        ))}
-        {loose.map((o) => (
-          <OurCommentCard key={o.id} c={o} onDelete={() => props.onUncomment(o.id)} />
-        ))}
-        {draft && !draft.replyTo && (
-          <div className="dr-comment ours">
-            {draft.quote && <div className="dr-quote">“{draft.quote}”</div>}
-            <CommentForm placeholder="Comment (goes to them in the marked-up copy)" initial={draft.text} onDone={props.onCommentDone} />
-          </div>
         )}
       </div>
     </div>
@@ -533,6 +542,76 @@ function Editor({ b, edit, prefill, onDone }: { b: DocBlock; edit: string | unde
         </button>
       </span>
     </span>
+  )
+}
+
+/**
+ * All comments, in document order, one thread per paragraph: theirs (with our replies) and ours.
+ * Drafting a comment happens here too; the paragraph it's on is shown above it.
+ */
+function CommentsSection(props: {
+  session: ReviewSession
+  draft: { blockId: string; quote?: string; replyTo?: string; text?: string } | null
+  focus: string | null
+  highlight: Set<string>
+  onReply: (blockId: string, replyTo: string) => void
+  onJump: (blockId: string) => void
+  onDone: (text?: string) => void
+  onDelete: (id: string) => void
+}) {
+  const { session, draft } = props
+  const d = session.doc!
+  const threads = d.blocks.filter((b) => b.comments?.length || d.comments.some((c) => c.blockId === b.id) || draft?.blockId === b.id)
+  const count = d.blocks.reduce((n, b) => n + (b.comments?.length ?? 0), 0) + d.comments.length
+  const where = (b: DocBlock) => (b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `${b.text.slice(0, 36)}…`)
+  return (
+    <section className="rp-section">
+      <h4 className="rp-h">
+        Comments
+        <span className="faint">{count || 'none'}</span>
+      </h4>
+      {!threads.length && <p className="faint dr-small">Select text in the document, or use a paragraph’s comment button, to add one. Comments go to them in the marked-up copy.</p>}
+      <div className="dr-threads">
+        {threads.map((b) => {
+          const theirs = b.comments ?? []
+          const ours = d.comments.filter((c) => c.blockId === b.id)
+          const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
+          const drafting = draft?.blockId === b.id
+          return (
+            <div key={b.id} data-thread={b.id} className={`dr-thread ${props.highlight.has(b.id) || props.focus === b.id ? 'on' : ''}`}>
+              <button className="link-btn dr-thread-where" onClick={() => props.onJump(b.id)}>
+                {where(b)}
+              </button>
+              {theirs.map((c) => (
+                <TheirComment key={c.id} c={c}>
+                  {ours
+                    .filter((o) => o.replyTo === c.id)
+                    .map((o) => (
+                      <OurCommentCard key={o.id} c={o} reply onDelete={() => props.onDelete(o.id)} />
+                    ))}
+                  {drafting && draft.replyTo === c.id ? (
+                    <CommentForm placeholder={`Reply to ${c.author}`} initial={draft.text} onDone={props.onDone} />
+                  ) : (
+                    <button className="link-btn dr-reply" onClick={() => props.onReply(b.id, c.id)}>
+                      Reply
+                    </button>
+                  )}
+                </TheirComment>
+              ))}
+              {loose.map((o) => (
+                <OurCommentCard key={o.id} c={o} onDelete={() => props.onDelete(o.id)} />
+              ))}
+              {drafting && !draft.replyTo && (
+                <div className="dr-comment ours">
+                  {draft.quote && <div className="dr-quote">“{draft.quote}”</div>}
+                  <CommentForm placeholder="Comment (goes to them in the marked-up copy)" initial={draft.text} onDone={props.onDone} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -926,7 +1005,7 @@ function AiCard({ session, set, r, act, onComment, onJump }: { session: ReviewSe
           {r.suggested.map((x) => {
             const b = blocks.get(x.blockId)
             return b ? (
-              <p key={x.blockId} className="dr-suggest">
+              <p key={x.blockId} className="dr-suggest rl-ours">
                 {b.label && <strong>{b.label} </strong>}
                 <Redline segments={diffSegments(b.kind === 'deleted' ? '' : b.text, x.text)} />
               </p>
