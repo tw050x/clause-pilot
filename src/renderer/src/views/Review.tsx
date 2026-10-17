@@ -23,7 +23,7 @@ interface Props {
 const STATUSES: { key: Visual; label: string }[] = [
   { key: 'processing', label: 'Analysing' },
   { key: 'exact', label: 'Exact match' },
-  { key: 'intent', label: 'Intent match' },
+  { key: 'intent', label: 'AI match: confirm' },
   { key: 'review', label: 'Needs review' },
   { key: 'conflict', label: 'Conflict' },
   { key: 'accepted', label: 'Accepted' },
@@ -136,7 +136,7 @@ export function Review({ session, panel, onChange, onNominationsChanged, alert, 
         <div className="rp-statuses">
           {STATUSES.filter((s) => counts[s.key] > 0).map((s) => (
             <div key={s.key} className="rp-status">
-              <span className="dot" style={{ background: `var(--${s.key})` }} />
+              <span className="dot" style={{ background: `var(--${s.key === 'intent' ? 'review' : s.key})` }} />
               <span>{s.label}</span>
               <strong>{counts[s.key]}</strong>
             </div>

@@ -276,7 +276,8 @@ table.t td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical
 /* status skins */
 .s-processing { --s: var(--processing); --s-tint: var(--processing-tint); }
 .s-exact { --s: var(--exact); --s-tint: var(--exact-tint); }
-.s-intent { --s: var(--intent); --s-tint: var(--intent-tint); }
+/* AI same-meaning matches still need a person: shown in the needs-review colour, not near-green. */
+.s-intent { --s: var(--review); --s-tint: var(--review-tint); }
 .s-review { --s: var(--review); --s-tint: var(--review-tint); }
 .s-conflict { --s: var(--conflict); --s-tint: var(--conflict-tint); }
 .s-accepted { --s: var(--accepted); --s-tint: var(--accepted-tint); }
