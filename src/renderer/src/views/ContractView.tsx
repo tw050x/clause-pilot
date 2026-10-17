@@ -92,7 +92,7 @@ export function ContractView({
                   <td className="muted">{new Date(v.createdAt).toLocaleString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button
-                      className="btn sm ghost"
+                      className="btn sm row-action"
                       onClick={async () => {
                         await window.api.review.close(v.id, !v.closed)
                         onChanged()
@@ -221,7 +221,7 @@ export function ContractsListView({
                     <td className="muted">{v ? new Date(v.createdAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button
-                        className="btn sm ghost"
+                        className="btn sm row-action"
                         onClick={async () => {
                           await window.api.contracts.archive(c.id, !c.archived)
                           onChanged()

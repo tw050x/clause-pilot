@@ -757,3 +757,8 @@ del.us-del ins.th-ins { color: inherit; }
 
 .t tr.row-hidden td { opacity: 0.6; }
 .rc-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+
+/* Archive / Close / Reopen in table rows: a real button, standing out from the row's own hover. */
+.btn.row-action { background: var(--surface); border-color: var(--border-strong); color: var(--text-2); }
+.btn.row-action:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
+.t tr.row-hidden td:last-child { opacity: 1; }

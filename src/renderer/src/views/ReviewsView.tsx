@@ -65,7 +65,7 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
                   </td>
                   <td className="muted">{new Date(r.createdAt).toLocaleString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn sm ghost" onClick={() => toggle(r)}>
+                    <button className="btn sm row-action" onClick={() => toggle(r)}>
                       {r.closed ? 'Reopen' : 'Close'}
                     </button>
                   </td>
