@@ -321,8 +321,8 @@ details summary { cursor: pointer; color: var(--text-2); font-size: 12.5px; }
 .msg { max-width: 92%; padding: 8px 11px; border-radius: 10px; white-space: pre-wrap; font-size: 13.5px; }
 .msg.user { align-self: flex-end; background: color-mix(in srgb, var(--accent) 13%, var(--surface)); color: var(--text); border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--surface)); border-bottom-right-radius: 3px; }
 /* In a question from an AI card: a link to the text it was about. */
-.msg-link { display: flex; align-items: center; gap: 4px; margin-top: 6px; padding: 0; border: none; background: none; font: inherit; font-size: 12.5px; color: var(--accent-ink); cursor: pointer; text-align: left; }
-.msg-link:hover { text-decoration: underline; }
+.msg-link { display: flex; width: fit-content; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 6px; background: var(--surface); font: inherit; font-size: 12px; font-weight: 500; color: var(--accent-ink); cursor: pointer; text-align: left; }
+.msg-link:hover { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .msg.assistant { align-self: stretch; max-width: none; padding: 2px 0; white-space: normal; line-height: 1.55; }
 
 /* Markdown from the AI (chat answers and the AI cards). */
