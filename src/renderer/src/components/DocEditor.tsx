@@ -7,7 +7,7 @@ import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
 import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
-import { hasOpenChanges, marksFor, shownText } from '@shared/changes'
+import { changeKey, hasOpenChanges, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
@@ -186,12 +186,14 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         let marks = cache.get(key)
         if (!marks) cache.set(key, (marks = marksNow(d, b, node.textContent)))
         const open = hasOpenChanges(d, b)
+        // Their changes here have all been decided: checked.
+        const checked = !open && theyChanged(b) && segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
         const edited = b.ours || tidy(node.textContent) !== tidy(plainOf(d, b))
         const gone = b.kind === 'deleted' && !marks.length && !node.textContent
         const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
         decos.push(
           Decoration.node(offset, offset + node.nodeSize, {
-            class: `${open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
+            class: `${open ? 'chg-theirs' : ''} ${checked ? 'chg-checked' : edited ? 'chg-ours' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
             ...(tag ? { 'data-tag': tag } : {})
           })
         )
@@ -446,6 +448,17 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         },
         mouseup: (v) => {
           window.setTimeout(() => {
+            // Take the selection from the page, in case the editor hasn't caught up with it yet.
+            const dom = window.getSelection()
+            if (dom?.rangeCount && dom.anchorNode && dom.focusNode && v.dom.contains(dom.anchorNode) && v.dom.contains(dom.focusNode)) {
+              try {
+                const a = v.posAtDOM(dom.anchorNode, dom.anchorOffset)
+                const h = v.posAtDOM(dom.focusNode, dom.focusOffset)
+                if (a !== v.state.selection.anchor || h !== v.state.selection.head) v.dispatch(v.state.tr.setSelection(TextSelection.between(v.state.doc.resolve(a), v.state.doc.resolve(h))))
+              } catch {
+                // a point the editor doesn't map (a widget): keep its own selection
+              }
+            }
             const { state } = v
             const sel = state.selection
             if (sel.empty) {
@@ -559,14 +572,24 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       have.add(b.id)
     })
     // Text changed from outside the editor (not something you're typing): replace it.
+    // Only the part that differs is replaced, so the caret stays where it was.
     const replace: { from: number; to: number; text: string }[] = []
     tr.doc.forEach((node, pos) => {
       const b = want.get(node.attrs.id)
       if (!b || pending.current.has(b.id)) return
       const text = shownOf(d, b)
-      if (tidy(text) !== tidy(node.textContent)) replace.push({ from: pos + 1, to: pos + 1 + node.content.size, text })
+      const old = node.textContent
+      if (text === old) return
+      let p = 0
+      while (p < text.length && p < old.length && text[p] === old[p]) p++
+      let q = 0
+      while (q < text.length - p && q < old.length - p && text[text.length - 1 - q] === old[old.length - 1 - q]) q++
+      replace.push({ from: pos + 1 + p, to: pos + 1 + old.length - q, text: text.slice(p, text.length - q) })
     })
-    for (const r of replace.reverse()) tr.replaceWith(r.from, r.to, r.text ? schema.text(r.text) : [])
+    for (const r of replace.reverse()) {
+      if (r.text) tr.replaceWith(r.from, r.to, schema.text(r.text))
+      else tr.delete(r.from, r.to)
+    }
     tr.setMeta('sync', true).setMeta('addToHistory', false)
     v.dispatch(tr)
   }, [session])

@@ -757,3 +757,6 @@ del.us-del ins.th-ins { color: inherit; }
 .sel-done { color: var(--text-2); font-weight: 600; }
 .sel-done.accepted { color: var(--exact); }
 .sel-done.rejected { color: var(--rejected); }
+
+/* Every change of theirs in the paragraph decided: a thick green bar, so you can see it's been checked. */
+.ed-doc .ed-p.chg-checked { border-left: 5px solid var(--exact); padding-left: 10px; }
