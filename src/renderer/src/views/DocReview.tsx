@@ -7,7 +7,10 @@ import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, type SelectedChange } from '../components/DocEditor'
-import { canRedo, dependents, describe } from '@shared/history'
+import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
+import { diffSegments } from '@shared/diff'
+import type { TrackedSegment } from '@shared/types'
+import { Redline } from '../components/Redline'
 
 interface Props {
   session: ReviewSession
@@ -142,7 +145,15 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       </section>
 
       {showHistory ? (
-        <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} />
+        <HistoryPanel
+          session={session}
+          act={act}
+          onClose={() => setShowHistory(false)}
+          onJump={(blockId) => {
+            document.querySelector(`p[data-block="${blockId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            setFocus(blockId)
+          }}
+        />
       ) : picked && picked.length > 0 ? (
         <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} />
       ) : block ? (
@@ -287,10 +298,67 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
 
 // ---- history: undo and redo by action ------------------------------------------------------------
 
-function HistoryPanel({ session, act, onClose }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onClose: () => void }) {
+/** Just the changed parts of a redline, with a little context either side. */
+function excerpt(segs: TrackedSegment[], context = 28): TrackedSegment[] {
+  return segs.map((x, i) => {
+    if (x.op !== 'same' || x.text.length <= context * 2) return x
+    const first = i === 0
+    const last = i === segs.length - 1
+    if (first) return { ...x, text: '…' + x.text.slice(-context) }
+    if (last) return { ...x, text: x.text.slice(0, context) + '…' }
+    return { ...x, text: x.text.slice(0, context) + ' … ' + x.text.slice(-context) }
+  })
+}
+
+const OUTCOME = { accepted: 'Accepted', rejected: 'Rejected' } as const
+
+/** One thing an action did: where, and the text, marked up as it was changed. */
+function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: string) => void }) {
+  const where = onJump ? (
+    <button
+      className="link-btn hist-where"
+      onClick={(e) => {
+        e.stopPropagation()
+        onJump(item.blockId)
+      }}
+    >
+      {item.where}
+    </button>
+  ) : (
+    <span className="hist-where">{item.where}</span>
+  )
+  const short = (t: string) => (t.length > 160 ? `${t.slice(0, 160).trimEnd()}…` : t)
+  if (item.kind === 'resolved')
+    return (
+      <div className="hist-row">
+        {where} <span className={`sel-st ${item.outcome ?? ''}`}>{item.outcome ? OUTCOME[item.outcome] : 'Reopened'}</span> their {item.op === 'ins' ? 'insertion' : 'deletion'}:{' '}
+        {item.op === 'ins' ? <ins className="th-ins">{short(item.text)}</ins> : <del className="th-del">{short(item.text)}</del>}
+      </div>
+    )
+  if (item.kind === 'edited')
+    return (
+      <div className="hist-row rl-ours">
+        {where} <Redline segments={excerpt(diffSegments(item.before, item.after))} />
+      </div>
+    )
+  if (item.kind === 'paragraph')
+    return (
+      <div className="hist-row">
+        {where} {item.added ? 'added' : 'removed'}: {item.added ? <ins className="us-ins">{short(item.text)}</ins> : <del className="us-del">{short(item.text)}</del>}
+      </div>
+    )
+  return (
+    <div className="hist-row">
+      {where} {item.added ? 'comment' : 'comment deleted'}: <span className="hist-comment">“{short(item.text)}”</span>
+    </div>
+  )
+}
+
+function HistoryPanel({ session, act, onClose, onJump }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onClose: () => void; onJump: (blockId: string) => void }) {
   const d = session.doc!
   const history = [...(d.history ?? [])].reverse()
   const [confirm, setConfirm] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <section className="rc-section">
       <h4 className="rp-h">
@@ -304,15 +372,23 @@ function HistoryPanel({ session, act, onClose }: { session: ReviewSession; act: 
         {history.map((a) => {
           const deps = a.undone ? [] : dependents(d.history!, a)
           const redoable = a.undone && canRedo(d, a)
+          const items = details(d, a)
+          const expanded = open === a.id
           return (
-            <div key={a.id} className={`hist-item ${a.undone ? 'undone' : ''}`}>
+            <div key={a.id} className={`hist-item ${a.undone ? 'undone' : ''} ${expanded ? 'open' : ''}`} onClick={() => setOpen(expanded ? null : a.id)}>
               <div className="hist-label">{describe(d, a)}</div>
+              <div className="hist-items">
+                {(expanded ? items : items.slice(0, 2)).map((x, i) => (
+                  <ItemView key={i} item={x} onJump={expanded ? onJump : undefined} />
+                ))}
+                {!expanded && items.length > 2 && <div className="faint hist-more">+ {items.length - 2} more · click to see all</div>}
+              </div>
               <div className="hist-meta faint">
                 {a.by} · {new Date(a.at).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                 {a.undone && ' · undone'}
               </div>
               {confirm === a.id ? (
-                <div className="hist-confirm">
+                <div className="hist-confirm" onClick={(e) => e.stopPropagation()}>
                   <p className="dr-small">
                     Later action{deps.length === 1 ? '' : 's'} changed the same text, so {deps.length === 1 ? 'it has' : 'they have'} to be undone too:
                   </p>
@@ -336,7 +412,7 @@ function HistoryPanel({ session, act, onClose }: { session: ReviewSession; act: 
                   </div>
                 </div>
               ) : (
-                <div className="row-gap">
+                <div className="row-gap" onClick={(e) => e.stopPropagation()}>
                   {!a.undone && (
                     <button className="btn sm" onClick={() => (deps.length ? setConfirm(a.id) : act(window.api.doc.undo(session.id, a.id)))}>
                       Undo{deps.length ? ` (+${deps.length} later)` : ''}

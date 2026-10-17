@@ -1,4 +1,5 @@
 import type { DocBlock, DocReview, HistoryAction, OurComment } from './types'
+import { marksFor, segmentsOf, shownText } from './changes'
 
 /**
  * Undo history for a document review, by action.
@@ -133,4 +134,54 @@ export function describe(d: DocReview, a: HistoryAction): string {
   if (coms.length - cAdded.length) parts.push(`deleted ${coms.length - cAdded.length === 1 ? 'a comment' : 'comments'}`)
   const text = parts.join('; ') || 'No change'
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** One thing an action did, for showing it. */
+export type ActionItem =
+  | { kind: 'resolved'; blockId: string; where: string; outcome: 'accepted' | 'rejected' | null; op: 'ins' | 'del'; text: string }
+  | { kind: 'edited'; blockId: string; where: string; before: string; after: string }
+  | { kind: 'paragraph'; blockId: string; where: string; added: boolean; text: string }
+  | { kind: 'comment'; blockId: string; where: string; added: boolean; text: string }
+
+/** What an action did, item by item, in document order. */
+export function details(d: DocReview, a: HistoryAction): ActionItem[] {
+  const blocks = new Map(d.blocks.map((b) => [b.id, b]))
+  const order = new Map(d.blocks.map((b, i) => [b.id, i]))
+  const paraOf = (id: string) => (a.after[`para:${id}`] ?? a.before[`para:${id}`]) as { block: DocBlock } | null | undefined
+  const where = (id: string) => {
+    const b = blocks.get(id) ?? paraOf(id)?.block
+    if (!b) return 'Paragraph'
+    return b.ours ? 'New paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph'
+  }
+  // The paragraph's text with no wording of ours: what an edit started from when there was none.
+  const plain = (id: string) => {
+    const b = blocks.get(id)
+    return b ? shownText(marksFor({ ...d, edits: {} }, b)) : ''
+  }
+  const items: ActionItem[] = []
+  for (const k of Object.keys(a.after)) {
+    const [kind, ...rest] = k.split(':')
+    if (kind === 'res') {
+      const [blockId, seg] = rest
+      const b = blocks.get(blockId)
+      const s = b ? segmentsOf(b)[Number(seg)] : undefined
+      if (!s || s.op === 'same') continue
+      items.push({ kind: 'resolved', blockId, where: where(blockId), outcome: (a.after[k] as 'accepted' | 'rejected' | null) ?? null, op: s.op, text: s.text })
+    } else if (kind === 'edit') {
+      const id = rest.join(':')
+      if (`para:${id}` in a.after) continue // shown as the paragraph added or removed
+      const before = (a.before[k] as string | null) ?? plain(id)
+      const after = (a.after[k] as string | null) ?? plain(id)
+      items.push({ kind: 'edited', blockId: id, where: where(id), before, after })
+    } else if (kind === 'para') {
+      const id = rest.join(':')
+      const added = a.after[k] !== null
+      const text = ((added ? a.after[`edit:${id}`] : a.before[`edit:${id}`]) as string | null) ?? ''
+      items.push({ kind: 'paragraph', blockId: id, where: 'New paragraph', added, text })
+    } else if (kind === 'com') {
+      const c = (a.after[k] ?? a.before[k]) as OurComment
+      items.push({ kind: 'comment', blockId: c.blockId, where: where(c.blockId), added: a.after[k] !== null, text: c.text })
+    }
+  }
+  return items.sort((x, y) => (order.get(x.blockId) ?? 1e9) - (order.get(y.blockId) ?? 1e9))
 }

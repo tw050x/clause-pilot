@@ -717,3 +717,14 @@ del.us-del ins.th-ins { color: inherit; }
 /* The change the caret is on, highlighted whole. */
 .ed-p .ed-hl { background: color-mix(in srgb, #1d4ed8 16%, transparent); border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in srgb, #1d4ed8 35%, transparent); }
 .ed-p ins.us-ins.ed-hl, .ed-p del.us-del.ed-hl { background: color-mix(in srgb, var(--rejected) 14%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rejected) 35%, transparent); }
+
+.hist-item { cursor: pointer; }
+.hist-item:hover { background: color-mix(in srgb, var(--text) 6%, var(--surface-2)); }
+.hist-item.open { background: var(--surface); box-shadow: 0 0 0 1px var(--border); cursor: default; }
+.hist-items { display: flex; flex-direction: column; gap: 4px; }
+.hist-row { font: 12.5px/1.5 Georgia, serif; word-break: break-word; }
+.hist-row .sel-st { font-family: system-ui, sans-serif; }
+.hist-where { font: 600 11.5px system-ui, sans-serif; color: var(--text-2); margin-right: 4px; }
+.hist-comment { font-style: italic; }
+.hist-more { font-size: 11.5px; }
+.hist-item.undone .hist-items { opacity: 0.6; }
