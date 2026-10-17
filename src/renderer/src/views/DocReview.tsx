@@ -54,6 +54,23 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   /** Each new selection is a new action: everything decided in it undoes together. */
   const [selection, setSelection] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
+  // The stats and the key to the bars take room at the top; they can be folded to one line.
+  // Remembered on this machine (a convenience only).
+  const [showKey, setShowKey] = useState(() => {
+    try {
+      return localStorage.getItem('cp.showKey') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const toggleKey = (on: boolean) => {
+    setShowKey(on)
+    try {
+      localStorage.setItem('cp.showKey', on ? '1' : '0')
+    } catch {
+      /* not stored: still works for this session */
+    }
+  }
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
   const [highlight, setHighlight] = useState<{ blockId: string; quote: string } | null>(null)
   const highlighted = !!highlight
@@ -147,57 +164,73 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             · {session.docName}
           </div>
         )}
-        <div className="rc-stats">
-          <span>
-            <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
-          </span>
-          {decided > 0 && (
+        {showKey ? (
+          <>
+            <div className="rc-stats">
+              <span>
+                <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
+              </span>
+              {decided > 0 && (
+                <span>
+                  <i className="dot decided" /> {decided} of their changes accepted or rejected
+                </span>
+              )}
+              {untracked > 0 && (
+                <span>
+                  <i className="dot untracked" /> {untracked} of them without Track Changes
+                </span>
+              )}
+              {toRead > 0 && (
+                <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
+                  <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
+                </span>
+              )}
+              <span>
+                <i className="dot ours" /> {ourEdits} edited by you
+              </span>
+            </div>
+            <div className="rc-key" title="The bar beside each paragraph">
+              <span>
+                <i className="bar checked" /> Nothing to check ({cleared})
+              </span>
+              <span>
+                <i className="bar ai" /> Intent check passed, by AI ({aiOk})
+              </span>
+              <span>
+                <i className="bar theirs" /> To decide
+              </span>
+              <span>
+                <i className="bar ours" /> Your edits
+              </span>
+              <span>
+                <i className="bar none" /> To read (not our wording)
+              </span>
+            </div>
+            {d.baseline && (
+              <p className="faint rc-note">
+                {d.baseline.kind === 'sent'
+                  ? `Compared with what we sent for version ${d.baseline.version}.`
+                  : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
+              </p>
+            )}
+            {!d.baseline && toRead > 0 && (
+              <p className="faint rc-note">
+                Not on our paper: nothing here is our approved wording, so every paragraph needs reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
+              </p>
+            )}
+            <button className="link-btn rc-key-toggle" onClick={() => toggleKey(false)}>
+              Hide key
+            </button>
+          </>
+        ) : (
+          <div className="rc-key-short">
             <span>
-              <i className="dot decided" /> {decided} of their changes accepted or rejected
+              {changed.length} to decide{toRead ? ` · ${toRead} to read` : ''} · {ourEdits} edited by you
             </span>
-          )}
-          {untracked > 0 && (
-            <span>
-              <i className="dot untracked" /> {untracked} of them without Track Changes
-            </span>
-          )}
-          {toRead > 0 && (
-            <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
-              <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
-            </span>
-          )}
-          <span>
-            <i className="dot ours" /> {ourEdits} edited by you
-          </span>
-        </div>
-        <div className="rc-key" title="The bar beside each paragraph">
-          <span>
-            <i className="bar checked" /> Nothing to check ({cleared})
-          </span>
-          <span>
-            <i className="bar ai" /> Intent check passed, by AI ({aiOk})
-          </span>
-          <span>
-            <i className="bar theirs" /> To decide
-          </span>
-          <span>
-            <i className="bar ours" /> Your edits
-          </span>
-          <span>
-            <i className="bar none" /> To read (not our wording)
-          </span>
-        </div>
-        {d.baseline && (
-          <p className="faint rc-note">
-            {d.baseline.kind === 'sent'
-              ? `Compared with what we sent for version ${d.baseline.version}.`
-              : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
-          </p>
-        )}
-        {!d.baseline && toRead > 0 && (
-          <p className="faint rc-note">
-            Not on our paper: nothing here is our approved wording, so every paragraph needs reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
-          </p>
+            <button className="link-btn rc-key-toggle" onClick={() => toggleKey(true)}>
+              Show key
+            </button>
+          </div>
         )}
         {onHold && (
           <div className="banner danger">
