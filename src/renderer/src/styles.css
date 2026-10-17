@@ -462,6 +462,8 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .picker-item { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 10px; border: none; border-radius: 8px; background: none; text-align: left; font-size: 14px; cursor: pointer; color: var(--text); }
 .picker-item.cursor { background: var(--processing-tint); }
 .picker-item svg { color: var(--processing); }
+.picker-item.create { color: var(--processing); font-weight: 500; }
+.picker-item.create:not(:first-child) { margin-top: 4px; box-shadow: 0 -1px 0 var(--border); border-radius: 0 0 8px 8px; }
 .picker-empty { padding: 10px; margin: 0; }
 
 .nav .account-switch { width: 100%; max-width: none; height: 34px; margin-bottom: 8px; flex-shrink: 0; }

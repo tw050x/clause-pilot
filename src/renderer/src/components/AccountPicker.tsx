@@ -4,8 +4,8 @@ import { Icon } from '../lib/icons'
 
 /**
  * Overlay for choosing the active account: search, arrow keys, Enter to pick,
- * Esc to close. You always work on one account at a time. In live mode a
- * search with no match offers to create the account.
+ * Esc to close. You always work on one account at a time. "+ New account" is always
+ * at the bottom: with a name typed it creates that account; without one it asks for the name.
  */
 export function AccountPicker({
   accounts,
@@ -25,6 +25,9 @@ export function AccountPicker({
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // "+ New account" pressed with nothing typed: the search box asks for the client's name.
+  const [naming, setNaming] = useState(false)
 
   type Option = { kind: 'account'; account: Account } | { kind: 'create'; name: string }
   const options = useMemo<Option[]>(() => {
@@ -32,7 +35,7 @@ export function AccountPicker({
     const matches = accounts.filter((a) => !term || a.name.toLowerCase().includes(term)).sort((a, b) => a.name.localeCompare(b.name))
     const out: Option[] = []
     out.push(...matches.map((account) => ({ kind: 'account' as const, account })))
-    if (canCreate && term && !accounts.some((a) => a.name.toLowerCase() === term)) out.push({ kind: 'create', name: q.trim() })
+    if (canCreate && !accounts.some((a) => a.name.toLowerCase() === term)) out.push({ kind: 'create', name: q.trim() })
     return out
   }, [q, accounts, canCreate])
 
@@ -44,7 +47,11 @@ export function AccountPicker({
   const choose = (o: Option | undefined) => {
     if (!o) return
     if (o.kind === 'account') onPick(o.account.id)
-    else onCreate(o.name)
+    else if (o.name) onCreate(o.name)
+    else {
+      setNaming(true)
+      inputRef.current?.focus()
+    }
   }
 
   return (
@@ -53,9 +60,10 @@ export function AccountPicker({
         <div className="picker-search">
           <Icon name="users" />
           <input
+            ref={inputRef}
             autoFocus
             value={q}
-            placeholder={canCreate ? 'Search or create an account…' : 'Search accounts…'}
+            placeholder={naming ? 'The client’s name, then Enter' : canCreate ? 'Search or create an account…' : 'Search accounts…'}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
@@ -71,29 +79,35 @@ export function AccountPicker({
           <span className="kbd">esc</span>
         </div>
         <div className="picker-list" ref={listRef}>
+          {!options.some((o) => o.kind === 'account') && (
+            <p className="faint picker-empty">{accounts.length ? `No accounts match “${q}”.` : canCreate ? 'No accounts yet. Type a client’s name to create one.' : 'No accounts.'}</p>
+          )}
           {options.map((o, i) => {
             const active = o.kind === 'account' && o.account.id === activeId
             return (
               <button
                 key={o.kind === 'account' ? o.account.id : 'create'}
                 data-i={i}
-                className={`picker-item ${i === cursor ? 'cursor' : ''}`}
+                className={`picker-item ${o.kind === 'create' ? 'create' : ''} ${i === cursor ? 'cursor' : ''}`}
                 onMouseMove={() => setCursor(i)}
                 onClick={() => choose(o)}
               >
                 {o.kind === 'account' && <span>{o.account.name}</span>}
                 {o.kind === 'create' && (
-                  <span>
-                    + Create account “<b>{o.name}</b>”
+                  <span className="picker-create">
+                    {o.name ? (
+                      <>
+                        + Create account “<b>{o.name}</b>”
+                      </>
+                    ) : (
+                      '+ New account'
+                    )}
                   </span>
                 )}
                 {active && <Icon name="check" size={14} />}
               </button>
             )
           })}
-          {!options.length && (
-            <p className="faint picker-empty">{accounts.length ? `No accounts match “${q}”.` : canCreate ? 'No accounts yet. Type a client name to create one.' : 'No accounts.'}</p>
-          )}
         </div>
       </div>
     </div>

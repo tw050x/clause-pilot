@@ -24,7 +24,7 @@ There is no second round.
 
    If you've already imported them for the other demo, the page says they're already up to date. That's fine.
 
-4. Press the account switcher at the top of the left sidebar (or ⌘K). Type **Kestrel Health Systems** and choose **+ Create account "Kestrel Health Systems"**.
+4. Press the account switcher at the top of the left sidebar (it says **Choose an account**, or ⌘K). Press **+ New account**, type **Kestrel Health Systems** and press Enter.
 5. In the sidebar, press **+ New contract**. Name it **Confidentiality Agreement** and press **Create contract**.
 
 ## Review
