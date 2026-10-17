@@ -427,17 +427,17 @@ function BlockRow(props: {
         onDoubleClick={() => !editing && props.onEdit()}
         onMouseUp={props.onMouseUp}
       >
+        {b.untracked && !editing && (
+          <span className="dr-untracked" title={b.untracked === 'sent' ? 'Changed since we sent it, without Track Changes' : b.standard ? `Differs from our approved “${b.standard}”` : 'Not in our standard wording'}>
+            {b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template'}
+          </span>
+        )}
         {flagged && (
           <span className="dr-flag" title="Text addressed to an AI reviewer: on security hold">
             <Icon name="shield" size={12} />
           </span>
         )}
         {b.label && <span className="dr-label">{b.label}</span>}
-        {b.untracked && !editing && (
-          <span className="dr-untracked" title={b.untracked === 'sent' ? 'Changed since we sent it, without Track Changes' : b.standard ? `Differs from our approved “${b.standard}”` : 'Not in our standard wording'}>
-            {b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template'}
-          </span>
-        )}
         {editing ? (
           <Editor b={b} edit={edit} prefill={props.prefill} onDone={props.onEditDone} />
         ) : (
