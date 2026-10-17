@@ -28,6 +28,8 @@ export function App() {
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   // A question posted to Ask AI from an AI card in the review column.
   const [chatInject, setChatInject] = useState<ChatInject | null>(null)
+  // Text to highlight again in the review (a link in Ask AI).
+  const [reselect, setReselect] = useState<{ blockIds: string[]; quote: string } | null>(null)
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
@@ -238,6 +240,7 @@ export function App() {
               accountName={reviews.find((r) => r.id === session.id)?.accountName}
               contractTitle={reviews.find((r) => r.id === session.id)?.contractTitle}
               onOpenReview={openSession}
+              reselect={reselect}
               onAskAi={(runId, question) => {
                 setChatInject({ runId, question })
                 setRightTab('chat')
@@ -314,7 +317,15 @@ export function App() {
           {/* The Review view renders its controls into this element through a portal. */}
           <div className="rightbar-body" ref={setReviewPanel} style={{ display: rightTab === 'review' ? undefined : 'none' }} />
           <div className="rightbar-chat" style={{ display: rightTab === 'chat' ? undefined : 'none' }}>
-            <ChatPanel session={session} inject={chatInject} onReturn={() => setRightTab('review')} />
+            <ChatPanel
+              session={session}
+              inject={chatInject}
+              onReturn={() => setRightTab('review')}
+              onShowText={(blockIds, quote) => {
+                setRightTab('review')
+                setReselect({ blockIds, quote })
+              }}
+            />
           </div>
         </aside>
       </div>

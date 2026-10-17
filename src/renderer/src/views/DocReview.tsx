@@ -26,6 +26,8 @@ interface Props {
   onNominationsChanged: () => void
   /** An AI card was used: show Ask AI with its question (the task is already running). */
   onAskAi: (runId: string, question: string) => void
+  /** Highlight this text again (from a link in Ask AI). */
+  reselect?: { blockIds: string[]; quote: string } | null
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
@@ -46,7 +48,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, onAskAi }: Props) {
+export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, onAskAi, reselect }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -321,6 +323,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       <DocEditor
         key={session.id}
         session={session}
+        reselect={reselect}
         act={act}
         onFocusBlock={onFocusBlock}
         onSelectChanges={onSelectChanges}

@@ -37,6 +37,8 @@ interface Props {
   /** Commented text was clicked: show that paragraph's comments. */
   onShowComments: (blockId: string) => void
   readOnly?: boolean
+  /** Highlight this text again (a new object each time it's asked for). */
+  reselect?: { blockIds: string[]; quote: string } | null
 }
 
 /** A redline picked out by selecting text: one of their changes, or one of ours. */
@@ -97,7 +99,7 @@ function spans(marks: Mark[]) {
 const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
   m.theirs && m.seg !== undefined ? { blockId: b.id, kind: 'theirs', seg: groupOf(b, m.seg)[0] } : m.ours ? { blockId: b.id, kind: 'ours', op: m.ours, text: m.text } : null
 
-export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {
+export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly, reselect }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const model = useRef(session.doc!)
@@ -108,6 +110,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   const cb = useRef({ act, onFocusBlock, onComment, onSelectChanges, onShowComments })
   cb.current = { act, onFocusBlock, onComment, onSelectChanges, onShowComments }
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string } | null>(null)
+  // Reports the selection to the review (set up with the editor).
+  const reportRef = useRef<((v: EditorView) => void) | null>(null)
 
   // ---- set up the editor once per review ----------------------------------------------------
   useEffect(() => {
@@ -346,6 +350,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
       }
     }
+
+    reportRef.current = report
 
     /** The paragraphs a clause number covers: the clause, its sub-clauses and items, and unnumbered paragraphs under it. */
     /** One paragraph's text, start to end. */
@@ -680,6 +686,47 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     tr.setMeta('sync', true).setMeta('addToHistory', false)
     v.dispatch(tr)
   }, [session])
+
+  // Highlight some text again (from a link in Ask AI): find it in its paragraphs as they now
+  // read, select it, bring it into view, and report it like any highlight.
+  useEffect(() => {
+    const v = view.current
+    if (!v || !reselect) return
+    const { state } = v
+    // The paragraphs' text joined as the selection reads it (a space between paragraphs), with the
+    // document position of each character.
+    let flat = ''
+    const posOf: number[] = []
+    state.doc.forEach((node, offset) => {
+      if (!reselect.blockIds.includes(node.attrs.id)) return
+      if (flat) {
+        flat += ' '
+        posOf.push(-1)
+      }
+      node.forEach((child, at) => {
+        if (!child.isText) return
+        for (let k = 0; k < child.text!.length; k++) posOf.push(offset + 1 + at + k)
+        flat += child.text
+      })
+    })
+    const norm = (t: string) => t.replace(/\s/g, ' ')
+    let i = norm(flat).indexOf(norm(reselect.quote))
+    let len = reselect.quote.length
+    // Changed since: the paragraphs as they are.
+    if (i < 0) {
+      i = 0
+      len = flat.length
+    }
+    const from = posOf.slice(i).find((p) => p >= 0)
+    const to = posOf.slice(0, i + len).reverse().find((p) => p >= 0)
+    if (from === undefined || to === undefined) return
+    v.focus()
+    v.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to + 1)).scrollIntoView())
+    window.setTimeout(() => {
+      reportRef.current?.(v)
+      v.domAtPos(from).node.parentElement?.closest('p')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 0)
+  }, [reselect])
 
   return (
     <>

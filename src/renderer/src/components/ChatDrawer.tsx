@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ReviewSession } from '@shared/types'
+import type { AiTaskRun, ChatMessage, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
-import { Chevron } from '../lib/icons'
+import { Chevron, Icon } from '../lib/icons'
 
 /** A message as shown: from a card, an assistant message waits for its AI task (`runId`). */
 type Shown = ChatMessage & { runId?: string; pending?: boolean }
@@ -14,7 +14,19 @@ export interface ChatInject {
 
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
-export function ChatPanel({ session, inject, onReturn }: { session: ReviewSession | null; inject: ChatInject | null; onReturn: () => void }) {
+export function ChatPanel({
+  session,
+  inject,
+  onReturn,
+  onShowText
+}: {
+  session: ReviewSession | null
+  inject: ChatInject | null
+  /** Back to the Review tab. */
+  onReturn: () => void
+  /** Back to the review, with this text highlighted again. */
+  onShowText: (blockIds: string[], quote: string) => void
+}) {
   const [history, setHistory] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -42,7 +54,9 @@ export function ChatPanel({ session, inject, onReturn }: { session: ReviewSessio
   // A card's question: posted as asked, with its answer to follow from the task.
   useEffect(() => {
     if (!inject) return
-    setHistory((h) => (h.some((m) => m.runId === inject.runId) ? h : [...h, { role: 'user', content: inject.question }, { role: 'assistant', content: '', runId: inject.runId, pending: true }]))
+    setHistory((h) =>
+      h.some((m) => m.runId === inject.runId) ? h : [...h, { role: 'user', content: inject.question, runId: inject.runId }, { role: 'assistant', content: '', runId: inject.runId, pending: true }]
+    )
   }, [inject])
 
   // The task's answer, as written from the server's response, once it's in.
@@ -103,14 +117,14 @@ export function ChatPanel({ session, inject, onReturn }: { session: ReviewSessio
         {history.map((m, i) =>
           m.role === 'user' ? (
             <div key={i} className="msg user">
-              <UserText text={m.content} />
+              {m.runId ? <CardQuestion text={m.content} run={session?.doc?.aiRuns?.find((r) => r.id === m.runId)} onShowText={onShowText} /> : m.content}
             </div>
           ) : (
             // The AI's answer: Markdown, in the flow of the page, not in a bubble.
             <div key={i} className="msg assistant">
               {m.pending && !m.content ? <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} /> : <Markdown text={m.content} />}
-              {/* An answer to a card: back to the review, where it's on the card too. */}
-              {m.runId && !m.pending && (
+              {/* An answer to a card, until the chat goes on: back to the review, where it's on the card too. */}
+              {m.runId && !m.pending && i === history.length - 1 && (
                 <button className="btn sm msg-return" onClick={onReturn}>
                   <span className="back-chevron">
                     <Chevron size={10} />
@@ -154,14 +168,23 @@ export function ChatPanel({ session, inject, onReturn }: { session: ReviewSessio
   )
 }
 
-/** Your message; a quoted passage (from a card: "> the highlighted text") is set off below it. */
-function UserText({ text }: { text: string }) {
+/**
+ * A question posted from an AI card: the question, and a link to the text it was about (rather
+ * than a copy of it), which highlights that text in the review again.
+ */
+function CardQuestion({ text, run, onShowText }: { text: string; run?: AiTaskRun; onShowText: (blockIds: string[], quote: string) => void }) {
   const at = text.indexOf('\n\n> ')
-  if (at < 0) return <>{text}</>
+  const question = at < 0 ? text : text.slice(0, at)
+  // "Does the intent match our approved wording? (§1.3)": the places go on the link.
+  const m = question.match(/^(.*?)\s*\(([^()]*)\)\s*$/)
   return (
     <>
-      {text.slice(0, at)}
-      <div className="msg-quote">{text.slice(at + 4)}</div>
+      {m ? m[1] : question}
+      {run && (
+        <button className="msg-link" onClick={() => onShowText(run.blockIds, run.quote)} title="Show this text in the review, highlighted">
+          <Icon name="link" size={12} /> {m ? m[2] : 'The highlighted text'}
+        </button>
+      )}
     </>
   )
 }
