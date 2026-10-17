@@ -665,7 +665,7 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-p del { cursor: default; }
 .rc { display: flex; flex-direction: column; min-height: 100%; }
 /* History, Marked-up copy, Draft response: pinned to the bottom of the column while the rest scrolls. */
-.rc-footer { position: sticky; bottom: 0; margin-top: auto; padding: 12px 18px; background: var(--surface); border-top: 1px solid var(--border); z-index: 2; }
+.rc-footer { position: sticky; bottom: 0; margin-top: auto; padding: 12px 18px; background: var(--surface); z-index: 2; }
 .rc-section { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .rc-title { font-weight: 600; font-size: 14px; }
 .rc-sub { font-size: 12px; margin-top: -4px; word-break: break-word; }
