@@ -45,7 +45,7 @@ export interface Api {
     comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
     uncomment(id: string, commentId: string): Promise<ReviewSession>
     /** Enter: split a paragraph at the caret; the rest goes into a new paragraph of ours. */
-    split(id: string, blockId: string, head: string, tail: string): Promise<{ session: ReviewSession; id: string }>
+    split(id: string, blockId: string, head: string, tail: string, newId?: string): Promise<{ session: ReviewSession; id: string }>
     /** Accept or reject one of their changes (segment index in the paragraph's redline); null reopens it. */
     resolve(id: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string): Promise<ReviewSession>
     /** Undo one of our own changes (mark index in the paragraph as shown). */

@@ -1,20 +1,26 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { DocBlock, ReviewSession } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import { Schema, type Node as PMNode } from 'prosemirror-model'
+import { EditorState, Plugin, TextSelection, type Transaction } from 'prosemirror-state'
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
+import { history, undo, redo } from 'prosemirror-history'
+import { keymap } from 'prosemirror-keymap'
+import { baseKeymap } from 'prosemirror-commands'
+import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { hasOpenChanges, marksFor, shownText } from '@shared/changes'
 import type { Mark } from '@shared/diff'
-import { Icon } from '../lib/icons'
 
 /**
- * The contract as one editable column, like a Word document with Track Changes on.
+ * The contract as one editable column, like Word with Track Changes on, built on ProseMirror.
  *
- * Click anywhere for a caret; type, delete, paste, press Enter. What you type is
- * saved as your wording for that paragraph and shown as your tracked changes (red),
- * layered over theirs (blue). Deleted text (theirs or yours) stays visible, struck
- * through, and the caret skips it, as in Word.
+ * The editable text is the next draft: the contract as it now reads. The redline is drawn
+ * over it as decorations, worked out from the review model: their changes (blue), ours
+ * (red, from what you've typed against what they proposed), struck text shown in place
+ * but never part of the text, the printed numbers. ProseMirror does the editing itself
+ * (caret, selection, typing, undo, paste); what you type is saved per paragraph as our
+ * wording, exactly as before, so the marked-up copy, history and comparison are unchanged.
  *
- * Each paragraph's DOM is owned here, not by React: it is rebuilt from the saved
- * model only when that model changes and you aren't mid-edit in it, and the caret
- * is put back where it was.
+ * Paragraphs keep their identity: Enter adds a paragraph of ours, and nothing merges two
+ * paragraphs (a selection across paragraphs clears the text in each instead).
  */
 
 interface Props {
@@ -35,519 +41,507 @@ export type SelectedChange = { blockId: string; kind: 'theirs'; seg: number } | 
 const SAVE_AFTER_MS = 450
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-// ---- the visible (editable) text of a paragraph, and caret positions in it ----------------
-
-const editable = (n: Node, p: HTMLElement) => !(n.parentElement?.closest('[contenteditable="false"]') && p.contains(n.parentElement.closest('[contenteditable="false"]')))
-
-function textNodes(p: HTMLElement): Text[] {
-  const out: Text[] = []
-  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT)
-  for (let n = w.nextNode(); n; n = w.nextNode()) if (editable(n, p)) out.push(n as Text)
-  return out
-}
-
-export const visibleText = (p: HTMLElement) =>
-  textNodes(p)
-    .map((t) => t.data)
-    .join('')
-    .replace(/ /g, ' ')
-
-/** Characters of visible text before a DOM point. */
-function offsetIn(p: HTMLElement, node: Node, offset: number): number {
-  const r = document.createRange()
-  r.setStart(p, 0)
-  try {
-    r.setEnd(node, offset)
-  } catch {
-    return 0
+const schema = new Schema({
+  nodes: {
+    doc: { content: 'para+' },
+    para: {
+      content: 'text*',
+      attrs: { id: { default: '' }, kind: { default: 'para' }, center: { default: false }, bold: { default: false }, level: { default: 0 } },
+      toDOM: (n) => [
+        'p',
+        {
+          'data-block': n.attrs.id,
+          class: `ed-p k-${n.attrs.kind}${n.attrs.center ? ' center' : ''}${n.attrs.bold ? ' bold' : ''}`,
+          style: n.attrs.level ? `padding-left: ${n.attrs.level * 22}px` : ''
+        },
+        0
+      ],
+      parseDOM: [{ tag: 'p' }]
+    },
+    text: {}
   }
-  let n = 0
-  for (const t of textNodes(p)) {
-    if (!r.intersectsNode(t)) continue
-    n += t === r.endContainer ? r.endOffset : t.length
-  }
-  return n
+})
+
+const paraOf = (b: DocBlock, text: string) => schema.node('para', { id: b.id, kind: b.kind, center: !!b.center, bold: !!b.bold, level: b.level ?? 0 }, text ? schema.text(text) : undefined)
+const shownOf = (d: DocReview, b: DocBlock) => shownText(marksFor(d, b))
+
+/** A paragraph as shown, for the text it has now: their redline, and ours worked out from it. */
+function marksNow(d: DocReview, b: DocBlock, text: string): Mark[] {
+  // Always from the exact text in the editor, so every mark lines up with it.
+  if (d.edits[b.id] === text) return marksFor(d, b)
+  const { [b.id]: _mine, ...others } = d.edits
+  const plain = { ...d, edits: others }
+  if (!b.ours && shownText(marksFor(plain, b)) === text) return marksFor(plain, b)
+  return marksFor({ ...d, edits: { ...d.edits, [b.id]: text } }, b)
 }
 
-/** The DOM point at a visible-text offset (creating a text node if the paragraph has none). */
-function pointAt(p: HTMLElement, at: number): [Node, number] {
-  let n = 0
-  const nodes = textNodes(p)
-  for (const t of nodes) {
-    if (at <= n + t.length) return [t, at - n]
-    n += t.length
-  }
-  const last = nodes[nodes.length - 1]
-  if (last) return [last, last.length]
-  const t = document.createTextNode('')
-  p.appendChild(t)
-  return [t, 0]
-}
-
-function setCaret(p: HTMLElement, at: number) {
-  const [node, off] = pointAt(p, at)
-  const sel = window.getSelection()!
-  const r = document.createRange()
-  r.setStart(node, off)
-  r.collapse(true)
-  sel.removeAllRanges()
-  sel.addRange(r)
-}
-
-/** A caret position that survives respacing: the number of non-space characters before it, and whether a space follows them. */
-function caretKey(text: string, at: number) {
-  const before = text.slice(0, at)
-  return { chars: before.replace(/\s/g, '').length, space: /\s$/.test(before) }
-}
-function fromKey(text: string, key: { chars: number; space: boolean }): number {
-  let n = 0
-  let i = 0
-  for (; i < text.length && n < key.chars; i++) if (!/\s/.test(text[i])) n++
-  if (key.space && /\s/.test(text[i] ?? '')) i++
-  return i
-}
-
-/** Remove visible characters [a, b) from the paragraph's DOM (struck text is left alone). */
-function deleteVisible(p: HTMLElement, a: number, b: number) {
-  let n = 0
-  for (const t of textNodes(p)) {
-    const s = n
-    const e = n + t.length
-    n = e
-    const from = Math.max(a, s)
-    const to = Math.min(b, e)
-    if (to > from) t.deleteData(from - s, to - from)
-  }
-}
-function insertVisible(p: HTMLElement, at: number, text: string) {
-  const [node, off] = pointAt(p, at)
-  ;(node as Text).insertData(off, text)
-}
-
-function render(p: HTMLElement, b: DocBlock, marks: Mark[]) {
-  p.replaceChildren()
-  if (b.label) {
-    const l = document.createElement('span')
-    l.className = 'dr-label'
-    l.contentEditable = 'false'
-    l.textContent = b.label
-    p.appendChild(l)
-  }
-  marks.forEach((m, i) => {
-    let el: Node = document.createTextNode(m.text)
+/** Where each mark sits in the paragraph's text: [start, end) (struck text is zero-width). */
+function spans(marks: Mark[]) {
+  let at = 0
+  return marks.map((m, i) => {
     const struck = m.theirs === 'del' || m.ours === 'del'
-    if (m.theirs === 'ins' && m.ours !== 'del') {
-      const ins = document.createElement('ins')
-      ins.className = 'th-ins'
-      ins.title = `Inserted${m.author ? ` by ${m.author}` : ''}`
-      ins.appendChild(el)
-      el = ins
-    }
-    if (m.ours === 'ins') {
-      const ins = document.createElement('ins')
-      ins.className = 'us-ins'
-      ins.appendChild(el)
-      el = ins
-    }
-    if (struck) {
-      const del = document.createElement('del')
-      del.className = m.ours === 'del' ? 'us-del' : 'th-del'
-      del.title = m.ours === 'del' ? 'Deleted by you' : `Deleted${m.author ? ` by ${m.author}` : ''}`
-      del.contentEditable = 'false'
-      del.appendChild(el)
-      el = del
-    }
-    if (el instanceof HTMLElement) {
-      el.dataset.mark = String(i)
-      if (m.seg !== undefined && m.theirs) el.dataset.seg = String(m.seg)
-    }
-    p.appendChild(el)
+    const s = at
+    if (!struck) at += m.text.length
+    return { m, i, s, e: at, struck }
   })
-  if (!textNodes(p).length) p.appendChild(document.createTextNode(''))
 }
+
+const changeOfMark = (blockId: string, m: Mark): SelectedChange | null =>
+  m.theirs && m.seg !== undefined ? { blockId, kind: 'theirs', seg: m.seg } : m.ours ? { blockId, kind: 'ours', op: m.ours, text: m.text } : null
 
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, readOnly }: Props) {
-  const d = session.doc!
-  const root = useRef<HTMLDivElement>(null)
-  /** Paragraphs typed in and not yet saved. */
-  const pending = useRef(new Map<string, number>())
-  /**
-   * Paragraphs changed by a command (not by typing): rebuild them once the model has the text
-   * the command produced (other saves may land first), and put the caret at `caret`.
-   */
-  const force = useRef(new Map<string, { text: string; caret: number | null }>())
+  const host = useRef<HTMLDivElement>(null)
+  const view = useRef<EditorView | null>(null)
+  const model = useRef(session.doc!)
   const sessionId = useRef(session.id)
-  sessionId.current = session.id
+  const pending = useRef(new Map<string, number>())
+  const focused = useRef<SelectedChange | null>(null)
+  const clicked = useRef<SelectedChange | null>(null)
+  const cb = useRef({ act, onFocusBlock, onComment, onSelectChanges })
+  cb.current = { act, onFocusBlock, onComment, onSelectChanges }
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string } | null>(null)
-  /** The change the caret is in (or that was clicked): highlighted whole. */
-  const [focused, setFocused] = useState<SelectedChange | null>(null)
-  const focusedKey = useRef('')
 
-  const para = (id: string) => root.current?.querySelector<HTMLElement>(`p[data-block="${id}"]`) ?? null
-  const paraOf = (n: Node | null) => (n ? ((n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest<HTMLElement>('p[data-block]') ?? null) : null)
-  const blockOf = (p: HTMLElement) => d.blocks.find((b) => b.id === p.dataset.block)!
-
-  // Build each paragraph from the model when it changes, unless you've typed something newer.
-  useLayoutEffect(() => {
-    for (const b of d.blocks) {
-      const p = para(b.id)
-      if (!p) continue
-      const marks = marksFor(d, b)
-      const key = JSON.stringify(marks)
-      const f = force.current.get(b.id)
-      const forced = !!f && tidy(shownText(marks)) === tidy(f.text)
-      if (f && !forced) continue
-      if (p.dataset.key === key && !forced) continue
-      if (p.dataset.key && !forced) {
-        if (pending.current.has(b.id)) continue
-        // Rebuild if the screen is as last built (the change came from elsewhere: accept, reject,
-        // undo) or already says what the model says; otherwise a save is still catching up.
-        const onScreen = tidy(visibleText(p))
-        if (onScreen !== tidy(p.dataset.shown ?? '') && onScreen !== tidy(shownText(marks))) continue
-      }
-      const sel = window.getSelection()
-      const focused = !!sel?.rangeCount && p.contains(sel.anchorNode)
-      const text = visibleText(p)
-      const key0 = focused ? caretKey(text, offsetIn(p, sel!.anchorNode!, sel!.anchorOffset)) : null
-      const caretTo = f?.caret
-      force.current.delete(b.id)
-      render(p, b, marks)
-      p.dataset.key = key
-      p.dataset.shown = shownText(marks)
-      if (typeof caretTo === 'number') setCaret(p, caretTo)
-      else if (key0) setCaret(p, fromKey(visibleText(p), key0))
-    }
-  })
-
-  const save = (id: string) => {
-    window.clearTimeout(pending.current.get(id))
-    pending.current.delete(id)
-    const p = para(id)
-    if (!p) return
-    const b = d.blocks.find((x) => x.id === id)
-    const text = visibleText(p)
-    // Typing in one paragraph, without working anywhere else in between, is one action.
-    act(window.api.doc.edit(sessionId.current, id, b?.kind === 'deleted' ? text.replace(/^\s+/, '') : text, `type:${id}`))
-  }
-  const schedule = (id: string) => {
-    window.clearTimeout(pending.current.get(id))
-    pending.current.set(id, window.setTimeout(() => save(id), SAVE_AFTER_MS))
-  }
-  // Leaving the review saves what's typed.
-  useEffect(() => () => pending.current.forEach((_, id) => save(id)), [])
-
-  // Editing commands the browser would get wrong here are done by hand: anything that crosses
-  // paragraphs, touches struck text, adds a paragraph or pastes formatting.
+  // ---- set up the editor once per review ----------------------------------------------------
   useEffect(() => {
-    const el = root.current!
-    const onBeforeInput = (e: InputEvent) => {
-      const t = e.inputType
-      if (t.startsWith('history') || t.startsWith('format')) return e.preventDefault()
-      const sel = window.getSelection()
-      if (!sel?.rangeCount) return e.preventDefault()
-      const r = sel.getRangeAt(0)
-      const sp = paraOf(r.startContainer)
-      const ep = paraOf(r.endContainer)
-      if (!sp || !ep) return e.preventDefault()
-      const sb = blockOf(sp)
-      const a = offsetIn(sp, r.startContainer, r.startOffset)
-      const z = offsetIn(ep, r.endContainer, r.endOffset)
-      const typed = t === 'insertFromPaste' || t === 'insertFromDrop' ? (e.dataTransfer?.getData('text/plain') ?? '').replace(/\s*[\r\n]+\s*/g, ' ') : (e.data ?? '')
+    const d0 = model.current
+    const blocksById = () => new Map(model.current.blocks.map((b) => [b.id, b]))
+    const doc = schema.node(
+      'doc',
+      null,
+      d0.blocks.map((b) => paraOf(b, shownOf(d0, b)))
+    )
 
-      if (sp !== ep) {
-        e.preventDefault()
-        if (t !== 'insertFromDrop') replaceAcross(sp, ep, a, z, t.startsWith('insert') ? typed : '')
-        return
+    const save = (id: string, group: string) => {
+      window.clearTimeout(pending.current.get(id))
+      pending.current.delete(id)
+      const v = view.current
+      if (!v) return
+      let text: string | null = null
+      v.state.doc.forEach((n) => {
+        if (n.attrs.id === id) text = n.textContent
+      })
+      if (text === null) return
+      cb.current.act(window.api.doc.edit(sessionId.current, id, text, group))
+    }
+    const schedule = (id: string) => {
+      window.clearTimeout(pending.current.get(id))
+      // Typing in one paragraph, without working anywhere else in between, is one action.
+      pending.current.set(id, window.setTimeout(() => save(id, `type:${id}`), SAVE_AFTER_MS))
+    }
+
+    /** The paragraphs a range covers: node, its start (inside), and the part of the range in it. */
+    const parasIn = (state: EditorState, from: number, to: number) => {
+      const out: { node: PMNode; start: number; a: number; z: number }[] = []
+      state.doc.forEach((node, offset) => {
+        const start = offset + 1
+        const end = start + node.content.size
+        if (end < from || start > to) return
+        out.push({ node, start, a: Math.max(from, start), z: Math.min(to, end) })
+      })
+      return out
+    }
+
+    /** Clear the selected text in each paragraph it covers (no paragraph is merged), then type. */
+    const replaceAcross = (state: EditorState, dispatch: (tr: Transaction) => void, text = '') => {
+      const { from, to } = state.selection
+      const parts = parasIn(state, from, to)
+      const tr = state.tr
+      for (const p of [...parts].reverse()) if (p.z > p.a) tr.delete(p.a, p.z)
+      const at = tr.mapping.map(from, -1)
+      if (text) tr.insertText(text, at)
+      tr.setSelection(TextSelection.create(tr.doc, at + text.length))
+      tr.setMeta('across', parts.map((p) => p.node.attrs.id as string))
+      dispatch(tr)
+      return true
+    }
+    const crosses = (state: EditorState) => state.selection.$from.parent !== state.selection.$to.parent
+
+    // ---- the redline, drawn over the text --------------------------------------------------------
+    const cache = new Map<string, Mark[]>()
+    const plainCache = new Map<string, string>()
+    let cacheFor: DocReview | null = null
+    /** The paragraph with no wording of ours. */
+    const plainOf = (d: DocReview, b: DocBlock) => {
+      let t = plainCache.get(b.id)
+      if (t === undefined) plainCache.set(b.id, (t = shownText(marksFor({ ...d, edits: {} }, b))))
+      return t
+    }
+    const decorate = (state: EditorState) => {
+      const d = model.current
+      if (cacheFor !== d) {
+        cache.clear()
+        plainCache.clear()
+        cacheFor = d
       }
-      if (sb.kind === 'deleted' && d.edits[sb.id] === undefined && !shownText(marksFor(d, sb)).trim()) return e.preventDefault()
-      const text = visibleText(sp)
-
-      if (t === 'insertParagraph' || t === 'insertLineBreak') {
-        e.preventDefault()
-        const head = text.slice(0, a)
-        const tail = text.slice(z).replace(/^\s+/, '')
-        window.clearTimeout(pending.current.get(sb.id))
-        pending.current.delete(sb.id)
-        force.current.set(sb.id, { text: head, caret: null })
-        window.api.doc.split(sessionId.current, sb.id, head, tail).then(
-          ({ session: s, id }) => {
-            force.current.set(id, { text: tail, caret: 0 })
-            act(Promise.resolve(s))
-          },
-          (err) => act(Promise.reject(err))
+      const blocks = blocksById()
+      const decos: Decoration[] = []
+      const f = focused.current
+      state.doc.forEach((node, offset) => {
+        const b = blocks.get(node.attrs.id)
+        if (!b) return
+        const start = offset + 1
+        const key = `${b.id}\u0000${node.textContent}`
+        let marks = cache.get(key)
+        if (!marks) cache.set(key, (marks = marksNow(d, b, node.textContent)))
+        const open = hasOpenChanges(d, b)
+        const edited = b.ours || tidy(node.textContent) !== tidy(plainOf(d, b))
+        const gone = b.kind === 'deleted' && !marks.length && !node.textContent
+        const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
+        decos.push(
+          Decoration.node(offset, offset + node.nodeSize, {
+            class: `${open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
+            ...(tag ? { 'data-tag': tag } : {})
+          })
         )
-        return
-      }
-      const collapsed = r.collapsed
-      const backward = t.startsWith('delete') && t.includes('Backward')
-      const forward = t.startsWith('delete') && t.includes('Forward')
-      // At the edge of a paragraph: never merge paragraphs; an empty one you added is removed.
-      if (collapsed && backward && a === 0) {
-        e.preventDefault()
-        if (sb.ours && !text.trim()) {
-          const ps = Array.from(el.querySelectorAll<HTMLElement>('p[data-block]'))
-          const prev = ps[ps.indexOf(sp) - 1]
-          if (prev) force.current.set(prev.dataset.block!, { text: visibleText(prev), caret: visibleText(prev).length })
-          act(window.api.doc.unsplit(sessionId.current, sb.id))
-        }
-        return
-      }
-      if (collapsed && forward && a === text.length) return e.preventDefault()
-
-      // Single deletes, struck text in the selection, pastes and drops: done by hand, so struck
-      // text is never removed and nothing but plain text gets in.
-      const struck = Array.from(sp.querySelectorAll('[contenteditable="false"]'))
-      const touchesStruck = !collapsed && struck.some((n) => intersects(r, n))
-      if ((collapsed && (backward || forward)) || touchesStruck || t === 'insertFromPaste' || t === 'insertFromDrop' || t === 'insertReplacementText') {
-        e.preventDefault()
-        if (t === 'insertFromDrop') return
-        let x = a
-        let y = z
-        if (collapsed && backward) x = Math.max(0, a - wordOrChar(text.slice(0, a), t))
-        if (collapsed && forward) y = Math.min(text.length, a + wordOrChar(text.slice(a), t, true))
-        deleteVisible(sp, x, y)
-        if (t.startsWith('insert')) insertVisible(sp, x, typed)
-        setCaret(sp, x + (t.startsWith('insert') ? typed.length : 0))
-        schedule(sb.id)
-      }
-    }
-    // Chrome won't fire beforeinput for a selection that spans paragraphs or struck text, so
-    // deleting or typing over one is caught on the key press instead.
-    const onKeyDown = (e: KeyboardEvent) => {
-      const sel = window.getSelection()
-      if (!sel?.rangeCount || sel.isCollapsed || e.metaKey || e.ctrlKey || e.altKey) return
-      const del = e.key === 'Backspace' || e.key === 'Delete'
-      const char = e.key.length === 1
-      if (!del && !char) return
-      const r = sel.getRangeAt(0)
-      const sp = paraOf(r.startContainer)
-      const ep = paraOf(r.endContainer)
-      if (!sp || !ep) return e.preventDefault()
-      const struck = Array.from(sp.querySelectorAll('[contenteditable="false"]')).some((n) => intersects(r, n))
-      if (sp === ep && !struck) return
-      e.preventDefault()
-      replaceAcross(sp, ep, offsetIn(sp, r.startContainer, r.startOffset), offsetIn(ep, r.endContainer, r.endOffset), char ? e.key : '')
-    }
-    const onCut = (e: ClipboardEvent) => {
-      const sel = window.getSelection()
-      if (!sel?.rangeCount || sel.isCollapsed) return
-      const r = sel.getRangeAt(0)
-      const sp = paraOf(r.startContainer)
-      const ep = paraOf(r.endContainer)
-      e.preventDefault()
-      if (!sp || !ep) return
-      e.clipboardData?.setData('text/plain', sel.toString())
-      replaceAcross(sp, ep, offsetIn(sp, r.startContainer, r.startOffset), offsetIn(ep, r.endContainer, r.endOffset), '')
-    }
-    /** Replace the selected text, which may run over several paragraphs, with `typed`. A paragraph wholly inside is struck. */
-    const replaceAcross = (sp: HTMLElement, ep: HTMLElement, a: number, z: number, typed: string) => {
-      const group = `range:${Date.now().toString(36)}`
-      const ps = Array.from(el.querySelectorAll<HTMLElement>('p[data-block]'))
-      const from = ps.indexOf(sp)
-      const to = ps.indexOf(ep)
-      for (let i = from; i <= to; i++) {
-        const p = ps[i]
-        const id = p.dataset.block!
-        const b = blockOf(p)
-        if (b.kind === 'deleted' && d.edits[id] === undefined && !shownText(marksFor(d, b)).trim()) continue
-        const v = visibleText(p)
-        const next = i === from && i === to ? v.slice(0, a) + typed + v.slice(z) : i === from ? v.slice(0, a) + typed : i === to ? v.slice(z) : ''
-        if (next === v) continue
-        window.clearTimeout(pending.current.get(id))
-        pending.current.delete(id)
-        force.current.set(id, { text: next, caret: i === from ? a + typed.length : null })
-        act(window.api.doc.edit(sessionId.current, id, next, group))
-      }
-    }
-    const onInput = () => {
-      const p = paraOf(window.getSelection()?.anchorNode ?? null)
-      if (p) schedule(p.dataset.block!)
-    }
-    el.addEventListener('beforeinput', onBeforeInput)
-    el.addEventListener('input', onInput)
-    el.addEventListener('keydown', onKeyDown)
-    el.addEventListener('cut', onCut)
-    return () => {
-      el.removeEventListener('beforeinput', onBeforeInput)
-      el.removeEventListener('input', onInput)
-      el.removeEventListener('keydown', onKeyDown)
-      el.removeEventListener('cut', onCut)
-    }
-  })
-
-  /** The change a redline element belongs to: theirs if it's one of their changes, else ours. */
-  const changeOf = (el: Element | null): SelectedChange | null => {
-    const m0 = el?.closest<HTMLElement>('[data-mark]')
-    const p = m0?.closest<HTMLElement>('p[data-block]')
-    if (!m0 || !p || !root.current?.contains(p)) return null
-    const m = marksFor(d, blockOf(p))[Number(m0.dataset.mark)]
-    if (!m) return null
-    if (m.theirs && m.seg !== undefined) return { blockId: p.dataset.block!, kind: 'theirs', seg: m.seg }
-    if (m.ours) return { blockId: p.dataset.block!, kind: 'ours', op: m.ours, text: m.text }
-    return null
-  }
-  /** Put the caret on a change: highlight it whole, and show it in the right-hand column. */
-  const focusChange = (c: SelectedChange | null) => {
-    const k = JSON.stringify(c)
-    if (k === focusedKey.current) return
-    focusedKey.current = k
-    setFocused(c)
-    onSelectChanges(c ? [c] : null)
-  }
-
-  // The whole of the focused change is highlighted (their change may be split by our edits).
-  useLayoutEffect(() => {
-    const el = root.current
-    if (!el) return
-    for (const x of Array.from(el.querySelectorAll('.ed-hl'))) x.classList.remove('ed-hl')
-    if (!focused) return
-    const p = para(focused.blockId)
-    if (!p) return
-    const marks = marksFor(d, blockOf(p))
-    for (const x of Array.from(p.querySelectorAll<HTMLElement>('[data-mark]'))) {
-      const m = marks[Number(x.dataset.mark)]
-      const hit = focused.kind === 'theirs' ? m?.seg === focused.seg && !!m.theirs : m?.ours === focused.op && m.text === focused.text
-      if (hit) x.classList.add('ed-hl')
-    }
-  })
-
-  // Which paragraph the caret is in (for the right-hand column), and which change.
-  useEffect(() => {
-    const onSel = () => {
-      const sel = window.getSelection()
-      if (!sel?.rangeCount || sel.isCollapsed) setBubble(null)
-      if (!sel?.rangeCount || !root.current?.contains(sel.anchorNode)) return
-      const p = paraOf(sel.anchorNode)
-      onFocusBlock(p?.dataset.block ?? null)
-      if (sel.isCollapsed && !clicking.current) focusChange(changeOf(sel.anchorNode?.nodeType === 1 ? (sel.anchorNode as Element) : (sel.anchorNode?.parentElement ?? null)))
-    }
-    document.addEventListener('selectionchange', onSel)
-    return () => document.removeEventListener('selectionchange', onSel)
-  }, [onFocusBlock])
-
-  // Selected text: the redlines inside it, and (within one paragraph) a comment on it. A click
-  // (no selection) on a change highlights that change, struck text included.
-  const clicking = useRef(false)
-  const onMouseUp = (e: React.MouseEvent) => {
-    clicking.current = false
-    const sel = window.getSelection()
-    if (sel?.rangeCount && sel.isCollapsed) {
-      const fromCaret = sel.anchorNode?.nodeType === 1 ? (sel.anchorNode as Element) : (sel.anchorNode?.parentElement ?? null)
-      focusChange(changeOf(e.target as Element) ?? changeOf(fromCaret))
-    }
-    if (sel?.rangeCount && !sel.isCollapsed) {
-      focusedKey.current = ''
-      setFocused(null)
-      const r = sel.getRangeAt(0)
-      const found: SelectedChange[] = []
-      const seen = new Set<string>()
-      for (const el of Array.from(root.current!.querySelectorAll<HTMLElement>('[data-mark]'))) {
-        if (!r.intersectsNode(el)) continue
-        const p = el.closest<HTMLElement>('p[data-block]')!
-        const blockId = p.dataset.block!
-        const m = marksFor(d, blockOf(p))[Number(el.dataset.mark)]
-        if (!m) continue
-        const item: SelectedChange | null = m.ours ? { blockId, kind: 'ours', op: m.ours, text: m.text } : m.seg !== undefined ? { blockId, kind: 'theirs', seg: m.seg } : null
-        if (!item) continue
-        const k = JSON.stringify(item)
-        if (seen.has(k)) continue
-        seen.add(k)
-        found.push(item)
-        // Their change with ours on top of it: both are listed.
-        if (m.ours && m.seg !== undefined && m.theirs) {
-          const t: SelectedChange = { blockId, kind: 'theirs', seg: m.seg }
-          if (!seen.has(JSON.stringify(t))) {
-            seen.add(JSON.stringify(t))
-            found.push(t)
+        if (b.label)
+          decos.push(
+            Decoration.widget(
+              start,
+              () => {
+                const l = document.createElement('span')
+                l.className = 'dr-label'
+                l.contentEditable = 'false'
+                l.textContent = b.label!
+                return l
+              },
+              { side: -100, key: `label:${b.id}:${b.label}`, ignoreSelection: true }
+            )
+          )
+        const hl = (m: Mark) =>
+          !!f && f.blockId === b.id && (f.kind === 'theirs' ? m.theirs !== undefined && m.seg === f.seg : m.ours === f.op && m.text === f.text)
+        for (const x of spans(marks)) {
+          const m = x.m
+          const attrs = { 'data-mark': String(x.i), 'data-block': b.id }
+          if (x.struck) {
+            const ours = m.ours === 'del'
+            decos.push(
+              Decoration.widget(
+                Math.min(start + x.s, start + node.content.size),
+                () => {
+                  const del = document.createElement('del')
+                  del.className = `${ours ? 'us-del' : 'th-del'}${hl(m) ? ' ed-hl' : ''}`
+                  del.title = ours ? 'Deleted by you' : `Deleted${m.author ? ` by ${m.author}` : ''}`
+                  del.contentEditable = 'false'
+                  del.dataset.mark = String(x.i)
+                  del.dataset.block = b.id
+                  del.textContent = m.text
+                  return del
+                },
+                { side: -1, key: `del:${b.id}:${x.i}:${m.text}:${hl(m)}`, ignoreSelection: true, marks: [] }
+              )
+            )
+          } else if (m.theirs === 'ins' || m.ours === 'ins') {
+            decos.push(
+              Decoration.inline(start + x.s, start + x.e, {
+                class: `${m.ours === 'ins' ? 'us-ins' : 'th-ins'}${hl(m) ? ' ed-hl' : ''}`,
+                nodeName: 'ins',
+                title: m.ours === 'ins' ? 'Inserted by you' : `Inserted${m.author ? ` by ${m.author}` : ''}`,
+                ...attrs
+              })
+            )
           }
         }
-      }
-      onSelectChanges(found)
+        const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
+        if (comments)
+          decos.push(
+            Decoration.widget(
+              start + node.content.size,
+              () => {
+                const s = document.createElement('span')
+                s.className = 'ed-cbadge'
+                s.contentEditable = 'false'
+                s.dataset.badge = b.id
+                s.textContent = `💬 ${comments}`
+                s.title = `${comments} comment${comments === 1 ? '' : 's'}`
+                return s
+              },
+              { side: 100, key: `badge:${b.id}:${comments}`, ignoreSelection: true }
+            )
+          )
+      })
+      return DecorationSet.create(state.doc, decos)
     }
-    const quote = sel?.toString().trim()
-    if (!sel?.rangeCount || !quote) return setBubble(null)
-    const p = paraOf(sel.anchorNode)
-    if (!p || p !== paraOf(sel.focusNode)) return setBubble(null)
-    const r = sel.getRangeAt(0).getBoundingClientRect()
-    setBubble({ x: r.left + r.width / 2, y: r.top, blockId: p.dataset.block!, quote })
-  }
+
+    /** The change at a point in a paragraph (for a click or the caret). */
+    const changeAt = (state: EditorState, pos: number): SelectedChange | null => {
+      const $p = state.doc.resolve(pos)
+      const node = $p.parent
+      const b = blocksById().get(node.attrs.id)
+      if (!b || node.type.name !== 'para') return null
+      const off = $p.parentOffset
+      const xs = spans(marksNow(model.current, b, node.textContent))
+      const hit = xs.find((x) => !x.struck && (x.m.theirs === 'ins' || x.m.ours === 'ins') && x.s < off && off < x.e) ?? xs.find((x) => !x.struck && (x.m.theirs === 'ins' || x.m.ours === 'ins') && x.s <= off && off <= x.e)
+      return hit ? changeOfMark(b.id, hit.m) : null
+    }
+    /** The changes a selection covers, across paragraphs. */
+    const changesIn = (state: EditorState): SelectedChange[] => {
+      const { from, to } = state.selection
+      const out: SelectedChange[] = []
+      const seen = new Set<string>()
+      const add = (c: SelectedChange | null) => {
+        if (!c || seen.has(JSON.stringify(c))) return
+        seen.add(JSON.stringify(c))
+        out.push(c)
+      }
+      for (const p of parasIn(state, from, to)) {
+        const b = blocksById().get(p.node.attrs.id)
+        if (!b) continue
+        const a = p.a - p.start
+        const z = p.z - p.start
+        for (const x of spans(marksNow(model.current, b, p.node.textContent))) {
+          if (!x.m.theirs && !x.m.ours) continue
+          const inside = x.struck ? x.s >= a && x.s <= z : x.e > a && x.s < z
+          if (!inside) continue
+          add(changeOfMark(b.id, x.m))
+          // Their change with ours on top of it: both are listed.
+          if (x.m.ours && x.m.theirs && x.m.seg !== undefined) add({ blockId: b.id, kind: 'theirs', seg: x.m.seg })
+        }
+      }
+      return out
+    }
+    const setFocus = (c: SelectedChange | null) => {
+      if (JSON.stringify(c) === JSON.stringify(focused.current)) return
+      focused.current = c
+      cb.current.onSelectChanges(c ? [c] : null)
+      queueMicrotask(() => view.current?.dispatch(view.current.state.tr.setMeta('redraw', true)))
+    }
+
+    const redline = new Plugin({ props: { decorations: decorate } })
+
+    // A new paragraph (Enter): ours, after this one, with the text after the caret.
+    const split = (state: EditorState, dispatch?: (tr: Transaction) => void) => {
+      if (!dispatch) return true
+      let st = state
+      if (crosses(st)) replaceAcross(st, (tr) => (st = st.apply(tr)))
+      const { $from, from, to } = st.selection
+      const node = $from.parent
+      const id = `n${Date.now().toString(36)}`
+      const tr = st.tr
+      if (to > from) tr.delete(from, to)
+      tr.split(tr.mapping.map(from), 1, [{ type: schema.nodes.para, attrs: { id, kind: 'para', level: node.attrs.level } }])
+      // The new paragraph starts at its first word.
+      const $n = tr.doc.resolve(tr.selection.from)
+      const lead = $n.parent.textContent.match(/^\s+/)?.[0].length ?? 0
+      if (lead) tr.delete($n.start(), $n.start() + lead)
+      tr.setMeta('split', { from: node.attrs.id, id }).setMeta('addToHistory', false)
+      dispatch(tr)
+      return true
+    }
+
+    const editor = new EditorView(host.current!, {
+      state: EditorState.create({
+        doc,
+        plugins: [
+          history(),
+          keymap({
+            'Mod-z': undo,
+            'Shift-Mod-z': redo,
+            'Mod-y': redo,
+            Enter: split,
+            'Shift-Enter': split,
+            Backspace: (state, dispatch) => {
+              if (crosses(state)) return replaceAcross(state, dispatch!)
+              const { $from, empty } = state.selection
+              if (!empty || $from.parentOffset > 0) return false
+              // At the start of a paragraph: never merge; an empty one you added is removed.
+              const b = blocksById().get($from.parent.attrs.id)
+              if (b?.ours && !$from.parent.textContent && dispatch) {
+                const start = $from.before()
+                const tr = state.tr.delete(start, start + $from.parent.nodeSize)
+                tr.setSelection(TextSelection.near(tr.doc.resolve(Math.max(0, start - 1)), -1))
+                tr.setMeta('unsplit', b.id).setMeta('addToHistory', false)
+                dispatch(tr)
+              }
+              return true
+            },
+            Delete: (state, dispatch) => {
+              if (crosses(state)) return replaceAcross(state, dispatch!)
+              const { $from, empty } = state.selection
+              return empty && $from.parentOffset === $from.parent.content.size
+            }
+          }),
+          keymap(baseKeymap),
+          redline
+        ]
+      }),
+      editable: () => !readOnly,
+      attributes: { class: 'ed-doc', spellcheck: 'false' },
+      handleTextInput: (v, _from, _to, text) => (crosses(v.state) ? replaceAcross(v.state, v.dispatch, text) : false),
+      handlePaste: (v, e) => {
+        const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/\s*[\r\n]+\s*/g, ' ')
+        if (crosses(v.state)) return replaceAcross(v.state, v.dispatch, text)
+        v.dispatch(v.state.tr.insertText(text))
+        return true
+      },
+      handleDrop: () => true,
+      handleDOMEvents: {
+        cut: (v, e) => {
+          if (!crosses(v.state)) return false
+          e.preventDefault()
+          e.clipboardData?.setData('text/plain', v.state.doc.textBetween(v.state.selection.from, v.state.selection.to, ' '))
+          return replaceAcross(v.state, v.dispatch)
+        },
+        mousedown: (_v, e) => {
+          const t = e.target as HTMLElement
+          const badge = t.closest<HTMLElement>('[data-badge]')
+          if (badge) {
+            e.preventDefault()
+            cb.current.onFocusBlock(badge.dataset.badge!)
+            return true
+          }
+          // Struck text isn't part of the text, so a click on it is caught here.
+          const del = t.closest<HTMLElement>('del[data-mark]')
+          const b = del ? blocksById().get(del.dataset.block!) : undefined
+          clicked.current = null
+          if (del && b) {
+            const m = marksFor(model.current, b)[Number(del.dataset.mark)]
+            clicked.current = m ? changeOfMark(b.id, m) : null
+          }
+          focused.current = null
+          cb.current.onSelectChanges(null)
+          setBubble(null)
+          return false
+        },
+        mouseup: (v) => {
+          window.setTimeout(() => {
+            const { state } = v
+            const sel = state.selection
+            if (sel.empty) {
+              setFocus(clicked.current ?? changeAt(state, sel.from))
+              clicked.current = null
+              return
+            }
+            focused.current = null
+            cb.current.onSelectChanges(changesIn(state))
+            v.dispatch(state.tr.setMeta('redraw', true))
+            // Within one paragraph, offer a comment on the selected text.
+            if (sel.$from.parent === sel.$to.parent) {
+              const a = v.coordsAtPos(sel.from)
+              const z = v.coordsAtPos(sel.to)
+              setBubble({ x: (a.left + z.right) / 2, y: Math.min(a.top, z.top), blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
+            }
+          }, 0)
+          return false
+        }
+      },
+      dispatchTransaction(tr) {
+        const v = view.current!
+        const before = v.state
+        // Paragraphs are never merged or dropped except by our own commands.
+        const structural = tr.getMeta('split') || tr.getMeta('unsplit') || tr.getMeta('sync')
+        if (tr.docChanged && !structural && tr.doc.childCount !== before.doc.childCount) return
+        const state = before.apply(tr)
+        v.updateState(state)
+        if (tr.getMeta('sync')) return
+
+        const split = tr.getMeta('split') as { from: string; id: string } | undefined
+        if (split) {
+          const text = (id: string) => {
+            let t = ''
+            state.doc.forEach((n) => {
+              if (n.attrs.id === id) t = n.textContent
+            })
+            return t
+          }
+          window.clearTimeout(pending.current.get(split.from))
+          pending.current.delete(split.from)
+          window.api.doc.split(sessionId.current, split.from, text(split.from), text(split.id), split.id).then(
+            (r) => cb.current.act(Promise.resolve(r.session)),
+            (e) => cb.current.act(Promise.reject(e))
+          )
+        } else if (tr.getMeta('unsplit')) {
+          cb.current.act(window.api.doc.unsplit(sessionId.current, tr.getMeta('unsplit')))
+        } else if (tr.getMeta('across')) {
+          // One action for the whole selection.
+          const group = `range:${Date.now().toString(36)}`
+          for (const id of tr.getMeta('across') as string[]) {
+            window.clearTimeout(pending.current.get(id))
+            pending.current.delete(id)
+            let t: string | null = null
+            state.doc.forEach((n) => {
+              if (n.attrs.id === id) t = n.textContent
+            })
+            if (t !== null) cb.current.act(window.api.doc.edit(sessionId.current, id, t, group))
+          }
+        } else if (tr.docChanged) {
+          // Typing: save each paragraph that changed, after a pause.
+          const old = new Map<string, string>()
+          before.doc.forEach((n) => old.set(n.attrs.id, n.textContent))
+          state.doc.forEach((n) => {
+            if (old.get(n.attrs.id) !== n.textContent) schedule(n.attrs.id)
+          })
+        }
+
+        if (!before.selection.eq(state.selection)) {
+          cb.current.onFocusBlock(state.selection.$from.parent.attrs.id ?? null)
+          if (state.selection.empty) setFocus(changeAt(state, state.selection.from))
+          if (!state.selection.empty) setBubble(null)
+        }
+      }
+    })
+    view.current = editor
+    return () => {
+      // Leaving the review saves what's typed.
+      for (const id of pending.current.keys()) save(id, `type:${id}`)
+      editor.destroy()
+      view.current = null
+    }
+  }, [session.id])
+
+  // ---- the model changed (a save, accept/reject, undo in History): bring the text in line ----------
+  useEffect(() => {
+    model.current = session.doc!
+    sessionId.current = session.id
+    const v = view.current
+    if (!v) return
+    const d = session.doc!
+    const tr = v.state.tr
+    const want = new Map(d.blocks.map((b) => [b.id, b]))
+    // Paragraphs we no longer have (a paragraph we'd added, undone): remove them.
+    const nodes: { id: string; pos: number; node: PMNode }[] = []
+    v.state.doc.forEach((node, pos) => nodes.push({ id: node.attrs.id, pos, node }))
+    for (const n of [...nodes].reverse()) if (!want.has(n.id) && nodes.length > 1) tr.delete(tr.mapping.map(n.pos), tr.mapping.map(n.pos + n.node.nodeSize))
+    // Paragraphs we now have and the editor doesn't (one of ours, redone): add them in place.
+    const have = new Set(nodes.map((n) => n.id))
+    d.blocks.forEach((b, i) => {
+      if (have.has(b.id)) return
+      const prev = d.blocks.slice(0, i).reverse().find((x) => have.has(x.id))
+      let at = 0
+      tr.doc.forEach((node, pos) => {
+        if (prev && node.attrs.id === prev.id) at = pos + node.nodeSize
+      })
+      tr.insert(at, paraOf(b, shownOf(d, b)))
+      have.add(b.id)
+    })
+    // Text changed from outside the editor (not something you're typing): replace it.
+    const replace: { from: number; to: number; text: string }[] = []
+    tr.doc.forEach((node, pos) => {
+      const b = want.get(node.attrs.id)
+      if (!b || pending.current.has(b.id)) return
+      const text = shownOf(d, b)
+      if (tidy(text) !== tidy(node.textContent)) replace.push({ from: pos + 1, to: pos + 1 + node.content.size, text })
+    })
+    for (const r of replace.reverse()) tr.replaceWith(r.from, r.to, r.text ? schema.text(r.text) : [])
+    tr.setMeta('sync', true).setMeta('addToHistory', false)
+    v.dispatch(tr)
+  }, [session])
 
   return (
     <>
-      <div
-        ref={root}
-        className="ed-doc"
-        contentEditable={!readOnly}
-        suppressContentEditableWarning
-        spellCheck={false}
-        onMouseUp={onMouseUp}
-        onMouseDown={() => {
-          clicking.current = true
-          focusedKey.current = ''
-          setFocused(null)
-          onSelectChanges(null)
-        }}
-        onKeyDown={() => setBubble(null)}
-      >
-        {d.blocks.map((b) => {
-          const edited = d.edits[b.id] !== undefined
-          const theirs = hasOpenChanges(d, b)
-          const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
-          // A paragraph they deleted, with the deletion accepted, is gone (as in Word).
-          const gone = b.kind === 'deleted' && !marksFor(d, b).length
-          return (
-            <div key={b.id} className={`ed-row ${theirs ? 'theirs' : ''} ${edited ? 'ours' : ''} ${b.untracked ? 'untracked' : ''} ${gone ? 'gone' : ''}`} data-row={b.id}>
-              {b.untracked && theirs && (
-                <div className="dr-untracked" contentEditable={false}>
-                  {b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template'}
-                </div>
-              )}
-              <p
-                data-block={b.id}
-                className={`ed-p k-${b.kind} ${b.center ? 'center' : ''} ${b.bold ? 'bold' : ''}`}
-                style={b.level ? { paddingLeft: b.level * 22 } : undefined}
-              />
-              {comments > 0 && (
-                <span className="ed-cbadge" contentEditable={false} title={`${comments} comment${comments === 1 ? '' : 's'}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onFocusBlock(b.id)}>
-                  <Icon name="chat" size={12} /> {comments}
-                </span>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      <div ref={host} className="ed-host" />
       {bubble && (
         <button
           className="dr-bubble btn sm primary"
           style={{ left: bubble.x, top: bubble.y }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
-            onComment(bubble.blockId, bubble.quote)
+            cb.current.onComment(bubble.blockId, bubble.quote)
             setBubble(null)
           }}
         >
-          <Icon name="chat" size={13} /> Comment
+          Comment
         </button>
       )}
     </>
   )
-}
-
-function intersects(r: StaticRange | Range, n: Node): boolean {
-  const range = document.createRange()
-  try {
-    range.setStart(r.startContainer, r.startOffset)
-    range.setEnd(r.endContainer, r.endOffset)
-  } catch {
-    return false
-  }
-  return range.intersectsNode(n)
-}
-
-/** How many characters a delete removes: one, or a word (⌥⌫ / Ctrl+⌫). */
-function wordOrChar(text: string, type: string, forward = false): number {
-  if (!type.includes('Word') && !type.includes('Line')) return 1
-  if (type.includes('Line')) return text.length
-  const m = forward ? text.match(/^\s*\S+/) : text.match(/\S+\s*$/)
-  return m ? m[0].length : 1
 }

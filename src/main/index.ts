@@ -507,13 +507,13 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
  * Enter in the document: the paragraph keeps the text before the caret, and a new paragraph
  * of ours, after it, gets the rest. Both are our tracked changes.
  */
-ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string) => {
+ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string, newId?: string) => {
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const at = d.blocks.findIndex((x) => x.id === blockId)
     if (at < 0) throw new Error('Unknown paragraph.')
     const b = d.blocks[at]
-    const id = `n${Date.now().toString(36)}`
+    const id = newId && /^n[a-z0-9]+$/.test(newId) && !d.blocks.some((x) => x.id === newId) ? newId : `n${Date.now().toString(36)}`
     d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level })
     const keep = clean(head)
     if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep

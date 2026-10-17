@@ -22,6 +22,13 @@
     "mammoth": "1.13.0",
     "minisearch": "7.2.0",
     "pdfjs-dist": "6.4.299",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.1",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-transform": "1.12.2",
+    "prosemirror-view": "1.42.6",
     "zod": "4.6.7"
   },
   "devDependencies": {
