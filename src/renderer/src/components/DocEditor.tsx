@@ -179,6 +179,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   const sessionId = useRef(session.id)
   sessionId.current = session.id
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string } | null>(null)
+  /** The change the caret is in (or that was clicked): highlighted whole. */
+  const [focused, setFocused] = useState<SelectedChange | null>(null)
+  const focusedKey = useRef('')
 
   const para = (id: string) => root.current?.querySelector<HTMLElement>(`p[data-block="${id}"]`) ?? null
   const paraOf = (n: Node | null) => (n ? ((n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest<HTMLElement>('p[data-block]') ?? null) : null)
@@ -372,7 +375,43 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     }
   })
 
-  // Which paragraph the caret is in (for the right-hand column).
+  /** The change a redline element belongs to: theirs if it's one of their changes, else ours. */
+  const changeOf = (el: Element | null): SelectedChange | null => {
+    const m0 = el?.closest<HTMLElement>('[data-mark]')
+    const p = m0?.closest<HTMLElement>('p[data-block]')
+    if (!m0 || !p || !root.current?.contains(p)) return null
+    const m = marksFor(d, blockOf(p))[Number(m0.dataset.mark)]
+    if (!m) return null
+    if (m.theirs && m.seg !== undefined) return { blockId: p.dataset.block!, kind: 'theirs', seg: m.seg }
+    if (m.ours) return { blockId: p.dataset.block!, kind: 'ours', op: m.ours, text: m.text }
+    return null
+  }
+  /** Put the caret on a change: highlight it whole, and show it in the right-hand column. */
+  const focusChange = (c: SelectedChange | null) => {
+    const k = JSON.stringify(c)
+    if (k === focusedKey.current) return
+    focusedKey.current = k
+    setFocused(c)
+    onSelectChanges(c ? [c] : null)
+  }
+
+  // The whole of the focused change is highlighted (their change may be split by our edits).
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    for (const x of Array.from(el.querySelectorAll('.ed-hl'))) x.classList.remove('ed-hl')
+    if (!focused) return
+    const p = para(focused.blockId)
+    if (!p) return
+    const marks = marksFor(d, blockOf(p))
+    for (const x of Array.from(p.querySelectorAll<HTMLElement>('[data-mark]'))) {
+      const m = marks[Number(x.dataset.mark)]
+      const hit = focused.kind === 'theirs' ? m?.seg === focused.seg && !!m.theirs : m?.ours === focused.op && m.text === focused.text
+      if (hit) x.classList.add('ed-hl')
+    }
+  })
+
+  // Which paragraph the caret is in (for the right-hand column), and which change.
   useEffect(() => {
     const onSel = () => {
       const sel = window.getSelection()
@@ -380,15 +419,25 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       if (!sel?.rangeCount || !root.current?.contains(sel.anchorNode)) return
       const p = paraOf(sel.anchorNode)
       onFocusBlock(p?.dataset.block ?? null)
+      if (sel.isCollapsed && !clicking.current) focusChange(changeOf(sel.anchorNode?.nodeType === 1 ? (sel.anchorNode as Element) : (sel.anchorNode?.parentElement ?? null)))
     }
     document.addEventListener('selectionchange', onSel)
     return () => document.removeEventListener('selectionchange', onSel)
   }, [onFocusBlock])
 
-  // Selected text: the redlines inside it, and (within one paragraph) a comment on it.
-  const onMouseUp = () => {
+  // Selected text: the redlines inside it, and (within one paragraph) a comment on it. A click
+  // (no selection) on a change highlights that change, struck text included.
+  const clicking = useRef(false)
+  const onMouseUp = (e: React.MouseEvent) => {
+    clicking.current = false
     const sel = window.getSelection()
+    if (sel?.rangeCount && sel.isCollapsed) {
+      const fromCaret = sel.anchorNode?.nodeType === 1 ? (sel.anchorNode as Element) : (sel.anchorNode?.parentElement ?? null)
+      focusChange(changeOf(e.target as Element) ?? changeOf(fromCaret))
+    }
     if (sel?.rangeCount && !sel.isCollapsed) {
+      focusedKey.current = ''
+      setFocused(null)
       const r = sel.getRangeAt(0)
       const found: SelectedChange[] = []
       const seen = new Set<string>()
@@ -432,7 +481,12 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         suppressContentEditableWarning
         spellCheck={false}
         onMouseUp={onMouseUp}
-        onMouseDown={() => onSelectChanges(null)}
+        onMouseDown={() => {
+          clicking.current = true
+          focusedKey.current = ''
+          setFocused(null)
+          onSelectChanges(null)
+        }}
         onKeyDown={() => setBubble(null)}
       >
         {d.blocks.map((b) => {

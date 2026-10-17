@@ -713,3 +713,7 @@ del.us-del ins.th-ins { color: inherit; }
 .hist-label { font-weight: 600; line-height: 1.4; }
 .hist-meta { font-size: 11.5px; }
 .hist-confirm ul { margin: 4px 0 6px; padding-left: 18px; }
+
+/* The change the caret is on, highlighted whole. */
+.ed-p .ed-hl { background: color-mix(in srgb, #1d4ed8 16%, transparent); border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in srgb, #1d4ed8 35%, transparent); }
+.ed-p ins.us-ins.ed-hl, .ed-p del.us-del.ed-hl { background: color-mix(in srgb, var(--rejected) 14%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rejected) 35%, transparent); }
