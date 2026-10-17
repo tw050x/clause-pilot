@@ -1,4 +1,5 @@
 import type { ChangeStatus, DocBlock, DocReview, TrackedSegment } from './types'
+import { overlay, type Mark } from './diff'
 
 /** Their redline on a block (plain text when they didn't change it). */
 export const segmentsOf = (b: DocBlock): TrackedSegment[] =>
@@ -99,3 +100,58 @@ export function ourOtherEdits(doc: DocReview, sets: ChangeSet[]): DocBlock[] {
 
 /** The block as we'd have it (our edit, or as received). */
 export const ourText = (doc: DocReview, b: DocBlock) => doc.edits[b.id] ?? (b.kind === 'deleted' ? '' : b.text)
+
+// ---- individual changes: accept / reject, as in Word -------------------------------------
+
+export const changeKey = (blockId: string, seg: number) => `${blockId}:${seg}`
+
+/**
+ * Their redline with the changes we've accepted or rejected resolved: an accepted insertion
+ * or rejected deletion becomes plain text, an accepted deletion or rejected insertion goes.
+ * Each segment keeps its index in the redline as received.
+ */
+export function effectiveSegments(doc: DocReview, b: DocBlock): TrackedSegment[] {
+  const out: TrackedSegment[] = []
+  segmentsOf(b).forEach((s, i) => {
+    const r = s.op === 'same' ? undefined : doc.resolved?.[changeKey(b.id, i)]
+    if (!r) return out.push({ ...s, i })
+    const keep = (s.op === 'ins') === (r === 'accepted')
+    if (keep) out.push({ op: 'same', text: s.text, i })
+  })
+  return out
+}
+
+/** A paragraph as shown: their redline (as resolved) with our wording over it. */
+export function marksFor(doc: DocReview, b: DocBlock): Mark[] {
+  const edit = doc.edits[b.id]
+  if (b.ours) return edit ? [{ text: edit, ours: 'ins' }] : []
+  const segs = effectiveSegments(doc, b)
+  if (b.kind === 'deleted' && segs.every((s) => s.op === 'del')) {
+    // Their deletion of the whole paragraph; restoring it lays our wording over nothing.
+    const struck = segs.map((s) => ({ text: s.text, theirs: 'del' as const, author: s.author, seg: s.i }))
+    return edit === undefined ? struck : [...struck, ...(edit ? [{ text: ' ' + edit, ours: 'ins' as const }] : [])]
+  }
+  return overlay(segs, edit)
+}
+
+/** The text a paragraph shows (struck text left out). */
+export const shownText = (marks: Mark[]) => marks.filter((m) => m.theirs !== 'del' && m.ours !== 'del').map((m) => m.text).join('')
+
+/**
+ * The paragraph's text with some marks flipped: one of our insertions taken out or one of our
+ * deletions put back (undoing it), or their change `seg` taken out (rejected insertion) or
+ * put back (rejected deletion).
+ */
+export function textWithout(marks: Mark[], pick: (m: Mark, i: number) => boolean): string {
+  return marks
+    .map((m, i) => {
+      const visible = m.theirs !== 'del' && m.ours !== 'del'
+      if (!pick(m, i)) return visible ? m.text : ''
+      if (m.ours === 'ins') return ''
+      if (m.ours === 'del') return m.text
+      if (m.theirs === 'ins') return ''
+      if (m.theirs === 'del') return m.text
+      return m.text
+    })
+    .join('')
+}

@@ -82,6 +82,8 @@ export interface Mark {
   ours?: 'ins' | 'del'
   author?: string
   date?: string
+  /** Which of their changes it is (index in the paragraph's redline), for theirs. */
+  seg?: number
 }
 
 /**
@@ -91,14 +93,15 @@ export interface Mark {
  * they proposed, the way Word shows two reviewers' changes.
  */
 export function overlay(segments: TrackedSegment[], ours: string | undefined): Mark[] {
-  if (ours === undefined) return segments.map((s) => ({ text: s.text, theirs: s.op === 'same' ? undefined : s.op, author: s.author, date: s.date }))
+  const segOf = (s: TrackedSegment, k: number) => (s.op === 'same' ? undefined : (s.i ?? k))
+  if (ours === undefined) return segments.map((s, k) => ({ text: s.text, theirs: s.op === 'same' ? undefined : s.op, author: s.author, date: s.date, seg: segOf(s, k) }))
   // Proposed characters, each with the redline it came from.
-  type Ch = { c: string; seg: TrackedSegment }
-  const items: ({ kind: 'del'; seg: TrackedSegment } | { kind: 'ch'; ch: Ch })[] = []
-  for (const seg of segments) {
-    if (seg.op === 'del') items.push({ kind: 'del', seg })
-    else for (const c of seg.text) items.push({ kind: 'ch', ch: { c, seg } })
-  }
+  type Ch = { c: string; seg: TrackedSegment; k: number }
+  const items: ({ kind: 'del'; seg: TrackedSegment; k: number } | { kind: 'ch'; ch: Ch })[] = []
+  segments.forEach((seg, k) => {
+    if (seg.op === 'del') items.push({ kind: 'del', seg, k })
+    else for (const c of seg.text) items.push({ kind: 'ch', ch: { c, seg, k } })
+  })
   const proposed = segments.filter((s) => s.op !== 'del').map((s) => s.text).join('')
   const ops = diffWords(proposed, ours)
   const struck = new Uint8Array(proposed.length)
@@ -110,13 +113,13 @@ export function overlay(segments: TrackedSegment[], ours: string | undefined): M
   const out: Mark[] = []
   const push = (m: Mark) => {
     const last = out[out.length - 1]
-    if (last && last.theirs === m.theirs && last.ours === m.ours && last.author === m.author) last.text += m.text
+    if (last && last.theirs === m.theirs && last.ours === m.ours && last.author === m.author && last.seg === m.seg) last.text += m.text
     else out.push(m)
   }
   let at = 0
   for (const it of items) {
     if (it.kind === 'del') {
-      push({ text: it.seg.text, theirs: 'del', author: it.seg.author, date: it.seg.date })
+      push({ text: it.seg.text, theirs: 'del', author: it.seg.author, date: it.seg.date, seg: segOf(it.seg, it.k) })
       continue
     }
     // Our insertion goes right after the text we struck (or at its point, if we struck nothing).
@@ -126,7 +129,7 @@ export function overlay(segments: TrackedSegment[], ours: string | undefined): M
       inserts.delete(at)
     }
     const s = it.ch.seg
-    push({ text: it.ch.c, theirs: s.op === 'ins' ? 'ins' : undefined, ours: struck[at] ? 'del' : undefined, author: s.author, date: s.date })
+    push({ text: it.ch.c, theirs: s.op === 'ins' ? 'ins' : undefined, ours: struck[at] ? 'del' : undefined, author: s.author, date: s.date, seg: segOf(s, it.ch.k) })
     at++
   }
   for (const v of inserts.values()) push({ text: v, ours: 'ins' }) // at the very end

@@ -9,6 +9,8 @@ export interface TrackedSegment {
   text: string
   author?: string
   date?: string
+  /** Its index in the paragraph's redline as received (kept when some changes are resolved). */
+  i?: number
 }
 
 /** A margin comment in a Word document. */
@@ -361,6 +363,8 @@ export interface DocReview {
   ai?: Record<string, Step<ChangeReview>>
   /** Change sets whose accepted wording was nominated for the library. */
   nominated?: string[]
+  /** Their individual tracked changes accepted or rejected, keyed "blockId:segmentIndex". */
+  resolved?: Record<string, 'accepted' | 'rejected'>
 }
 
 export interface ReviewSession {

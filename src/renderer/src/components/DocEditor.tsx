@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DocBlock, ReviewSession } from '@shared/types'
-import { segmentsOf } from '@shared/changes'
-import { overlay, type Mark } from '@shared/diff'
+import { marksFor, shownText } from '@shared/changes'
+import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
 /**
@@ -24,26 +24,16 @@ interface Props {
   onFocusBlock: (blockId: string | null) => void
   /** "Comment" on selected text. */
   onComment: (blockId: string, quote: string) => void
+  /** The redlines inside a selection (null when you click elsewhere). */
+  onSelectChanges: (changes: SelectedChange[] | null) => void
   readOnly?: boolean
 }
 
+/** A redline picked out by selecting text: one of their changes, or one of ours. */
+export type SelectedChange = { blockId: string; kind: 'theirs'; seg: number } | { blockId: string; kind: 'ours'; op: 'ins' | 'del'; text: string }
+
 const SAVE_AFTER_MS = 450
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
-
-/** What the paragraph shows: their redline with our wording laid over it. */
-export function marksOf(session: ReviewSession, b: DocBlock): Mark[] {
-  const d = session.doc!
-  const edit = d.edits[b.id]
-  if (b.ours) return edit ? [{ text: edit, ours: 'ins' }] : []
-  if (b.kind === 'deleted') {
-    // Their deletion; restoring it means our wording is laid over nothing.
-    if (edit === undefined) return segmentsOf(b).map((s) => ({ text: s.text, theirs: 'del', author: s.author }))
-    return [...segmentsOf(b).map((s) => ({ text: s.text, theirs: 'del' as const, author: s.author })), ...(edit ? [{ text: ' ' + edit, ours: 'ins' as const }] : [])]
-  }
-  return overlay(segmentsOf(b), edit)
-}
-
-const shown = (marks: Mark[]) => marks.filter((m) => m.theirs !== 'del' && m.ours !== 'del').map((m) => m.text).join('')
 
 // ---- the visible (editable) text of a paragraph, and caret positions in it ----------------
 
@@ -143,7 +133,7 @@ function render(p: HTMLElement, b: DocBlock, marks: Mark[]) {
     l.textContent = b.label
     p.appendChild(l)
   }
-  for (const m of marks) {
+  marks.forEach((m, i) => {
     let el: Node = document.createTextNode(m.text)
     const struck = m.theirs === 'del' || m.ours === 'del'
     if (m.theirs === 'ins' && m.ours !== 'del') {
@@ -167,12 +157,16 @@ function render(p: HTMLElement, b: DocBlock, marks: Mark[]) {
       del.appendChild(el)
       el = del
     }
+    if (el instanceof HTMLElement) {
+      el.dataset.mark = String(i)
+      if (m.seg !== undefined && m.theirs) el.dataset.seg = String(m.seg)
+    }
     p.appendChild(el)
-  }
+  })
   if (!textNodes(p).length) p.appendChild(document.createTextNode(''))
 }
 
-export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: Props) {
+export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, readOnly }: Props) {
   const d = session.doc!
   const root = useRef<HTMLDivElement>(null)
   /** Paragraphs typed in and not yet saved. */
@@ -195,16 +189,18 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
     for (const b of d.blocks) {
       const p = para(b.id)
       if (!p) continue
-      const marks = marksOf(session, b)
+      const marks = marksFor(d, b)
       const key = JSON.stringify(marks)
       const f = force.current.get(b.id)
-      const forced = !!f && tidy(shown(marks)) === tidy(f.text)
+      const forced = !!f && tidy(shownText(marks)) === tidy(f.text)
       if (f && !forced) continue
       if (p.dataset.key === key && !forced) continue
       if (p.dataset.key && !forced) {
         if (pending.current.has(b.id)) continue
-        // A save that's behind what's on screen: leave the screen alone.
-        if (tidy(visibleText(p)) !== tidy(shown(marks))) continue
+        // Rebuild if the screen is as last built (the change came from elsewhere: accept, reject,
+        // undo) or already says what the model says; otherwise a save is still catching up.
+        const onScreen = tidy(visibleText(p))
+        if (onScreen !== tidy(p.dataset.shown ?? '') && onScreen !== tidy(shownText(marks))) continue
       }
       const sel = window.getSelection()
       const focused = !!sel?.rangeCount && p.contains(sel.anchorNode)
@@ -214,6 +210,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
       force.current.delete(b.id)
       render(p, b, marks)
       p.dataset.key = key
+      p.dataset.shown = shownText(marks)
       if (typeof caretTo === 'number') setCaret(p, caretTo)
       else if (key0) setCaret(p, fromKey(visibleText(p), key0))
     }
@@ -258,7 +255,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
         if (t !== 'insertFromDrop') replaceAcross(sp, ep, a, z, t.startsWith('insert') ? typed : '')
         return
       }
-      if (sb.kind === 'deleted' && !d.edits[sb.id]) return e.preventDefault()
+      if (sb.kind === 'deleted' && d.edits[sb.id] === undefined && !shownText(marksFor(d, sb)).trim()) return e.preventDefault()
       const text = visibleText(sp)
 
       if (t === 'insertParagraph' || t === 'insertLineBreak') {
@@ -347,7 +344,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
         const p = ps[i]
         const id = p.dataset.block!
         const b = blockOf(p)
-        if (b.kind === 'deleted' && d.edits[id] === undefined) continue
+        if (b.kind === 'deleted' && d.edits[id] === undefined && !shownText(marksFor(d, b)).trim()) continue
         const v = visibleText(p)
         const next = i === from && i === to ? v.slice(0, a) + typed + v.slice(z) : i === from ? v.slice(0, a) + typed : i === to ? v.slice(z) : ''
         if (next === v) continue
@@ -377,6 +374,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
   useEffect(() => {
     const onSel = () => {
       const sel = window.getSelection()
+      if (!sel?.rangeCount || sel.isCollapsed) setBubble(null)
       if (!sel?.rangeCount || !root.current?.contains(sel.anchorNode)) return
       const p = paraOf(sel.anchorNode)
       onFocusBlock(p?.dataset.block ?? null)
@@ -385,9 +383,36 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
     return () => document.removeEventListener('selectionchange', onSel)
   }, [onFocusBlock])
 
-  // Selected text in one paragraph offers a comment on it.
+  // Selected text: the redlines inside it, and (within one paragraph) a comment on it.
   const onMouseUp = () => {
     const sel = window.getSelection()
+    if (sel?.rangeCount && !sel.isCollapsed) {
+      const r = sel.getRangeAt(0)
+      const found: SelectedChange[] = []
+      const seen = new Set<string>()
+      for (const el of Array.from(root.current!.querySelectorAll<HTMLElement>('[data-mark]'))) {
+        if (!r.intersectsNode(el)) continue
+        const p = el.closest<HTMLElement>('p[data-block]')!
+        const blockId = p.dataset.block!
+        const m = marksFor(d, blockOf(p))[Number(el.dataset.mark)]
+        if (!m) continue
+        const item: SelectedChange | null = m.ours ? { blockId, kind: 'ours', op: m.ours, text: m.text } : m.seg !== undefined ? { blockId, kind: 'theirs', seg: m.seg } : null
+        if (!item) continue
+        const k = JSON.stringify(item)
+        if (seen.has(k)) continue
+        seen.add(k)
+        found.push(item)
+        // Their change with ours on top of it: both are listed.
+        if (m.ours && m.seg !== undefined && m.theirs) {
+          const t: SelectedChange = { blockId, kind: 'theirs', seg: m.seg }
+          if (!seen.has(JSON.stringify(t))) {
+            seen.add(JSON.stringify(t))
+            found.push(t)
+          }
+        }
+      }
+      onSelectChanges(found)
+    }
     const quote = sel?.toString().trim()
     if (!sel?.rangeCount || !quote) return setBubble(null)
     const p = paraOf(sel.anchorNode)
@@ -405,14 +430,17 @@ export function DocEditor({ session, act, onFocusBlock, onComment, readOnly }: P
         suppressContentEditableWarning
         spellCheck={false}
         onMouseUp={onMouseUp}
+        onMouseDown={() => onSelectChanges(null)}
         onKeyDown={() => setBubble(null)}
       >
         {d.blocks.map((b) => {
           const edited = d.edits[b.id] !== undefined
           const theirs = b.kind === 'deleted' || !!b.segments?.some((x) => x.op !== 'same')
           const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
+          // A paragraph they deleted, with the deletion accepted, is gone (as in Word).
+          const gone = b.kind === 'deleted' && !marksFor(d, b).length
           return (
-            <div key={b.id} className={`ed-row ${theirs ? 'theirs' : ''} ${edited ? 'ours' : ''} ${b.untracked ? 'untracked' : ''}`} data-row={b.id}>
+            <div key={b.id} className={`ed-row ${theirs ? 'theirs' : ''} ${edited ? 'ours' : ''} ${b.untracked ? 'untracked' : ''} ${gone ? 'gone' : ''}`} data-row={b.id}>
               {b.untracked && (
                 <div className="dr-untracked" contentEditable={false}>
                   {b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template'}

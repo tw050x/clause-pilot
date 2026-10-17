@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { authorsOf, segmentsOf, theyChanged } from '@shared/changes'
+import { authorsOf, changeKey, marksFor, segmentsOf, theyChanged } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
-import { DocEditor } from '../components/DocEditor'
+import { DocEditor, type SelectedChange } from '../components/DocEditor'
 
 interface Props {
   session: ReviewSession
@@ -34,10 +34,12 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const [emailOpen, setEmailOpen] = useState(false)
   const [redlineOpen, setRedlineOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [picked, setPicked] = useState<SelectedChange[] | null>(null)
 
   useEffect(() => {
     setFocus(null)
     setDraft(null)
+    setPicked(null)
   }, [session.id])
 
   const act = useCallback(
@@ -119,7 +121,9 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         </div>
       </section>
 
-      {block ? (
+      {picked && picked.length > 0 ? (
+        <SelectionPanel session={session} picked={picked} act={act} />
+      ) : block ? (
         <ParagraphPanel key={block.id} session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
@@ -142,6 +146,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         session={session}
         act={act}
         onFocusBlock={onFocusBlock}
+        onSelectChanges={setPicked}
         onComment={(blockId, quote) => {
           setFocus(blockId)
           setDraft({ blockId, quote })
@@ -151,6 +156,107 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
+  )
+}
+
+// ---- the redlines in a selection ---------------------------------------------------------------
+
+const where = (b: DocBlock) => (b.ours ? 'New paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph')
+const snippet = (t: string) => (t.length > 140 ? `${t.slice(0, 140).trimEnd()}…` : t)
+
+/** Only the redlines you selected: accept or reject each of theirs, undo any of yours. */
+function SelectionPanel({ session, picked, act }: { session: ReviewSession; picked: SelectedChange[]; act: (p: Promise<ReviewSession>) => Promise<boolean> }) {
+  const d = session.doc!
+  const blocks = new Map(d.blocks.map((b) => [b.id, b]))
+  const items = picked.filter((x) => blocks.has(x.blockId))
+  const theirs = items.filter((x): x is Extract<SelectedChange, { kind: 'theirs' }> => x.kind === 'theirs')
+  const statusOf = (x: Extract<SelectedChange, { kind: 'theirs' }>) => {
+    const r = d.resolved?.[changeKey(x.blockId, x.seg)]
+    if (r) return r
+    // A change found by comparison is rejected by striking (or restoring) it with our edit.
+    const b = blocks.get(x.blockId)!
+    const ms = marksFor(d, b).filter((m) => m.seg === x.seg)
+    if (b.untracked && ms.length && ms.every((m) => (m.theirs === 'ins' ? m.ours === 'del' : false))) return 'rejected'
+    return 'open'
+  }
+  const open = theirs.filter((x) => statusOf(x) === 'open')
+  const all = async (outcome: 'accepted' | 'rejected') => {
+    for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome)))) return
+  }
+  return (
+    <section className="rc-section">
+      <h4 className="rp-h">
+        {items.length} change{items.length === 1 ? '' : 's'} selected
+      </h4>
+      {open.length > 1 && (
+        <div className="dr-card-actions">
+          <button className="btn sm accept" onClick={() => all('accepted')}>
+            <Icon name="check" size={13} /> Accept all {open.length}
+          </button>
+          <button className="btn sm reject" onClick={() => all('rejected')}>
+            Reject all {open.length}
+          </button>
+        </div>
+      )}
+      <div className="sel-list">
+        {items.map((x) => {
+          const b = blocks.get(x.blockId)!
+          if (x.kind === 'theirs') {
+            const seg = segmentsOf(b)[x.seg]
+            const st = statusOf(x)
+            return (
+              <div key={`t${x.blockId}:${x.seg}`} className={`sel-item st-${st}`}>
+                <div className="sel-head">
+                  <strong>{where(b)}</strong>
+                  <span className="faint">
+                    {seg.op === 'ins' ? 'Inserted' : 'Deleted'} by {seg.author ?? 'them'}
+                    {b.untracked ? ' (not tracked)' : ''}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  {st !== 'open' && <span className={`sel-st ${st}`}>{st === 'accepted' ? 'Accepted' : 'Rejected'}</span>}
+                </div>
+                <div className="sel-text">{seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}</div>
+                <div className="row-gap">
+                  {st === 'open' ? (
+                    <>
+                      <button className="btn sm accept" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'accepted'))}>
+                        <Icon name="check" size={13} /> Accept
+                      </button>
+                      <button className="btn sm reject" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'rejected'))}>
+                        Reject
+                      </button>
+                    </>
+                  ) : d.resolved?.[changeKey(x.blockId, x.seg)] ? (
+                    <button className="link-btn" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, null))}>
+                      Undo
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )
+          }
+          const at = marksFor(d, b).findIndex((m) => m.ours === x.op && m.text === x.text)
+          return (
+            <div key={`o${x.blockId}:${x.op}:${x.text}`} className={`sel-item ours ${at < 0 ? 'st-undone' : ''}`}>
+              <div className="sel-head">
+                <strong>{where(b)}</strong>
+                <span className="faint">{x.op === 'ins' ? 'Inserted' : 'Deleted'} by you</span>
+                <span style={{ flex: 1 }} />
+                {at < 0 && <span className="sel-st">Undone</span>}
+              </div>
+              <div className="sel-text">{x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}</div>
+              {at >= 0 && (
+                <div className="row-gap">
+                  <button className="btn sm ghost" onClick={() => act(window.api.doc.undoOurs(session.id, x.blockId, at))}>
+                    Undo
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -176,7 +282,6 @@ function ParagraphPanel({
   const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
   const authors = [...new Set(segmentsOf(b).filter((s) => s.op !== 'same').map((s) => s.author ?? 'Unknown'))]
   const last = d.lastRound?.[b.id]
-  const where = b.ours ? 'New paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph'
   const done = async (text?: string) => {
     if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
     setDraft(null)
@@ -184,7 +289,7 @@ function ParagraphPanel({
 
   return (
     <section className="rc-section">
-      <h4 className="rp-h">{where}</h4>
+      <h4 className="rp-h">{where(b)}</h4>
       <div className="dr-facts">
         {b.ours && <span className="dr-fact">Added by you</span>}
         {!b.ours && b.kind === 'deleted' && <span className="dr-fact warn">Deleted{authors.length ? ` by ${authors.join(', ')}` : ''}</span>}

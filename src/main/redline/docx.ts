@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
 import type { DocBlock, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
-import { changeSets, statusOf } from '../../shared/changes'
+import { changeKey, changeSets, segmentsOf, statusOf } from '../../shared/changes'
 import { readNumbering } from '../ingest/docxTracked'
 import { diffWords } from '../../shared/diff'
 
@@ -55,6 +55,16 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     if (statusOf(d, set) !== 'accepted') continue
     for (const b of set.blocks) resolveTheirChanges(parasOf(b), 'accept')
     stats.acceptedChanges++
+  }
+  // Their individual changes we accepted or rejected (tracked ones; the rest are our edits).
+  for (const b of d.blocks) {
+    if (b.untracked) continue
+    const picks = new Map<number, 'accepted' | 'rejected'>()
+    segmentsOf(b).forEach((_x, i) => {
+      const r = d.resolved?.[changeKey(b.id, i)]
+      if (r) picks.set(i, r)
+    })
+    if (picks.size && resolveSome(parasOf(b), segmentsOf(b), picks)) stats.acceptedChanges += picks.size
   }
   const added = new Map<string, Element>()
   for (const b of d.blocks) {
@@ -178,6 +188,49 @@ function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject'): boolea
     }
   }
   return changed
+}
+
+/**
+ * Accept or reject particular tracked changes in paragraphs: segment `i` of the redline as read
+ * is matched to the w:ins / w:del elements that make it up, in document order.
+ */
+function resolveSome(paras: Element[], segments: { op: string; text: string }[], picks: Map<number, 'accepted' | 'rejected'>): boolean {
+  const runs: { op: 'ins' | 'del'; el: Element; text: string }[] = []
+  for (const p of paras)
+    for (const el of Array.from(p.getElementsByTagNameNS(W, '*')))
+      if ((el.localName === 'ins' || el.localName === 'del') && (el.parentNode as Element)?.localName !== 'rPr')
+        runs.push({ op: el.localName, el, text: norm(Array.from(el.getElementsByTagNameNS(W, el.localName === 'del' ? 'delText' : 't')).map((t) => t.textContent ?? '').join('')) })
+  let cursor = 0
+  let done = false
+  segments.forEach((seg, i) => {
+    if (seg.op === 'same') return
+    const want = norm(seg.text)
+    const els: Element[] = []
+    let got = ''
+    for (let k = cursor; k < runs.length && got.length < want.length; k++) {
+      const r = runs[k]
+      if (r.op !== seg.op || !r.text) continue
+      if (!want.startsWith(got + r.text) && !(got + r.text).startsWith(want)) {
+        if (els.length) break
+        continue
+      }
+      els.push(r.el)
+      got += r.text
+      cursor = k + 1
+    }
+    const how = picks.get(i)
+    if (!how || !els.length) return
+    for (const el of els) {
+      if (!el.parentNode) continue
+      const keep = (el.localName === 'ins') === (how === 'accepted')
+      if (keep) {
+        if (el.localName === 'del') for (const t of Array.from(el.getElementsByTagNameNS(W, 'delText'))) rename(t, 't')
+        unwrap(el)
+      } else el.parentNode.removeChild(el)
+      done = true
+    }
+  })
+  return done
 }
 
 function unwrap(el: Element) {

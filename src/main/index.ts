@@ -13,7 +13,7 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, t
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { beforeTheirs, changeSets, statusOf, type ChangeSet } from '@shared/changes'
+import { beforeTheirs, changeKey, changeSets, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
 import type { ChangeStatus, OurComment } from '@shared/types'
 import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
@@ -432,7 +432,7 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
   const b = d.blocks.find((x) => x.id === blockId)
   if (!b) throw new Error('Unknown paragraph.')
   const next = text === null ? null : clean(text)
-  const same = next === null || (!b.ours && b.kind !== 'deleted' && tidy(next) === tidy(b.text))
+  const same = next === null || (!b.ours && b.kind !== 'deleted' && tidy(next) === tidy(shownText(marksFor({ ...d, edits: {} }, b))))
   if (same) delete d.edits[blockId]
   else d.edits[blockId] = next
   ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
@@ -470,6 +470,52 @@ ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
   delete d.edits[blockId]
   d.comments = d.comments.filter((c) => c.blockId !== blockId)
   ws.audit.append(actor(), 'doc.paragraph-removed', s.id, {})
+  persist(s)
+  return s
+})
+
+/**
+ * Accept or reject one of their changes (null: undecided again), as in Word. A tracked change is
+ * resolved in the file; a change found by comparison can't be, so rejecting it is our edit.
+ */
+ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null) => {
+  const { s, d } = docOf(sessionId)
+  const b = d.blocks.find((x) => x.id === blockId)
+  if (!b || !segmentsOf(b)[seg] || segmentsOf(b)[seg].op === 'same') throw new Error('Unknown change.')
+  const key = changeKey(blockId, seg)
+  if (outcome === 'accepted' && s.injection[blockId] && alertFor(s.id)?.status !== 'false-positive')
+    throw new Error('This paragraph is on security hold: text in it is addressed to an AI reviewer.')
+  const before = marksFor(d, b)
+  const edit = d.edits[blockId]
+  d.resolved ??= {}
+  if (b.untracked && outcome === 'rejected') {
+    d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
+    delete d.resolved[key]
+  } else {
+    if (outcome) d.resolved[key] = outcome
+    else delete d.resolved[key]
+    if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
+  }
+  // Our wording that now matches the text as it stands isn't an edit any more.
+  const plain = shownText(marksFor({ ...d, edits: {} }, b))
+  if (d.edits[blockId] !== undefined && tidy(d.edits[blockId]) === tidy(plain) && !b.ours) delete d.edits[blockId]
+  ws.audit.append(actor(), outcome ? `doc.change-${outcome}` : 'doc.change-reopened', s.id, { block: blockWhere(s, blockId), change: segmentsOf(b)[seg].text.slice(0, 80), op: segmentsOf(b)[seg].op })
+  persist(s)
+  return s
+})
+
+/** Undo one of our own changes (an insertion or deletion of ours) in a paragraph. */
+ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: number) => {
+  const { s, d } = docOf(sessionId)
+  const b = d.blocks.find((x) => x.id === blockId)
+  if (!b || d.edits[blockId] === undefined) throw new Error('Nothing to undo.')
+  const marks = marksFor(d, b)
+  if (!marks[mark]?.ours) throw new Error('That isn’t one of your changes.')
+  const next = textWithout(marks, (_m, i) => i === mark)
+  const plain = shownText(marksFor({ ...d, edits: {} }, b))
+  if (!b.ours && tidy(next) === tidy(plain)) delete d.edits[blockId]
+  else d.edits[blockId] = next
+  ws.audit.append(actor(), 'doc.edit-undone', s.id, { block: blockWhere(s, blockId), text: marks[mark].text.slice(0, 80) })
   persist(s)
   return s
 })
