@@ -9,6 +9,7 @@ import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/type
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { hasOpenChanges, marksFor, shownText } from '@shared/changes'
 import type { Mark } from '@shared/diff'
+import { Icon } from '../lib/icons'
 
 /**
  * The contract as one editable column, like Word with Track Changes on, built on ProseMirror.
@@ -459,7 +460,10 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             if (sel.$from.parent === sel.$to.parent) {
               const a = v.coordsAtPos(sel.from)
               const z = v.coordsAtPos(sel.to)
-              setBubble({ x: (a.left + z.right) / 2, y: Math.min(a.top, z.top), blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
+              // In the gutter, level with the start of the selection.
+              const box = host.current!.getBoundingClientRect()
+              void z
+              setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
             }
           }, 0)
           return false
@@ -572,15 +576,16 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       <div ref={host} className="ed-host" />
       {bubble && (
         <button
-          className="dr-bubble btn sm primary"
-          style={{ left: bubble.x, top: bubble.y }}
+          className="ed-gutter-btn"
+          style={{ top: bubble.y }}
+          title="Comment on the selected text (in the right-hand column)"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             cb.current.onComment(bubble.blockId, bubble.quote)
             setBubble(null)
           }}
         >
-          Comment
+          <Icon name="chat" size={15} />
         </button>
       )}
     </>

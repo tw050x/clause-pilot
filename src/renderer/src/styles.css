@@ -730,7 +730,7 @@ del.us-del ins.th-ins { color: inherit; }
 .hist-item.undone .hist-items { opacity: 0.6; }
 
 /* ProseMirror document */
-.ed-host { min-height: 100%; }
+.ed-host { min-height: 100%; position: relative; max-width: 860px; margin: 0 auto; }
 .ed-host .ed-doc { white-space: pre-wrap; }
 .ed-doc .ed-p { position: relative; margin: 0 0 10px; padding-left: 12px; border-left: 3px solid transparent; }
 .ed-doc .ed-p.chg-theirs { border-left-color: color-mix(in srgb, #1d4ed8 45%, transparent); }
@@ -746,3 +746,7 @@ del.us-del ins.th-ins { color: inherit; }
 
 .ed-doc .dr-label.us-num { color: var(--rejected); }
 .ed-doc .dr-label.renumbered { color: var(--rejected); text-decoration: underline dotted; text-underline-offset: 3px; }
+
+/* Comment on a selection: a button in the right-hand gutter, level with it. */
+.ed-gutter-btn { position: absolute; right: 22px; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; z-index: 5; }
+.ed-gutter-btn:hover { color: var(--text); border-color: var(--text-3); }
