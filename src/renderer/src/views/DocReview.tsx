@@ -246,7 +246,6 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
     })
   // What's been done with this selection is one action, undone together.
   const action = d.history?.find((a) => a.group === group && !a.undone)
-  const preview = items.slice(0, 4)
   const counts = [
     theirs.length && `${theirs.length} of theirs`,
     ours.length && `${ours.length} of yours`
@@ -263,27 +262,6 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
         )}
       </h4>
       {items.length > 1 && <p className="faint dr-small">{counts.join(', ')}</p>}
-      <div className="sel-preview">
-        {preview.map((x, i) => {
-          const b = blocks.get(x.blockId)!
-          if (x.kind === 'theirs') {
-            const seg = segmentsOf(b)[x.seg]
-            return (
-              <div key={i} className={`sel-line st-${statusOf(x)}`}>
-                <span className="hist-where">{whereOf(d, b)}</span>
-                {seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}
-              </div>
-            )
-          }
-          return (
-            <div key={i} className="sel-line">
-              <span className="hist-where">{whereOf(d, b)}</span>
-              {x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}
-            </div>
-          )
-        })}
-        {items.length > preview.length && <div className="faint hist-more">+ {items.length - preview.length} more in the selection</div>}
-      </div>
       {theirs.length > 0 &&
         (open.length ? (
           <div className="dr-card-actions">
@@ -305,6 +283,28 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
         </button>
       )}
       {open.length > 0 && open.length < theirs.length && <p className="faint dr-small">The rest of their changes here are already decided.</p>}
+      <div className="sel-preview">
+        {items.map((x, i) => {
+          const b = blocks.get(x.blockId)!
+          if (x.kind === 'theirs') {
+            const seg = segmentsOf(b)[x.seg]
+            const st = statusOf(x)
+            return (
+              <div key={i} className={`sel-line st-${st}`}>
+                <span className="hist-where">{whereOf(d, b)}</span>
+                {seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}
+                {st !== 'open' && <span className={`sel-st ${st}`}> {st === 'accepted' ? 'Accepted' : 'Rejected'}</span>}
+              </div>
+            )
+          }
+          return (
+            <div key={i} className="sel-line">
+              <span className="hist-where">{whereOf(d, b)}</span>
+              {x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}
+            </div>
+          )
+        })}
+      </div>
     </section>
   )
 }
