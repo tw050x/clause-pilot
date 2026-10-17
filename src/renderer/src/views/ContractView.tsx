@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { Account, ContractRecord, DemoContract, ReviewSummary } from '@shared/types'
+import { useState } from 'react'
+import type { Account, ContractRecord, ReviewSummary } from '@shared/types'
 import { Icon } from '../lib/icons'
 
 /**
@@ -9,29 +9,18 @@ import { Icon } from '../lib/icons'
 export function ContractView({
   contract,
   account,
-  demoMode,
   reviews,
   onOpenReview,
-  onUploadDraft,
-  onStartDemo
+  onUploadDraft
 }: {
   contract: ContractRecord
   account: Account
-  demoMode: boolean
   reviews: ReviewSummary[]
   onOpenReview: (id: string) => void
   onUploadDraft: (contractId: string) => void
-  onStartDemo: (path: string, contractId: string) => void
 }) {
-  const [demos, setDemos] = useState<DemoContract[]>([])
-  useEffect(() => void window.api.demo.list().then(setDemos), [demoMode])
-
   const versions = reviews.filter((r) => r.contractId === contract.id).sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
   const latest = versions[0]
-  // In demo mode, drafts come from the bundled chain for this contract (version 1, then its follow-ups).
-  const chain: DemoContract[] = []
-  for (let d = demos.find((x) => x.contractId === contract.id && !x.followUpOf); d; d = demos.find((x) => x.followUpOf === d!.file)) chain.push(d)
-  const demoNext = demoMode ? chain[versions.length] : undefined
 
   return (
     <div className="page">
@@ -44,31 +33,10 @@ export function ContractView({
             {contract.contractType !== 'general' && ` · ${contract.contractType === 'nda' ? 'NDA' : 'Order form'}`}
           </p>
         </div>
-        {!demoMode && (
-          <button className="btn primary upload-draft" onClick={() => onUploadDraft(contract.id)}>
-            <Icon name="upload" /> {versions.length ? 'Upload new draft' : 'Upload first draft'}
-          </button>
-        )}
+        <button className="btn primary upload-draft" onClick={() => onUploadDraft(contract.id)}>
+          <Icon name="upload" /> {versions.length ? 'Upload new draft' : 'Upload first draft'}
+        </button>
       </div>
-      {/* Demo mode: the "upload" is simulated, so it lives in a marked demo card, not the product's own controls. */}
-      {demoMode && (
-        <section className="demo-upload">
-          <span className="demo-tag">Demo</span>
-          {demoNext ? (
-            <>
-              <h3>{versions.length ? `Next draft: version ${versions.length + 1}` : 'First draft'}</h3>
-              <p className="faint">
-                {demoNext.title}. In real use you’d upload the file {account.name} sent you; here the upload is simulated with a sample file.
-              </p>
-              <button className="btn primary upload-draft" onClick={() => onStartDemo(demoNext.path, contract.id)}>
-                <Icon name="upload" /> Simulate upload
-              </button>
-            </>
-          ) : (
-            <p className="faint" style={{ margin: 0 }}>There are no more demo drafts for this contract.</p>
-          )}
-        </section>
-      )}
       {versions.length > 0 && (
         <p className="faint" style={{ marginTop: 0 }}>
           Each new draft is compared with what we sent back last time, so changes they didn’t track show up too, next to what we proposed.
@@ -76,7 +44,7 @@ export function ContractView({
       )}
       {!versions.length ? (
         <div className="empty-state">
-          Upload the first draft to start reviewing this contract. {!demoMode && 'The contract’s text is sent to Anthropic’s API for the AI checks, so only upload documents you’re allowed to share outside the company.'}
+          Upload the first draft to start reviewing this contract. Nothing leaves this computer unless you ask the AI about it.
         </div>
       ) : (
         <div className="card" style={{ overflow: 'hidden' }}>

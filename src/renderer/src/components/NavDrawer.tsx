@@ -1,7 +1,7 @@
 import type { Account, ContractRecord, ReviewSession, ReviewSummary } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 
-export type View = 'home' | 'demos' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
+export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
 
 interface Props {
   open: boolean
@@ -20,7 +20,6 @@ interface Props {
   onOpenContract: (id: string) => void
   onNewContract: () => void
   onChooseAccount: () => void
-  demoMode: boolean
 }
 
 export function NavDrawer(p: Props) {
@@ -53,7 +52,6 @@ export function NavDrawer(p: Props) {
         </svg>
       </button>
       {item('home', 'home', 'Start')}
-      {p.demoMode && item('demos', 'bolt', 'Demos')}
       <div className="nav-section">Contracts</div>
       {/* The active client's contracts fill the space between the top items and Knowledge. */}
       <div className="nav-recent">

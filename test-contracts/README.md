@@ -2,7 +2,7 @@
 
 Real, published contracts for trying Clause Pilot outside the demo. They are not PortSwigger documents and aren't written for our industry. They're here because they are real: Word auto-numbering, cover-page tables, fill-in blanks, drafting notes and long agreements, not documents written to suit the app.
 
-Use them in **live mode** (demo mode off), under a test account. Reviewing needs nothing else; **Ask AI** needs an Anthropic API key (Settings).
+Upload them under a test account. Reviewing needs nothing else; the AI steps need the AI set up in Settings (Claude or your vLLM server).
 
 ## `originals/`: unchanged, as published
 

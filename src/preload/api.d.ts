@@ -1,6 +1,6 @@
 import type {
   Account, ContractRecord,
-  AuditEntry, ChatMessage, DemoContract, SeenHit, EmailDraft, LibraryClause, Nomination,
+  AuditEntry, ChatMessage, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
 
@@ -9,11 +9,12 @@ type Unsub = () => void
 export interface Api {
   settings: {
     get(): Promise<Settings>
-    save(patch: Partial<Omit<Settings, 'hasApiKey'>>): Promise<Settings>
+    save(patch: Partial<Omit<Settings, 'hasApiKey' | 'hasVllmKey'>>): Promise<Settings>
     setApiKey(key: string | null): Promise<Settings>
+    setVllmKey(key: string | null): Promise<Settings>
   }
-  demo: { list(): Promise<DemoContract[]>; reset(): Promise<boolean>; prepare(scenarioId: string): Promise<boolean> }
-  workspace: { summary(): Promise<{ mode: 'demo' | 'live'; library: number; playbook: number; precedents: number; reviews: number; nominations: number }> }
+  ai: { vllmModels(url: string): Promise<string[]> }
+  workspace: { summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }> }
   accounts: {
     list(): Promise<Account[]>
     create(name: string): Promise<Account>

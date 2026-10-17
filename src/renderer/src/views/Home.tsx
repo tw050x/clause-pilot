@@ -1,40 +1,34 @@
 import { useEffect, useState } from 'react'
-import type { Account, DemoContract } from '@shared/types'
+import type { Account, Settings } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 import type { View } from '../components/NavDrawer'
 
 export function Home({
-  demoMode,
-  onOpenDemos,
-  onWelcome,
   onNavigate,
   onOpenLive,
   account,
   accounts,
   onChooseAccount
 }: {
-  demoMode: boolean
   /** The client being worked on. Opening contracts needs one. */
   account: Account | null
   accounts: Account[]
   onChooseAccount: () => void
-  onOpenDemos: () => void
-  /** Live mode: ask which account and contract, then pick the file. */
+  /** Ask which account and contract, then pick the file. */
   onOpenLive: () => void
-  onWelcome: () => void
   onNavigate: (v: View) => void
 }) {
-  const [demos, setDemos] = useState<DemoContract[]>([])
   const [ws, setWs] = useState<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number } | null>(null)
-  const [hasKey, setHasKey] = useState(true)
-  // Until the first live review, the setup checklist is the way in: it explains what opening a contract involves.
-  const needsFirstReview = !demoMode && !!ws && ws.reviews === 0
+  const [settings, setSettings] = useState<Settings | null>(null)
+  // Until the first review, the setup checklist is the way in: it explains what opening a contract involves.
+  const needsFirstReview = !!ws && ws.reviews === 0
+  const aiReady = !!settings && (settings.aiProvider === 'vllm' ? !!(settings.vllmUrl && settings.vllmModel) : settings.hasApiKey)
+  const aiName = settings?.aiProvider === 'vllm' ? 'your vLLM server' : 'Anthropic’s API'
 
   useEffect(() => {
-    window.api.demo.list().then(setDemos)
     window.api.workspace.summary().then(setWs)
-    window.api.settings.get().then((st) => setHasKey(st.hasApiKey))
-  }, [demoMode])
+    window.api.settings.get().then(setSettings)
+  }, [])
 
   const browse = onOpenLive
 
@@ -42,33 +36,10 @@ export function Home({
     <div className="page">
       <h1>Contract review</h1>
       <p className="lede">
-        Load a contract. Clause Pilot checks every clause against the pre-approved library, shows what happened in past negotiations, looks for clauses that quietly override others, and checks the contract against our standard positions. You read what needs reading and decide.
+        Open a contract as an editable document, like Word with Track Changes on. Their changes are shown to accept or reject, anything that differs from what we sent or from our approved wording is marked, and your edits and comments become the marked-up copy and the cover email. The AI checks intent and answers questions when you ask.
       </p>
 
-      <section className="welcome-box">
-        <div>
-          <h3>New here?</h3>
-          <p className="faint">A one-minute introduction to the app, demo mode and reviewing your own contracts.</p>
-          <button className="btn" onClick={onWelcome}>
-            Show the welcome tour
-          </button>
-        </div>
-      </section>
-
-      <section className="demos-link">
-        <div>
-          <h3>Demos</h3>
-          <p className="faint">
-            Short guided demos with sample contracts: reviewing a contract, the second and third drafts of a contract, adding to the library and adding to the playbook.
-            {!demoMode && ' Opening them switches to demo mode; your own data is kept separately.'}
-          </p>
-          <button className={`btn ${demoMode ? 'primary' : ''}`} onClick={onOpenDemos}>
-            Open demos <Chevron />
-          </button>
-        </div>
-      </section>
-
-      {demoMode ? null : !account && !needsFirstReview ? (
+      {!account && !needsFirstReview ? (
         <ChooseAccount onChoose={onChooseAccount} />
       ) : !needsFirstReview ? (
         <div className="home-upload-block" style={{ marginBottom: 28, width: 'fit-content', maxWidth: 640 }}>
@@ -79,12 +50,12 @@ export function Home({
             <span className="faint">PDF, Word (.docx) or text</span>
           </div>
           <p className="upload-note">
-            Needs an Anthropic API key (Settings). The contract’s text is sent to Anthropic’s API for the AI checks, so only open documents you’re allowed to share outside the company.
+            Reviewing works without AI. When you ask the AI about something, the contract’s text is sent to {aiName}, so only open documents you’re allowed to share with it.
           </p>
         </div>
       ) : null}
 
-      {!demoMode && ws && (
+      {ws && (
         <SetupChecklist
           items={[
             {
@@ -94,9 +65,9 @@ export function Home({
               cta: { label: 'Choose account', onClick: onChooseAccount }
             },
             {
-              title: 'Add your Anthropic API key',
-              detail: 'Needed for the AI checks and Ask AI. It is stored encrypted on this computer.',
-              done: hasKey,
+              title: 'Set up the AI',
+              detail: 'Claude (with an Anthropic API key) or your own vLLM server. Needed for the intent check, change review and Ask AI; everything else works without it.',
+              done: aiReady,
               cta: { label: 'Open Settings', onClick: () => onNavigate('settings') }
             },
             {
@@ -108,7 +79,7 @@ export function Home({
             {
               title: 'Review your first contract',
               detail:
-                'Word, PDF or text. Their tracked changes are listed to decide; nothing is sent anywhere unless you ask the AI about a change (that needs an API key, and sends the contract’s text to Anthropic’s API).',
+                `Word, PDF or text. Their tracked changes are shown to decide; nothing is sent anywhere unless you ask the AI (which sends the contract’s text to ${aiName}).`,
               done: ws.reviews > 0,
               cta: account ? { label: 'Open a contract…', onClick: browse } : { label: 'Choose account first', onClick: onChooseAccount }
             },
@@ -151,7 +122,7 @@ function SetupChecklist({ items }: { items: ChecklistItem[] }) {
           <p className="faint">
             {complete
               ? 'Your workspace has a playbook and approved wording, so drafts on our paper are compared with it and only the differences need reading.'
-              : 'Live mode starts from scratch, as it would for a real team. These steps make reviews useful.'}
+              : 'The workspace starts from scratch, as it would for a real team. These steps make reviews useful.'}
           </p>
         </div>
         <span className="faint checklist-count">
@@ -189,7 +160,6 @@ function SetupChecklist({ items }: { items: ChecklistItem[] }) {
 function ChooseAccount({ onChoose }: { onChoose: () => void }) {
   return (
     <section className="choose-account">
-      <Icon name="users" size={20} />
       <div>
         <h3>Choose a client to work on</h3>
         <p className="faint">Contracts, drafts and reviews belong to a client account. Pick one (or create one) to open contracts and see its reviews.</p>

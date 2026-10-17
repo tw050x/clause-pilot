@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
-import type { z } from 'zod'
+import { z as zod, type z } from 'zod'
 import type { ChatMessage } from '@shared/types'
 import { sha256 } from '../engine/text'
 import {
@@ -35,7 +35,7 @@ import {
 } from './prompts'
 
 export interface AiProvider {
-  readonly kind: 'anthropic' | 'replay'
+  readonly kind: 'anthropic' | 'vllm' | 'none'
   intent(input: IntentInput): Promise<IntentOut>
   overrides(input: OverridesInput): Promise<OverridesOut>
   position(input: PositionInput): Promise<PositionOut>
@@ -44,12 +44,6 @@ export interface AiProvider {
 
 /** A change review is replayed by the contract and the change; the playbook and history it was given are context. */
 export const changeKey = (input: ChangeInput) => ({ contract: input.contract, change: input.change })
-
-export class NoRecordingError extends Error {
-  constructor(task: TaskName) {
-    super(`Demo mode has no recorded AI response for this ${task} check. Add an API key in Settings to run it live.`)
-  }
-}
 
 export class AiRefusalError extends Error {}
 
@@ -156,7 +150,157 @@ export class AnthropicProvider implements AiProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Record / replay
+// vLLM (OpenAI-compatible API), e.g. a model served on the local network
+// ---------------------------------------------------------------------------
+
+export interface VllmServer {
+  /** e.g. http://192.168.1.20:8000 (with or without /v1). */
+  url: string
+  model: string
+  apiKey?: string | null
+}
+
+/** The server's /v1 base, however the address was typed. */
+export const vllmBase = (url: string) => {
+  const u = url.trim().replace(/\/+$/, '')
+  return /\/v1$/.test(u) ? u : `${u}/v1`
+}
+
+/** The models a vLLM server is serving (GET /v1/models). */
+export async function vllmModels(server: Pick<VllmServer, 'url' | 'apiKey'>): Promise<string[]> {
+  let res: Response
+  try {
+    res = await fetch(`${vllmBase(server.url)}/models`, { headers: server.apiKey ? { Authorization: `Bearer ${server.apiKey}` } : {}, signal: AbortSignal.timeout(8000) })
+  } catch (e) {
+    throw new Error(`Couldn't reach the vLLM server at ${server.url} (${e instanceof Error ? e.message : String(e)}).`)
+  }
+  if (!res.ok) throw new Error(`The vLLM server answered ${res.status} ${res.statusText}.`)
+  const body = (await res.json()) as { data?: { id: string }[] }
+  return (body.data ?? []).map((m) => m.id)
+}
+
+/** The JSON Schema sent to vLLM for a task's answer: the full schema (vLLM enforces it as written). */
+export function vllmSchema(schema: z.ZodType): Record<string, unknown> {
+  const { $schema: _drop, ...rest } = zod.toJSONSchema(schema, { reused: 'ref' }) as Record<string, unknown>
+  return rest
+}
+
+type Msg = { role: 'system' | 'user' | 'assistant'; content: string }
+
+/**
+ * The AI on a vLLM server, through its OpenAI-compatible chat API. Every task asks for JSON
+ * matching the task's schema: the schema goes in `response_format` and vLLM's structured
+ * output constrains the answer to it. The answer is then validated against the full Zod schema
+ * in code, as with Claude, so nothing malformed is used.
+ */
+export class VllmProvider implements AiProvider {
+  readonly kind = 'vllm' as const
+  constructor(private server: VllmServer) {}
+
+  private async post(body: Record<string, unknown>): Promise<Response> {
+    let res: Response
+    try {
+      res = await fetch(`${vllmBase(this.server.url)}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(this.server.apiKey ? { Authorization: `Bearer ${this.server.apiKey}` } : {}) },
+        body: JSON.stringify({ model: this.server.model, ...body }),
+        signal: AbortSignal.timeout(300_000)
+      })
+    } catch (e) {
+      throw new Error(`Couldn't reach the vLLM server at ${this.server.url} (${e instanceof Error ? e.message : String(e)}).`)
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`The vLLM server answered ${res.status}: ${text.slice(0, 300) || res.statusText}`)
+    }
+    return res
+  }
+
+  private async structured<S extends z.ZodType>(name: string, schema: S, system: string, user: string): Promise<z.infer<S>> {
+    const res = await this.post({
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ] satisfies Msg[],
+      temperature: 0,
+      max_tokens: 8000,
+      response_format: { type: 'json_schema', json_schema: { name, schema: vllmSchema(schema), strict: true } }
+    })
+    const body = (await res.json()) as { choices?: { message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }[] }
+    const choice = body.choices?.[0]
+    if (choice?.message?.refusal) throw new AiRefusalError('The model declined this request.')
+    if (choice?.finish_reason === 'length') throw new Error('The model response was cut off (max_tokens).')
+    let json: unknown
+    try {
+      // Some models wrap JSON in a code fence even when asked not to.
+      json = JSON.parse((choice?.message?.content ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+    } catch {
+      throw new Error('The model returned output that was not valid JSON.')
+    }
+    const parsed = schema.safeParse(json)
+    if (!parsed.success) throw new Error(`The model returned output that did not match the expected schema: ${parsed.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`)
+    return parsed.data
+  }
+
+  intent(input: IntentInput): Promise<IntentOut> {
+    return this.structured('intent_check', IntentSchema, INTENT_SYSTEM, intentUser(input))
+  }
+  overrides(input: OverridesInput): Promise<OverridesOut> {
+    return this.structured('overrides', OverridesSchema, DOCUMENT_SYSTEM, `${contractBlock(input.clauses)}\n\n${OVERRIDES_QUESTION}`)
+  }
+  position(input: PositionInput): Promise<PositionOut> {
+    return this.structured('position', PositionSchema, DOCUMENT_SYSTEM, `${contractBlock(input.clauses)}\n\n${positionQuestion(input)}`)
+  }
+  change(input: ChangeInput): Promise<ChangeOut> {
+    return this.structured('change_review', ChangeSchema, DOCUMENT_SYSTEM, `${paragraphsBlock(input.contract)}\n\n${changeQuestion(input)}`)
+  }
+
+  /** A chat reply, streamed as it's written (server-sent events). */
+  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void): Promise<string> {
+    const res = await this.post({
+      messages: [{ role: 'system', content: system }, ...history.map((m) => ({ role: m.role, content: m.content }))] satisfies Msg[],
+      temperature: 0.3,
+      max_tokens: 2000,
+      stream: true
+    })
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let out = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim()
+        buffer = buffer.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') return out
+        try {
+          const delta = (JSON.parse(data) as { choices?: { delta?: { content?: string } }[] }).choices?.[0]?.delta?.content
+          if (delta) {
+            out += delta
+            onDelta(delta)
+          }
+        } catch {
+          // a keep-alive or partial line
+        }
+      }
+    }
+    return out
+  }
+}
+
+/** No AI configured: every AI step says what's missing; everything else still works. */
+export const noAiProvider = (why: string): AiProvider => {
+  const fail = () => Promise.reject(new Error(why))
+  return { kind: 'none', intent: fail, overrides: fail, position: fail, change: fail }
+}
+
+// ---------------------------------------------------------------------------
+// Recording
 // ---------------------------------------------------------------------------
 
 interface Recording {
@@ -195,39 +339,12 @@ export class RecordingStore {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-/** Demo mode: serves recorded responses with a realistic delay so the UI's loading states are visible. */
-export class ReplayProvider implements AiProvider {
-  readonly kind = 'replay' as const
-  constructor(private store: RecordingStore, private latency: [number, number] = [900, 3200]) {}
-
-  private async replay<T>(task: TaskName, input: unknown): Promise<T> {
-    const [lo, hi] = this.latency
-    await sleep(lo + Math.random() * (hi - lo))
-    const rec = this.store.get(recordingKey(task, input))
-    if (!rec) throw new NoRecordingError(task)
-    return rec.output as T
-  }
-
-  intent(input: IntentInput) {
-    return this.replay<IntentOut>('intent', input)
-  }
-  overrides(input: OverridesInput) {
-    return this.replay<OverridesOut>('overrides', input)
-  }
-  position(input: PositionInput) {
-    return this.replay<PositionOut>('position', input)
-  }
-  change(input: ChangeInput) {
-    return this.replay<ChangeOut>('change', changeKey(input))
-  }
-}
-
-/** Live mode with recording on: every successful response becomes replayable later (demo / offline / evals). */
+/** With recording on, every successful answer is saved, keyed by its task and input (for offline replay and evaluation). */
 export class RecordingProvider implements AiProvider {
-  readonly kind = 'anthropic' as const
-  constructor(private inner: AiProvider, private store: RecordingStore) {}
+  readonly kind: AiProvider['kind']
+  constructor(private inner: AiProvider, private store: RecordingStore) {
+    this.kind = inner.kind
+  }
 
   private async rec<T>(task: TaskName, input: unknown, run: () => Promise<T>): Promise<T> {
     const output = await run()

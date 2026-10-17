@@ -1,14 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { ChangeReview, ContractType, DocBlock, DocReview, IntentCheck, LibraryClause, PlaybookPosition, ReviewSession, SeenHit } from '@shared/types'
-import { beforeTheirs, changeSets, proposedText, type ChangeSet } from '@shared/changes'
+import { beforeTheirs, proposedText, type ChangeSet } from '@shared/changes'
 import { RESPONSE } from './engine/seen'
 import { compareWithSent, compareWithTemplate } from './engine/baseline'
 import { injectionHits } from './engine/injection'
 import type { ChangeInput, ChangeOut, IntentInput, IntentOut } from './ai/tasks'
 import type { ParsedDocument } from './ingest/parse'
 import { guessContractType } from './ingest/headings'
-import type { ScriptedChange } from '@shared/demoScenarios'
-export type { ScriptedChange }
 
 /**
  * A document review: the contract as written, paragraph by paragraph, with
@@ -112,32 +110,6 @@ export function toChangeReview(s: ReviewSession, set: ChangeSet, positions: Play
 
 export function applicable(playbook: PlaybookPosition[], type: ContractType): PlaybookPosition[] {
   return playbook.filter((p) => type === 'general' || p.appliesTo.includes(type))
-}
-
-export function findSet(sets: ChangeSet[], at: string): ChangeSet | undefined {
-  return sets.find((x) => x.where.split(' ')[0] === at) ?? sets.find((x) => x.blocks[0].text.startsWith(at))
-}
-
-/** Apply scripted responses (demo set-up) the way the document screen would. Returns the change sets touched. */
-export function applyScriptedChanges(s: ReviewSession, list: ScriptedChange[], by: string): ChangeSet[] {
-  const d = s.doc!
-  const at = new Date().toISOString()
-  const touched: ChangeSet[] = []
-  for (const c of list) {
-    const set = findSet(changeSets(d), c.at)
-    if (!set) throw new Error(`Demo set-up: no change at ${c.at} in ${s.docName}`)
-    const first = set.blocks.find((b) => b.kind !== 'heading') ?? set.blocks[0]
-    if (c.action === 'accept' || c.action === 'flag') d.decisions[set.id] = { status: c.action === 'accept' ? 'accepted' : 'flagged', note: c.note, by, at }
-    if (c.action === 'restore') for (const b of set.blocks) d.edits[b.id] = b.kind === 'deleted' ? b.text : beforeTheirs(b)
-    if (c.action === 'strike') for (const b of set.blocks) d.edits[b.id] = ''
-    if (c.action === 'edit') d.edits[first.id] = c.text ?? ''
-    if (c.comment) {
-      const theirs = set.blocks.flatMap((b) => (b.comments ?? []).map((t) => ({ b, t })))[0]
-      d.comments.push({ id: `oc-${d.comments.length}`, blockId: theirs?.b.id ?? first.id, text: c.comment, replyTo: theirs?.t.id, by, at })
-    }
-    touched.push(set)
-  }
-  return touched
 }
 
 /** What the AI is asked for a paragraph: does it mean the same as the approved clause it differs from? */

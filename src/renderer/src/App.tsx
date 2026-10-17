@@ -14,12 +14,8 @@ import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
 import { ContractView, ContractsListView, NewContractView } from './views/ContractView'
-import { DemosView } from './views/DemosView'
-import type { DemoScenario } from '@shared/demoScenarios'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
-import { TourOverlay, type Tour } from './lib/tour'
-import { DEMO_TOURS, WELCOME_TOUR } from './onboarding'
 
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -35,7 +31,6 @@ export function App() {
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
   const [error, setError] = useState<string | null>(null)
   const online = useOnline()
-  const [tour, setTour] = useState<Tour | null>(null)
   const [openModal, setOpenModal] = useState<{ contractId?: string } | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeAccountId, setActiveAccountIdState] = useState<string | null>(null)
@@ -79,7 +74,7 @@ export function App() {
     try {
       const s = await window.api.review.start(path, contractId)
       setSession(s)
-      if (s.accountId) setActiveAccountId(s.accountId) // e.g. starting a demo for another client
+      if (s.accountId) setActiveAccountId(s.accountId)
       refreshReviews()
       refreshAccounts()
       setView('review')
@@ -95,37 +90,11 @@ export function App() {
     // Opening another client's review (e.g. from Security or Audit) switches to that client.
     if (s.accountId) setActiveAccountId(s.accountId)
     setView('review')
-  }, [settings?.demoMode])
+  }, [])
 
-  // Demo and live are separate workspaces: when the mode changes, drop everything on screen
-  // and reload from the newly selected workspace.
-  const afterSwitchView = useRef<View | null>(null)
-  const reloadWorkspace = useCallback(() => {
-    setSession(null)
-    setView(afterSwitchView.current ?? 'home')
-    afterSwitchView.current = null
-    setContractPageId(null)
-    window.api.kb.nominations().then(setNominations)
-    window.api.kb.playbookProposals().then(setProposals)
-    refreshReviews()
-    refreshAlerts()
-  }, [refreshReviews, refreshAlerts])
-  const mode = settings?.demoMode
-  const firstMode = useRef(true)
-  useEffect(() => {
-    if (mode === undefined) return
-    if (firstMode.current) {
-      firstMode.current = false
-      return
-    }
-    reloadWorkspace()
-  }, [mode])
-
-  // ---- active account (remembered per workspace) ----
-  const accountKey = `clausepilot.activeAccount.${settings?.demoMode ? 'demo' : 'live'}`
-  // Long-lived callbacks (openContract, openSession) read the key through a ref so they never use a stale mode.
+  // ---- active account (remembered) ----
+  const accountKey = 'clausepilot.activeAccount.live'
   const accountKeyRef = useRef(accountKey)
-  accountKeyRef.current = accountKey
   const refreshAccounts = useCallback(
     () => Promise.all([window.api.accounts.list().then(setAccounts), window.api.contracts.list().then(setContracts)]),
     []
@@ -150,7 +119,7 @@ export function App() {
       }
       setActiveAccountIdState(saved)
     })
-  }, [settings?.demoMode])
+  }, [!!settings])
   // Forget an active account that no longer exists in this workspace.
   const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? null
   useEffect(() => {
@@ -182,34 +151,6 @@ export function App() {
     if (view === 'review' && session?.accountId && session.accountId !== activeAccountId) setView('home')
   }, [activeAccountId])
 
-  // ---- demos: reset the demo workspace to the scenario's starting point, then go ----
-  const startDemo = async (d: DemoScenario, guided: boolean) => {
-    setError(null)
-    setTour(null)
-    try {
-      await window.api.demo.prepare(d.id)
-      setSession(null)
-      window.api.kb.nominations().then(setNominations)
-      window.api.kb.playbookProposals().then(setProposals)
-      refreshAlerts()
-      await Promise.all([refreshReviews(), refreshAccounts()])
-      setActiveAccountId(d.accountId)
-      if (!guided && d.upload) {
-        const file = (await window.api.demo.list()).find((x) => x.file === d.upload)!
-        return openContract(file.path, d.contractId)
-      }
-      if (d.startAt === 'playbook') setView('playbook')
-      else {
-        setContractPageId(d.contractId)
-        setView('contract')
-      }
-      const t = DEMO_TOURS[d.id]
-      if (t) setTour({ ...t })
-    } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
-    }
-  }
-
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
 
@@ -224,22 +165,18 @@ export function App() {
           <span className="mode-pill offline has-tip" tabIndex={0}>
             Offline
             <span className="tip" role="tooltip">
-              This computer is offline, so AI checks, Ask AI and sync features are unavailable. Matching against the pre-approved library, precedent search and recorded (demo) results still work.
+              This computer is offline, so Claude is unavailable (a vLLM server on your local network may still work). Everything that doesn't use the AI still works.
             </span>
           </span>
         )}
         {settings && (
-          <button
-            className={`mode-pill has-tip ${settings.demoMode ? 'demo' : settings.hasApiKey ? 'live' : 'nokey'}`}
-            onClick={async () => setSettings(await window.api.settings.save({ demoMode: !settings.demoMode }))}
-          >
-            {settings.demoMode ? 'Demo mode' : settings.hasApiKey ? `Live · ${settings.model}` : 'Live · no API key'}
+          // Which AI the AI steps use; click to change it in Settings.
+          <button className={`mode-pill has-tip ${aiReady(settings) ? 'live' : 'nokey'}`} onClick={() => setView('settings')}>
+            {aiLabel(settings)}
             <span className="tip" role="tooltip">
-              {settings.demoMode
-                ? 'Demo mode: sample contracts and recorded AI responses, nothing leaves this computer. Click to switch to live mode and open your own contracts.'
-                : settings.hasApiKey
-                  ? 'Live mode: your own contracts, checked by Claude. Click to switch back to demo mode.'
-                  : 'Live mode without an API key: library matching and precedent search work, but AI checks will fail. Add a key in Settings, or click to switch back to demo mode.'}
+              {aiReady(settings)
+                ? `AI steps (intent check, change review, Ask AI) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : 'Claude'}, and only when you ask. Click to change.`
+                : 'No AI set up: reviewing, editing, the marked-up copy and the email all work, but the AI steps will say what’s missing. Click to set it up in Settings.'}
             </span>
           </button>
         )}
@@ -256,14 +193,13 @@ export function App() {
           contracts={accountContracts}
           reviews={scopedReviews}
           currentContractId={currentContractId}
-          canCreateContract={!settings?.demoMode}
+          canCreateContract
           onOpenContract={(id) => {
             setContractPageId(id)
             setView('contract')
           }}
           onNewContract={() => setView('new-contract')}
           onChooseAccount={() => setPickerOpen(true)}
-          demoMode={!!settings?.demoMode}
         />
         <main className="main">
           {error && (
@@ -273,16 +209,7 @@ export function App() {
           )}
           {view === 'home' && (
             <Home
-              demoMode={!!settings?.demoMode}
               onOpenLive={() => (activeAccount ? setOpenModal({}) : setPickerOpen(true))}
-              onOpenDemos={async () => {
-                if (!settings?.demoMode) {
-                  // The mode switch reloads the workspace; land on Demos rather than Start.
-                  afterSwitchView.current = 'demos'
-                  setSettings(await window.api.settings.save({ demoMode: true }))
-                } else setView('demos')
-              }}
-              onWelcome={() => setTour({ ...WELCOME_TOUR })}
               onNavigate={setView}
               account={activeAccount}
               accounts={accounts}
@@ -308,11 +235,9 @@ export function App() {
             <ContractView
               contract={contractPage}
               account={activeAccount}
-              demoMode={!!settings?.demoMode}
               reviews={scopedReviews}
               onOpenReview={openSession}
               onUploadDraft={(contractId) => setOpenModal({ contractId })}
-              onStartDemo={(path, contractId) => openContract(path, contractId)}
             />
           )}
           {view === 'contracts' && activeAccount && (
@@ -320,7 +245,7 @@ export function App() {
               account={activeAccount}
               contracts={accountContracts}
               reviews={scopedReviews}
-              canCreate={!settings?.demoMode}
+              canCreate
               onOpen={(id) => {
                 setContractPageId(id)
                 setView('contract')
@@ -338,15 +263,6 @@ export function App() {
               }}
             />
           )}
-          {view === 'demos' && settings && (
-            <DemosView
-              demoMode={settings.demoMode}
-              account={activeAccount}
-              onEnableDemo={async () => setSettings(await window.api.settings.save({ demoMode: true }))}
-              onGuided={(d) => startDemo(d, true)}
-              onSimulate={(d) => startDemo(d, false)}
-            />
-          )}
           {view === 'library' && <LibraryView />}
           {view === 'playbook' && <PlaybookView onProposalsChanged={() => window.api.kb.playbookProposals().then(setProposals)} />}
           {view === 'history' && <HistoryView />}
@@ -354,8 +270,7 @@ export function App() {
           {view === 'security' && settings && (
             <SecurityView
               alerts={alerts}
-              canResolve={settings.demoMode || settings.securityReviewer}
-              demoMode={settings.demoMode}
+              canResolve={settings.securityReviewer}
               onChange={setAlerts}
               onOpenReview={openSession}
             />
@@ -365,14 +280,6 @@ export function App() {
             <SettingsView
               settings={settings}
               onChange={setSettings}
-              onResetDemo={async () => {
-                await window.api.demo.reset()
-                reloadWorkspace()
-              }}
-              onRestartTour={() => {
-                setView('home')
-                setTour(WELCOME_TOUR)
-              }}
             />
           )}
         </main>
@@ -398,7 +305,7 @@ export function App() {
         <AccountPicker
           accounts={accounts}
           activeId={activeAccountId}
-          canCreate={!settings?.demoMode}
+          canCreate
           onClose={() => setPickerOpen(false)}
           onPick={(id) => {
             setActiveAccountId(id)
@@ -423,22 +330,14 @@ export function App() {
           }}
         />
       )}
-      {tour && (
-        <TourOverlay
-          key={tour.id}
-          tour={tour}
-          ctx={{
-            showReviewPanels: () => {
-              setNavOpen(true)
-            },
-            setRightTab
-          }}
-          onClose={() => setTour(null)}
-        />
-      )}
     </div>
   )
 }
+
+/** Is an AI set up for the AI steps? */
+const aiReady = (s: Settings) => (s.aiProvider === 'vllm' ? !!(s.vllmUrl && s.vllmModel) : s.hasApiKey)
+const aiLabel = (s: Settings) =>
+  s.aiProvider === 'vllm' ? (aiReady(s) ? `vLLM · ${s.vllmModel}` : 'vLLM · not set up') : aiReady(s) ? `Claude · ${s.model}` : 'Claude · no API key'
 
 /** Tracks the OS network state (Electron mirrors it to navigator.onLine). */
 function useOnline(): boolean {

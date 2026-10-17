@@ -82,7 +82,6 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 button.mode-pill { cursor: pointer; }
 button.mode-pill:hover { filter: brightness(0.96); }
 .mode-pill.nokey { border-color: var(--review); color: var(--review); background: var(--review-tint); }
-.mode-pill.demo { border-color: var(--processing); color: var(--processing); background: var(--processing-tint); }
 .mode-pill.offline { border-color: var(--text-2); color: var(--text); background: var(--surface-2); font-weight: 600; cursor: default; }
 /* Hover/focus tooltip, anchored below the pill and right-aligned to stay on screen. */
 .has-tip { position: relative; }
@@ -142,14 +141,9 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 /* Sized to its cards (not the full width) so highlights and the tour ring wrap just the cards. */
-.demo-grid { display: flex; flex-wrap: wrap; gap: 14px; width: fit-content; max-width: 100%; margin-bottom: 28px; }
-.demo-grid .demo-card { width: 300px; }
 .welcome-box { display: flex; align-items: center; gap: 16px; max-width: 760px; padding: 16px 18px; margin-bottom: 26px; border: 1px solid var(--border); border-radius: var(--radius); }
 .welcome-box h3 { font-size: 14.5px; margin-bottom: 2px; }
 .welcome-box p { margin: 0; font-size: 13px; }
-.demo-card { padding: 16px; display: flex; flex-direction: column; gap: 8px; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); }
-.demo-card .ext { font-size: 11px; font-weight: 700; color: var(--accent-ink); font-family: var(--mono); }
-.demo-card p { margin: 0; color: var(--text-2); font-size: 13px; }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
 .row-gap { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -482,31 +476,16 @@ mark.inj-hl { background: color-mix(in srgb, var(--conflict) 22%, transparent); 
 .choose-account div { flex: 1; }
 .choose-account h3 { font-size: 15px; margin-bottom: 2px; }
 .choose-account p { margin: 0; font-size: 13px; }
-.demo-client { color: var(--text-2); font-family: var(--ui-font); font-weight: 600; }
 
-/* ---- demos ---- */
-.demos-link { display: flex; align-items: center; gap: 14px; max-width: 760px; padding: 16px 18px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--radius); }
-.demos-link > svg { color: var(--accent-ink); flex-shrink: 0; }
-.demos-link div { flex: 1; }
-.demos-link h3 { font-size: 15px; margin-bottom: 2px; }
-.demos-link p { margin: 0; font-size: 13px; }
-.demo-group { margin-bottom: 26px; }
-.demo-group h3 { font-size: 15px; margin-bottom: 2px; }
-.demo-group > p { margin: 0 0 10px; font-size: 13px; }
 
 /* Hidden until it has its final size (see ReviewGrid), then fades in. */
 .review-wrap { opacity: 0; }
 .review-wrap.ready { opacity: 1; transition: opacity 0.2s ease; }
 
 /* Start page cards: the action sits under the text. */
-.welcome-box, .demos-link, .choose-account { align-items: flex-start; }
-.welcome-box > div > .btn, .demos-link > div > .btn, .choose-account > div > .btn { margin-top: 12px; }
+.welcome-box, .choose-account { align-items: flex-start; }
+.welcome-box > div > .btn, .choose-account > div > .btn { margin-top: 12px; }
 
-/* Demo-only controls live in a dashed, labelled card so they never look like product UI. */
-.demo-upload { position: relative; max-width: 760px; padding: 18px 18px 16px; margin-bottom: 20px; border: 1.5px dashed var(--processing); border-radius: var(--radius); background: color-mix(in srgb, var(--processing-tint) 50%, var(--surface)); }
-.demo-upload h3 { font-size: 15px; margin-bottom: 2px; }
-.demo-upload p { margin: 0 0 12px; font-size: 13px; }
-.demo-tag { position: absolute; top: -9px; left: 14px; font: 700 10px/1.6 var(--ui-font); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 7px; border-radius: 99px; background: var(--processing); color: #fff; }
 
 /* ---- their Word redline ---- */
 ins.rl-ins { color: #1d4ed8; text-decoration: underline; text-decoration-color: #1d4ed8; }
@@ -772,3 +751,6 @@ del.us-del ins.th-ins { color: inherit; }
 /* The AI found it means the same as our approved wording: green, dashed, until a person decides it. */
 .ed-doc .ed-p.chg-ai { border-left: 4px dashed var(--exact); }
 .rc-key .bar.ai { background: repeating-linear-gradient(to bottom, var(--exact) 0 3px, transparent 3px 6px); }
+
+.settings-h { font-size: 15px; margin: 28px 0 6px; }
+.field .seg { width: fit-content; }

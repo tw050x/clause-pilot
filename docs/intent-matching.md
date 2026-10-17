@@ -1,6 +1,6 @@
 # Intent matching: the AI response schema
 
-The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks Claude whether a paragraph that differs from one of our pre-approved clauses has the **same legal effect**. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
+The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks the AI (Claude, or a vLLM server, as chosen in Settings) whether a paragraph that differs from one of our pre-approved clauses has the **same legal effect**. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
 
 The AI only advises. A paragraph it judges to mean the same gets a dashed green bar; it is never accepted until a person accepts or rejects the changes.
 
@@ -11,7 +11,7 @@ The AI only advises. A paragraph it judges to mean the same gets a dashed green 
 | Response schema (source of truth) | `IntentSchema` in `src/main/ai/tasks.ts` (Zod) |
 | Request input | `IntentInput` in `src/main/ai/tasks.ts`, built by `intentInput()` in `src/main/docreview.ts` |
 | Prompts | `INTENT_SYSTEM` and `intentUser()` in `src/main/ai/prompts.ts` |
-| API call | `AnthropicProvider.intent()` / `structured()` in `src/main/ai/provider.ts` |
+| API call | `AnthropicProvider.intent()` (Claude) and `VllmProvider.intent()` (vLLM) in `src/main/ai/provider.ts` |
 | Checks on the answer | `intentResult()` in `src/main/docreview.ts` |
 | Print the schema | `npx tsx --tsconfig tsconfig.node.json scripts/dev/print-schema.ts [generated\|sent]` |
 
@@ -128,9 +128,15 @@ Every field is required and no other fields are allowed.
 
 ## What the API enforces, and what we check
 
-The schema is sent as the request's structured-output format (`output_config.format`, `type: "json_schema"`), so the model's reply is generated to fit it. The API enforces a **subset** of JSON Schema. Before sending, the Anthropic SDK (`transformJSONSchema`) keeps the parts it can enforce: `type`, `properties`, `items`, `required` and `additionalProperties: false` on every object. Anything else becomes part of the field's `description`, so the model is still told about it. For this schema that means the `enum`s on `confidence` and `favours` (and the `$schema` line) are guidance while the answer is generated, not hard constraints.
+### vLLM
 
-The schema as actually sent:
+The complete schema above (without the `$schema` line) is sent as `response_format: {type: "json_schema", json_schema: {name: "intent_check", schema, strict: true}}` on the OpenAI-compatible chat API. vLLM's structured output (guided decoding) constrains the reply to the schema as written, **including the `enum`s**.
+
+### Claude
+
+The schema is sent as the request's structured-output format (`output_config.format`, `type: "json_schema"`), so the model's reply is generated to fit it. The Anthropic API enforces a **subset** of JSON Schema. Before sending, the Anthropic SDK (`transformJSONSchema`) keeps the parts it can enforce: `type`, `properties`, `items`, `required` and `additionalProperties: false` on every object. Anything else becomes part of the field's `description`, so the model is still told about it. For this schema that means the `enum`s on `confidence` and `favours` (and the `$schema` line) are guidance while the answer is generated, not hard constraints.
+
+The schema as actually sent to Claude:
 
 ```json
 {
@@ -195,6 +201,8 @@ The schema as actually sent:
 }
 ```
 
+### Either way
+
 When the answer comes back it is validated against the **full** schema (`IntentSchema.safeParse`), so an out-of-range value such as `"Medium"` or `"maybe"` is rejected. The request also fails if the model refuses or the answer is cut off. A failed check shows as an error on the paragraph; nothing is guessed.
 
 ## Checks in code before the answer is used
@@ -223,10 +231,10 @@ If any check fails, the paragraph stays blue (to decide) and the right-hand colu
 }
 ```
 
-## Record and replay
+## Recording
 
-Every live answer is saved, keyed by a hash of the task name and the input (the paragraph text and the approved clause), so the same question can be replayed offline. Demo mode replays hand-written answers from `demo/authored/intent.ts`; `npm run demo:build` records them under the exact inputs the app will send, and fails if a paragraph the app would offer to check has no answer.
+With "Record AI responses" on (Settings), every answer is saved, keyed by a hash of the task name and the input (the paragraph text and the approved clause), so answers can be compared later, for example Claude against a vLLM model on the same contracts.
 
 ## Changing the schema
 
-Change `IntentSchema`, then update this page: run the print command above with `generated` and with `sent` and paste the output into the two JSON blocks. `npm run docs:check` (also run in CI) fails if this page no longer matches the code.
+Change `IntentSchema`, then update this page: run the print command above with `generated` and with `sent` and paste the output into the two JSON blocks (the vLLM request uses the first). `npm run docs:check` (also run in CI) fails if this page no longer matches the code.

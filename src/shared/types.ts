@@ -529,24 +529,21 @@ export interface SecurityAlert {
 
 export interface Settings {
   reviewerName: string
-  /** Can resolve security alerts (in demo mode the user also acts as the security team). */
+  /** Can resolve security alerts and release a review from security hold. */
   securityReviewer: boolean
-  demoMode: boolean
+  /** Which AI answers the AI steps: Claude (Anthropic API) or a vLLM server. */
+  aiProvider: 'claude' | 'vllm'
+  /** Claude model. */
   model: string
   hasApiKey: boolean
+  /** vLLM server address (OpenAI-compatible API), e.g. http://192.168.1.20:8000. */
+  vllmUrl: string
+  /** Model name as the vLLM server serves it. */
+  vllmModel: string
+  hasVllmKey: boolean
   recordLiveResponses: boolean
 }
 
-export interface DemoContract {
-  file: string
-  accountId: string
-  contractId: string
-  /** A later draft of another demo contract (offered as "Upload new draft", not on the Start page). */
-  followUpOf?: string
-  title: string
-  description: string
-  path: string
-}
 
 export interface ChatMessage {
   role: 'user' | 'assistant'

@@ -31,11 +31,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Reviews the demo contracts the way the app does and fails if any change
-      # it finds has no authored AI answer (i.e. demo mode would break).
-      - name: Demo data and recordings are consistent
-        run: npm run demo:build
-
       # The AI response schemas documented in docs/ match the code.
       - name: Documentation matches the code
         run: npm run docs:check

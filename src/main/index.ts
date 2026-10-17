@@ -4,12 +4,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
-import type { Account, ContractRecord, ChatMessage, DemoContract, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, ChatMessage, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
-import { DEMO_SCENARIOS } from '@shared/demoScenarios'
-import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
+import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noAiProvider, vllmModels, type AiProvider } from './ai/provider'
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
@@ -17,8 +16,8 @@ import { beforeTheirs, changeKey, changeSets, intentCandidate, marksFor, segment
 import type { ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
 import type { IntentInput } from './ai/tasks'
 import { createHash } from 'node:crypto'
-import { chatSystem, offlineAnswer } from './chat'
-import { applicable, applyScriptedChanges, changeInput, createDocSession, intentInput, intentResult, toChangeReview, type ScriptedChange } from './docreview'
+import { chatSystem } from './chat'
+import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
 
@@ -33,32 +32,25 @@ const defaultUserData = join(app.getPath('appData'), app.getName())
 if (process.env.CLAUSEPILOT_USER_DATA) app.setPath('userData', process.env.CLAUSEPILOT_USER_DATA)
 else if (!app.isPackaged && app.getPath('userData') === defaultUserData) app.setPath('userData', join(app.getPath('appData'), `${app.getName()} (Dev)`))
 const userDir = app.getPath('userData')
-// ---- workspaces ------------------------------------------------------------------
-// Demo and live data never mix. The demo workspace is seeded with the sample library,
-// playbook and history, and replays bundled AI recordings. The live workspace starts
-// empty, as it would on day one for a real team, and records its own live responses.
+// ---- workspace ------------------------------------------------------------------
+// The team's data: reviews, library, playbook, precedents, approvals and the audit log.
+// It starts empty, as it would on day one for a real team.
 
-type Mode = 'demo' | 'live'
 interface Workspace {
-  mode: Mode
   dir: string
   store: Store
   audit: AuditLog
   recordings: RecordingStore
 }
 
-function openWorkspace(mode: Mode): Workspace {
-  const dir = join(userDir, 'workspaces', mode)
-  const store = new Store(dir, join(appRoot, mode === 'demo' ? 'data/seed' : 'data/seed-empty'))
-  const recordings =
-    mode === 'demo'
-      ? new RecordingStore([join(appRoot, 'demo/recordings')])
-      : new RecordingStore([join(dir, 'recordings')], join(dir, 'recordings'))
-  return { mode, dir, store, audit: new AuditLog(join(dir, 'audit.jsonl')), recordings }
+function openWorkspace(): Workspace {
+  const dir = join(userDir, 'workspaces', 'live')
+  const store = new Store(dir, join(appRoot, 'data/seed-empty'))
+  const recordings = new RecordingStore([join(dir, 'recordings')], join(dir, 'recordings'))
+  return { dir, store, audit: new AuditLog(join(dir, 'audit.jsonl')), recordings }
 }
 
-let ws: Workspace
-/** Which workspace each review belongs to, so a review keeps writing to its own workspace after a switch. */
+const ws: Workspace = openWorkspace()
 const sessionWs = new Map<string, Workspace>()
 const sessions = new Map<string, ReviewSession>()
 let win: BrowserWindow | null = null
@@ -67,36 +59,55 @@ let win: BrowserWindow | null = null
 
 const settingsFile = join(userDir, 'settings.json')
 const keyFile = join(userDir, 'anthropic-key.bin')
+const vllmKeyFile = join(userDir, 'vllm-key.bin')
 
-type StoredSettings = Omit<Settings, 'hasApiKey'>
+type StoredSettings = Omit<Settings, 'hasApiKey' | 'hasVllmKey'>
 function loadSettings(): StoredSettings {
-  const defaults: StoredSettings = { reviewerName: userInfo().username, demoMode: true, model: DEFAULT_MODEL, recordLiveResponses: true, securityReviewer: false }
+  const defaults: StoredSettings = {
+    reviewerName: userInfo().username,
+    aiProvider: 'claude',
+    model: DEFAULT_MODEL,
+    vllmUrl: '',
+    vllmModel: '',
+    recordLiveResponses: true,
+    securityReviewer: false
+  }
   return existsSync(settingsFile) ? { ...defaults, ...JSON.parse(readFileSync(settingsFile, 'utf8')) } : defaults
 }
-const settings = (): Settings => ({ ...loadSettings(), hasApiKey: !!apiKey() })
+const settings = (): Settings => ({ ...loadSettings(), hasApiKey: !!apiKey(), hasVllmKey: !!vllmKey() })
 
-/** The API key is encrypted with the OS keychain (safeStorage); it never reaches the renderer. */
-function apiKey(): string | null {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
-  if (!existsSync(keyFile) || !safeStorage.isEncryptionAvailable()) return null
-  return safeStorage.decryptString(readFileSync(keyFile))
+/** Keys are encrypted with the OS keychain (safeStorage); they never reach the renderer. */
+function readKey(file: string): string | null {
+  if (!existsSync(file) || !safeStorage.isEncryptionAvailable()) return null
+  return safeStorage.decryptString(readFileSync(file))
 }
+const apiKey = () => process.env.ANTHROPIC_API_KEY || readKey(keyFile)
+const vllmKey = () => process.env.VLLM_API_KEY || readKey(vllmKeyFile)
 
-/** Live mode without a key: deterministic checks still run; every AI check explains what's missing. */
-const noKey = () => Promise.reject(new Error('No Anthropic API key. Add one in Settings to ask the AI.'))
-const noKeyProvider: AiProvider = { kind: 'anthropic', intent: noKey, overrides: noKey, position: noKey, change: noKey }
-
+/** The AI chosen in Settings: Claude, or a vLLM server (for example one on the local network). */
 function provider(): AiProvider {
   const s = loadSettings()
+  let ai: AiProvider
+  if (s.aiProvider === 'vllm') {
+    if (!s.vllmUrl || !s.vllmModel) return noAiProvider('No vLLM server set up. Add its address and model in Settings.')
+    ai = new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() })
+  } else {
+    const key = apiKey()
+    if (!key) return noAiProvider('No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
+    ai = new AnthropicProvider(key, s.model)
+  }
+  return s.recordLiveResponses ? new RecordingProvider(ai, ws.recordings) : ai
+}
+
+/** The chat panel's model: the same AI, streaming. */
+function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void) => Promise<string> } | null {
+  const s = loadSettings()
+  if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() }) : null
   const key = apiKey()
-  if (s.demoMode) return new ReplayProvider(ws.recordings)
-  if (!key) return noKeyProvider
-  const live = new AnthropicProvider(key, s.model)
-  return s.recordLiveResponses ? new RecordingProvider(live, ws.recordings) : live
+  return key ? new AnthropicProvider(key, s.model) : null
 }
 
 const actor = () => loadSettings().reviewerName
-ws = openWorkspace(loadSettings().demoMode ? 'demo' : 'live')
 
 // ---- window ---------------------------------------------------------------------
 
@@ -167,64 +178,20 @@ function session(id: string): ReviewSession {
 }
 
 const resolvePath = (p: string) => (isAbsolute(p) ? p : join(appRoot, p))
+
 const counterpartyOf = (s: ReviewSession) => s.docName.split(/[-_ ]/)[0]
 
 // ---- IPC: settings ------------------------------------------------------------------
 
 ipcMain.handle('settings:get', () => settings())
 ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
-  const prev = loadSettings()
-  const next = { ...prev, ...patch }
+  const next = { ...loadSettings(), ...patch }
   writeFileSync(settingsFile, JSON.stringify(next, null, 2))
   ws.audit.append(next.reviewerName, 'settings.changed', null, { ...patch })
-  if (next.demoMode !== prev.demoMode) switchWorkspace(next.demoMode ? 'demo' : 'live')
   return settings()
 })
 
-function switchWorkspace(mode: Mode) {
-  ws = openWorkspace(mode)
-  sessions.clear()
-  ws.audit.append(actor(), 'workspace.opened', null, { mode })
-}
-
-/** Wipe the demo workspace back to its seeded state (so every demo starts the same way). */
-ipcMain.handle('demo:reset', () => {
-  if (ws.mode === 'demo') sessions.clear()
-  rmSync(join(userDir, 'workspaces', 'demo'), { recursive: true, force: true })
-  if (ws.mode === 'demo') ws = openWorkspace('demo')
-  return true
-})
-
-/**
- * Set up a demo from a clean slate: reset the demo workspace, then review any
- * earlier drafts the scenario needs (instant replay, scripted decisions) so the
- * demo starts exactly where its story begins.
- */
-ipcMain.handle('demo:prepare', async (_e, scenarioId: string) => {
-  const scenario = DEMO_SCENARIOS.find((d) => d.id === scenarioId)
-  if (!scenario) throw new Error('Unknown demo.')
-  if (!loadSettings().demoMode) throw new Error('Switch demo mode on to run a demo.')
-  sessions.clear()
-  rmSync(join(userDir, 'workspaces', 'demo'), { recursive: true, force: true })
-  ws = openWorkspace('demo')
-  const w = ws
-  for (const step of scenario.history) {
-    const demo = demoContracts().find((d) => d.file === step.file)!
-    const s = await startReview(w, demo.path, scenario.contractId, 'demo')
-    applyScripted(w, s, step.changes, 'demo-setup')
-    w.store.saveSession(s)
-  }
-  w.audit.append(actor(), 'demo.prepared', null, { scenario: scenario.id, earlierDrafts: scenario.history.length })
-  return true
-})
-
-/** Scripted responses to change sets (demo set-up), recorded as history like a reviewer's. */
-function applyScripted(w: Workspace, s: ReviewSession, list: ScriptedChange[], by: string) {
-  for (const set of applyScriptedChanges(s, list, by)) recordPrecedent(w, s, set)
-}
-
 ipcMain.handle('workspace:summary', () => ({
-  mode: ws.mode,
   library: ws.store.library().length,
   playbook: ws.store.playbook().length,
   precedents: ws.store.precedents().length,
@@ -232,24 +199,30 @@ ipcMain.handle('workspace:summary', () => ({
   openAlerts: ws.store.securityAlerts().filter((a) => a.status === 'open').length,
   nominations: ws.store.nominations().length
 }))
-ipcMain.handle('settings:setApiKey', (_e, key: string | null) => {
-  if (!key) rmSync(keyFile, { force: true })
+
+function saveKey(file: string, key: string | null, envName: string) {
+  if (!key) rmSync(file, { force: true })
   else {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('OS secure storage is not available; set ANTHROPIC_API_KEY instead.')
-    writeFileSync(keyFile, safeStorage.encryptString(key.trim()))
+    if (!safeStorage.isEncryptionAvailable()) throw new Error(`OS secure storage is not available; set ${envName} instead.`)
+    writeFileSync(file, safeStorage.encryptString(key.trim()))
   }
+}
+ipcMain.handle('settings:setApiKey', (_e, key: string | null) => {
+  saveKey(keyFile, key, 'ANTHROPIC_API_KEY')
   ws.audit.append(actor(), key ? 'settings.api-key-set' : 'settings.api-key-cleared', null, {})
   return settings()
 })
+ipcMain.handle('settings:setVllmKey', (_e, key: string | null) => {
+  saveKey(vllmKeyFile, key, 'VLLM_API_KEY')
+  ws.audit.append(actor(), key ? 'settings.vllm-key-set' : 'settings.vllm-key-cleared', null, {})
+  return settings()
+})
+/** The models a vLLM server offers (also a connection test). */
+ipcMain.handle('ai:vllmModels', (_e, url: string) => vllmModels({ url, apiKey: vllmKey() }))
 
-// ---- IPC: documents & pipeline ------------------------------------------------------
-
-const demoContracts = (): DemoContract[] => JSON.parse(readFileSync(join(appRoot, 'demo/contracts/index.json'), 'utf8'))
-ipcMain.handle('demo:list', () => demoContracts())
+// ---- IPC: documents ------------------------------------------------------------------
 
 ipcMain.handle('file:open', async () => {
-  // Demo mode only works with the bundled contracts (they are the ones with recorded AI responses).
-  if (loadSettings().demoMode) throw new Error('Opening your own contracts is disabled in demo mode. Switch demo mode off to open a file.')
   const res = await dialog.showOpenDialog(win!, {
     title: 'Open a contract',
     properties: ['openFile'],
@@ -286,7 +259,7 @@ ipcMain.handle('contracts:versions', (_e, contractId: string) => ws.store.listSe
  * or found by comparing with what we sent / our standard wording). Nothing goes
  * to the AI until the reviewer asks; only the local security screen runs.
  */
-async function startReview(w: Workspace, path: string, contractId: string | undefined, mode: 'live' | 'demo'): Promise<ReviewSession> {
+async function startReview(w: Workspace, path: string, contractId: string | undefined): Promise<ReviewSession> {
   const doc = await parseFile(resolvePath(path))
   const blocks = await readBlocks(resolvePath(path), doc.sourceType)
   // A draft of a known contract becomes its next version, compared with the one before.
@@ -295,7 +268,7 @@ async function startReview(w: Workspace, path: string, contractId: string | unde
   const versions = contract ? w.store.versionsOf(contract.id) : []
   const last = versions[versions.length - 1]
   const prev = last ? (sessions.get(last.id) ?? last) : undefined
-  const s = createDocSession(doc, blocks, path, mode, { prev: prev?.doc ? prev : undefined, library: w.store.library() })
+  const s = createDocSession(doc, blocks, path, 'live', { prev: prev?.doc ? prev : undefined, library: w.store.library() })
   if (contract) {
     Object.assign(s, { accountId: contract.accountId, contractId: contract.id, version: (prev?.version ?? 0) + 1 })
     if (prev) s.previous = { sessionId: prev.id, version: prev.version ?? 1 }
@@ -307,7 +280,7 @@ async function startReview(w: Workspace, path: string, contractId: string | unde
   sessions.set(s.id, s)
   sessionWs.set(s.id, w)
   const d = s.doc!
-  w.audit.append(mode === 'demo' && !win ? 'system' : actor(), 'session.created', s.id, {
+  w.audit.append(actor(), 'session.created', s.id, {
     docName: s.docName,
     sha256: s.fileSha256,
     blocks: d.blocks.length,
@@ -326,9 +299,7 @@ async function startReview(w: Workspace, path: string, contractId: string | unde
 }
 
 ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => {
-  if (loadSettings().demoMode && !demoContracts().some((d) => d.path === path))
-    throw new Error('Demo mode can only review the demo contracts. Switch demo mode off to review your own.')
-  const s = await startReview(ws, path, contractId, loadSettings().demoMode ? 'demo' : 'live')
+  const s = await startReview(ws, path, contractId)
   persist(s)
   return s
 })
@@ -368,7 +339,7 @@ function syncSecurityAlert(w: Workspace, s: ReviewSession) {
 }
 
 const alertFor = (sessionId: string) => ws.store.securityAlerts().find((a) => a.sessionId === sessionId)
-const canResolveSecurity = () => loadSettings().demoMode || loadSettings().securityReviewer
+const canResolveSecurity = () => loadSettings().securityReviewer
 
 ipcMain.handle('security:list', () => ws.store.securityAlerts())
 
@@ -839,18 +810,11 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
 ipcMain.handle('chat:send', async (_e, sessionId: string, history: ChatMessage[], requestId: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
-  const key = apiKey()
   const question = history[history.length - 1]?.content ?? ''
   ws.audit.append(actor(), 'chat.question', s.id, { question })
-  if (loadSettings().demoMode || !key) {
-    const answer = offlineAnswer(s, question)
-    for (const chunk of answer.match(/.{1,24}/gs) ?? []) {
-      send('chat:delta', { requestId, text: chunk })
-      await new Promise((r) => setTimeout(r, 18))
-    }
-    return answer
-  }
-  return new AnthropicProvider(key, loadSettings().model).chat(chatSystem(s), history, (text) => send('chat:delta', { requestId, text }))
+  const model = chatModel()
+  if (!model) throw new Error(loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
+  return model.chat(chatSystem(s), history, (text) => send('chat:delta', { requestId, text }))
 })
 
 // ---- IPC: knowledge base -------------------------------------------------------------------
@@ -881,7 +845,7 @@ ipcMain.handle('kb:promote', (_e, id: string, title: string, category: string) =
 })
 
 // ---- IPC: playbook changes (proposed, then approved by the playbook owner) ------------
-// There are no accounts in this demo, so the same local user can both propose and approve,
+// There are no user accounts, so the same local user can both propose and approve,
 // but the flow, data and audit trail are the ones a multi-user deployment would need.
 
 ipcMain.handle('kb:playbookProposals', () => ws.store.playbookProposals())

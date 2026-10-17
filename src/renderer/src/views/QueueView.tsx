@@ -6,7 +6,7 @@ import { Icon } from '../lib/icons'
  * Everything waiting for an owner's decision. Playbook changes and library
  * nominations both change how every future contract is reviewed, so neither
  * takes effect on the say-so of the person who suggested it.
- * (No accounts in this demo: the same user can approve, but the flow is real.)
+ * (No user accounts yet: the same user can approve, but the flow is real.)
  */
 export function ApprovalsView({
   nominations,

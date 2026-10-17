@@ -14,9 +14,10 @@ const api: Api = {
   settings: {
     get: () => invoke('settings:get'),
     save: (patch) => invoke('settings:save', patch),
-    setApiKey: (key) => invoke('settings:setApiKey', key)
+    setApiKey: (key) => invoke('settings:setApiKey', key),
+    setVllmKey: (key) => invoke('settings:setVllmKey', key)
   },
-  demo: { list: () => invoke('demo:list'), reset: () => invoke('demo:reset'), prepare: (id) => invoke('demo:prepare', id) },
+  ai: { vllmModels: (url) => invoke('ai:vllmModels', url) },
   workspace: { summary: () => invoke('workspace:summary') },
   accounts: {
     list: () => invoke('accounts:list'),

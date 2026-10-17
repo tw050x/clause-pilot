@@ -9,20 +9,26 @@ npm install
 npm run dev          # launches the Electron app
 ```
 
-The app opens in **demo mode**: three demo contracts with recorded AI responses, no API key and no network needed. To run live, open **Settings**, add an Anthropic API key (or set `ANTHROPIC_API_KEY`) and switch demo mode off.
+Reviewing, editing, the marked-up copy and the email work without any AI. The AI steps (intent check, change review, Ask AI) run only when you ask, on the AI chosen in **Settings → AI**:
+
+- **Claude:** add an Anthropic API key (or set `ANTHROPIC_API_KEY`) and pick the model.
+- **vLLM:** your own model on a vLLM server (OpenAI-compatible API), for example on your local network. Enter its address (for example `http://192.168.1.20:8000`), press **Connect** to list the models it serves and pick one. An API key is optional (only if the server was started with `--api-key`; or set `VLLM_API_KEY`). Answers are constrained to each task's JSON Schema through vLLM's structured output and validated again in code.
+
+The title bar shows which AI is in use.
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Run the app with hot reload |
 | `npm run build && npm start` | Production build and preview |
 | `npm run typecheck` | Type-check main, preload and renderer |
-| `npm run demo:build` | Regenerate seed data, demo contracts and demo recordings |
+| `npm run samples:build` | Regenerate the sample contracts (`demo/contracts/`) and sample knowledge (`data/seed/`) |
+| `npm run docs:check` | Check the documented AI schemas match the code |
 | `npm run pack` | Build an unpacked app for this machine (in `release/`) |
 | `npm run release` | Build installers for this machine (in `release/`) |
 
 ## Where data is stored
 
-Settings, the encrypted API key, and the demo and live workspaces live in the app's data folder:
+Settings, the encrypted API keys and the workspace (reviews, library, playbook, precedents, approvals, audit log, recorded AI answers) live in the app's data folder:
 
 | Running | Folder (macOS; other platforms use their usual app-data location) |
 |---|---|
@@ -33,24 +39,14 @@ Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example 
 
 ## CI and releases
 
-- **Prerequisites** (`.github/workflows/prerequisites.yml`) runs on every push to every branch. It installs dependencies, typechecks, builds, and runs `demo:build`, which reviews the demo contracts the way the app does and fails if any change the app finds has no recorded AI answer (or an answer is for a change that no longer exists).
+- **Prerequisites** (`.github/workflows/prerequisites.yml`) runs on every push to every branch. It installs dependencies, typechecks, builds, and checks that the documented AI schemas match the code.
 - **Release** (`.github/workflows/release.yml`) runs when a version tag is pushed (`git tag v0.2.0 && git push --tags`) or manually from the Actions tab. It builds a macOS `.dmg` (Apple silicon and Intel), a Windows installer and a Linux AppImage, and attaches them to a draft GitHub release.
 
 Builds are not code-signed yet. On macOS, right-click the app and choose Open the first time; on Windows, choose "More info → Run anyway".
 
-## Demos
+## Sample contracts
 
-The **Demos** page (linked from Start; opening it switches to demo mode) has short, focused guided demos. Each starts from a freshly reset demo workspace, with earlier drafts reviewed for you where the story needs them, so they can be run in any order. **Simulate upload** skips the tour and goes straight to the review. Demo mode replays recorded AI answers, so nothing leaves the computer.
-
-| Demo | Shows |
-|---|---|
-| Initech: the fast lane | Our NDA signed back with no tracked changes: compared with our approved wording, three paragraphs differ out of twenty-seven |
-| Acme: a redlined NDA | Their tracked changes answered in place: restore, strike, reply to their comment, accept; "seen before" and Ask AI on the residuals clause |
-| Globex: the hidden trap | A PDF with no tracked changes: special conditions that aren't in our template undo the liability cap, and a prompt-injection attempt puts the review on security hold |
-| Second draft | Acme's clean reply, compared with what we sent: one paragraph changed back without tracking, answered the same way as before in one click |
-| Third draft | Our wording is in, but a one-sided publicity clause appeared without tracking |
-| Add to the library | Accept and nominate wording, approve it, and future drafts are compared with it |
-| Add to the playbook | Propose a standard position and approve it as the owner |
+`demo/contracts/` has sample contracts to upload by hand (Open a contract, or a contract's Upload draft): Word drafts with tracked changes and comments (`Acme-Mutual-NDA-redlined.docx`, then its later drafts `-v2` and `-v3` for the same contract), a text NDA on our paper (`Initech-Mutual-NDA.txt`) and a PDF order form with a hidden override and a prompt-injection attempt (`Globex-Order-Form-Burp-Suite-DAST.pdf`). `data/seed/` has a matching sample library and playbook; the app starts with an empty workspace, as a real team would.
 
 ## Real-world test contracts
 
@@ -105,7 +101,7 @@ Each uploaded draft becomes a new **version** of its contract, compared with wha
 - **The AI never changes anything.** Its suggestions are applied only by the reviewer, the model's output is schema-constrained, and paragraph ids it returns are checked (suggested edits must be inside the change).
 - **Contracts are untrusted input.** Counterparty text is wrapped in tags and the model is told it is data. A local screen flags text addressed to an AI *before* anything could be sent; the review then goes on security hold (no AI, nothing sent back) until the security team has looked at it.
 - **The knowledge base learns, with a human gate.** Every decision becomes negotiation history for "seen before". Accepted wording can be *nominated*; promoting it to the library is a separate, audited approval.
-- **Record/replay.** Every live AI response is saved, keyed by a hash of its task and the contract and change it was about. That gives demo mode, offline replay, and a fixed baseline for evaluating prompt or model changes.
+- **Recording.** With recording on, every AI answer is saved, keyed by a hash of its task and input. That gives a fixed baseline for evaluating prompt or model changes, for example Claude against a vLLM model.
 - **Auditability.** An append-only JSONL log in which each entry includes the hash of the previous one. The app verifies the chain and exports a per-review record (each change, how it was answered, by whom) as Markdown.
 - **Local-first.** Data is plain JSON in the app's user-data folder. The API key is encrypted with the OS keychain (Electron `safeStorage`) and never reaches the renderer. The renderer is sandboxed and context-isolated, with a strict CSP.
 
@@ -126,7 +122,7 @@ src/main/
   engine/matcher.ts      precedent index (BM25 via MiniSearch)
   engine/injection.ts    local prompt-injection screen
   docreview.ts           creating a review; the AI input for a change set, and checking its answer
-  ai/                    task schemas (Zod), prompts, Claude provider, replay provider, recorder
+  ai/                    task schemas (Zod), prompts, Claude and vLLM providers, recorder
   redline/docx.ts        our response as a marked-up .docx (tracked changes and comments)
   email.ts, chat.ts      cover email; the chat panel's context
   store.ts, audit.ts     JSON store; hash-chained audit log
@@ -135,16 +131,14 @@ src/shared/
   changes.ts             change sets and their status
   diff.ts                word diff, and our edit layered over their redline
 src/renderer/            React UI (views/DocReview.tsx is the review screen)
-scripts/                 seed data, demo contracts, demo builder, test contracts; dev/ has small CLI checks
-demo/authored/           hand-written demo AI answers, compiled into demo/recordings by demo:build
+scripts/                 sample data and contracts, test contracts, docs check; dev/ has small CLI checks
 ```
 
-`npx tsx --tsconfig tsconfig.node.json scripts/dev/sets.ts <files…>` prints the change sets the app finds in contracts (`--history` treats the files as consecutive versions of the Acme demo).
+`npx tsx --tsconfig tsconfig.node.json scripts/dev/sets.ts <files…>` prints the change sets the app finds in contracts.
 
 ## Limitations
 
 - Editing is a paragraph at a time (as text), not live typing into the redline. Comments are anchored to the paragraph; the quoted text is kept but not highlighted in Word.
 - Grouping uses numbering (typed, or Word's automatic numbering). Unnumbered continuation paragraphs join the change above them. Scanned PDFs would need OCR. Legacy `.doc` files are rejected with a "save as .docx" message.
-- Paragraph alignment between drafts uses a similarity threshold (0.45) tuned on the demo set only.
-- Demo recordings are authored, not captured from a live model. Run live with recording on to capture real ones.
+- Paragraph alignment between drafts uses a similarity threshold (0.45) tuned on the sample contracts only.
 - Single user, local data. A team deployment needs a shared store and identity for the audit log.

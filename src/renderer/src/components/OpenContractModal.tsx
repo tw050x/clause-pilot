@@ -75,7 +75,7 @@ export function OpenContractModal({
             </span>
           </div>
           <p className="upload-note" style={{ marginTop: 0 }}>
-            Needs an Anthropic API key (Settings). The contract’s text is sent to Anthropic’s API for the AI checks, so only open documents you’re allowed to share outside the company.
+            Reviewing works without AI. When you ask the AI about something, the contract’s text is sent to the AI set in Settings (Claude, or your vLLM server), so only open documents you’re allowed to share with it.
           </p>
           {error && <div className="banner danger">{error}</div>}
         </div>

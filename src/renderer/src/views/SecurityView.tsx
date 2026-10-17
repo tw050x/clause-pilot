@@ -11,13 +11,11 @@ import { Highlighted } from '../components/Highlighted'
 export function SecurityView({
   alerts,
   canResolve,
-  demoMode,
   onChange,
   onOpenReview
 }: {
   alerts: SecurityAlert[]
   canResolve: boolean
-  demoMode: boolean
   onChange: (a: SecurityAlert[]) => void
   onOpenReview: (sessionId: string) => void
 }) {
@@ -35,7 +33,6 @@ export function SecurityView({
           <Icon name="shield" /> You can see alerts, but only the security team can resolve them. (Settings → “I’m on the security team”.)
         </div>
       )}
-      {canResolve && demoMode && <p className="faint" style={{ marginTop: 0 }}>In demo mode you also act as the security team.</p>}
 
       <h3 className="approvals-h">
         Open <span className="faint">{open.length}</span>
