@@ -13,9 +13,9 @@ import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
-import type { AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
+import type { AiAnswerPart, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
-import { changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
+import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem } from './chat'
@@ -882,6 +882,13 @@ async function runIntent(s: ReviewSession, blocks: DocBlock[]) {
   return results.sort((x, y) => order.get(x.b.id)! - order.get(y.b.id)!)
 }
 
+/** Model prose that names paragraphs by their ids ("clause b8") names them by number instead ("§2.2"). */
+const prose = (d: DocReview) => (t: string) =>
+  t.replace(/\b(?:(clause|paragraph|section)s?\s+)?(b\d+(?:-\w+)?)\b/gi, (m, _w, id: string) => {
+    const b = d.blocks.find((x) => x.id === id)
+    return b ? whereOf(d, b) : m
+  })
+
 /** What each task asks, as posted to Ask AI. */
 function questionFor(kind: AiTaskKind, places: string, quote: string): string {
   const q = quote.length > 400 ? `${quote.slice(0, 400).trimEnd()}…` : quote
@@ -931,6 +938,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
     persist(s)
   }
+  const done = (parts: AiAnswerPart[], raw: unknown) => finish({ status: 'done', parts, answer: answerMarkdown(parts), raw })
   const limit = setTimeout(
     () => finish({ status: 'error', error: `No answer after ${AI_TASK_LIMIT_MS / 60_000} minutes. The AI server may be busy; ask again.` }),
     AI_TASK_LIMIT_MS
@@ -938,12 +946,21 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
   ;(async () => {
     if (task.kind === 'intent') {
       const results = await runIntent(s, blocks.filter((b) => intentCandidate(d, b)))
-      finish({ status: 'done', answer: intentAnswer(results.map((r) => ({ where: whereOf(d, r.b), ...r }))), raw: results.map((r) => ({ paragraph: whereOf(d, r.b), response: r.out ?? null, error: r.error })) })
+      const library = w.store.library()
+      const approved = (id?: string) => library.find((c) => c.id === id)
+      done(
+        intentAnswer(results.map((r) => ({ where: whereOf(d, r.b), blockId: r.b.id, ...r, approved: approved(r.check?.same ? undefined : r.out?.best_match_id) }))),
+        results.map((r) => ({ paragraph: whereOf(d, r.b), response: r.out ?? null, error: r.error }))
+      )
     } else if (task.kind === 'playbook') {
       const ai = provider()
       const clauses: ClauseRef[] = blocks.map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) })).filter((c) => c.text.trim())
       const ids = new Set(clauses.map((c) => c.id))
-      const where = (xs: string[]) => [...new Set(xs.filter((x) => ids.has(x)).map((x) => whereOf(d, d.blocks.find((b) => b.id === x)!)))].join(', ')
+      // The clauses it names, in the highlight, as a link to them.
+      const place = (xs: string[]) => {
+        const blockIds = [...new Set(xs.filter((x) => ids.has(x)))]
+        return blockIds.length ? { label: [...new Set(blockIds.map((x) => whereOf(d, d.blocks.find((b) => b.id === x)!)))].join(', '), blockIds } : undefined
+      }
       const results = await Promise.all(
         applicable(w.store.playbook(), s.contractType).map(async (position) => {
           try {
@@ -952,13 +969,13 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
               s.aiInjectionReports.push(`Playbook check (${position.title}): ${out.injection_notes.trim()}`)
               syncSecurityAlert(w, s)
             }
-            return { position, out: { ...out, clause_ids: out.clause_ids.filter((x) => ids.has(x)) }, raw: out, where }
+            return { position, out: { ...out, clause_ids: out.clause_ids.filter((x) => ids.has(x)) }, raw: out }
           } catch (e) {
-            return { position, error: e instanceof Error ? e.message : String(e), where }
+            return { position, error: e instanceof Error ? e.message : String(e) }
           }
         })
       )
-      finish({ status: 'done', answer: playbookAnswer(results), raw: results.map((r) => ({ position: r.position.id, response: 'raw' in r ? r.raw : null, error: 'error' in r ? r.error : undefined })) })
+      done(playbookAnswer(results, place, prose(d)), results.map((r) => ({ position: r.position.id, response: 'raw' in r ? r.raw : null, error: 'error' in r ? r.error : undefined })))
     } else if (task.kind === 'changes') {
       // Their changes in the highlight, deleted paragraphs included.
       const sets = changeSets(d).filter((x) => x.blocks.some((b) => task.blockIds.includes(b.id)) && x.blocks.some((b) => hasOpenChanges(d, b)))
@@ -966,9 +983,12 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
       await askAi(s, sets.map((x) => x.id), raws)
       const results = sets.map((x) => {
         const r = d.ai?.[x.id]
-        return { where: x.where, review: r?.status === 'done' ? r.data : undefined, error: r?.status === 'error' ? r.error : undefined }
+        return { where: x.where, blockIds: x.blocks.map((b) => b.id), review: r?.status === 'done' ? r.data : undefined, error: r?.status === 'error' ? r.error : undefined }
       })
-      finish({ status: 'done', answer: changesAnswer(results), raw: sets.map((x) => ({ change: x.where, response: raws[x.id] ?? null })) })
+      done(
+        changesAnswer(results, (id) => whereOf(d, d.blocks.find((b) => b.id === id)!)),
+        sets.map((x) => ({ change: x.where, response: raws[x.id] ?? null }))
+      )
     } else {
       const model = chatModel()
       if (!model) throw new Error(loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')

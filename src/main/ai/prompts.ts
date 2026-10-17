@@ -43,7 +43,7 @@ Does the incoming clause have the same legal effect as one of the approved claus
 
 export const DOCUMENT_SYSTEM = `You support a company's in-house legal team ("us"). Our approved clauses and standard positions are given; the other party to the contract is the counterparty.
 You analyse whole contracts for one specific question at a time. The question is given after the contract.
-Answer only that question. Be precise and cite clause ids exactly as given in the id attribute.
+Answer only that question. Be precise and cite clause ids exactly as given in the id attribute in id fields; in prose, name clauses by their number (e.g. "clause 2.2"), never by id.
 
 ${UNTRUSTED}`
 

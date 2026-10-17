@@ -402,6 +402,31 @@ export interface DocReview {
   aiRuns?: AiTaskRun[]
 }
 
+/**
+ * An AI answer as shown: Markdown text, and finding cards (one per paragraph, position or change)
+ * that carry actions such as applying the suggested wording.
+ */
+export type AiAnswerPart =
+  | { type: 'text'; markdown: string }
+  | {
+      type: 'finding'
+      title: string
+      /** A word or two: "Deviates", "Meets our standard", "Same intent". */
+      verdict: string
+      tone: 'good' | 'warn' | 'bad' | 'neutral'
+      /** The paragraphs it is about, as a link to them. */
+      where?: { label: string; blockIds: string[] }
+      /** Markdown. */
+      body?: string
+      actions: AiAction[]
+    }
+
+export type AiAction =
+  /** Make this our wording for the paragraph (a tracked edit, like typing it). */
+  | { type: 'apply-wording'; blockId: string; where: string; text: string; label?: string }
+  /** Add this comment to them on the paragraph. */
+  | { type: 'comment'; blockId: string; where: string; text: string }
+
 /** The AI tasks offered for highlighted text. */
 export type AiTaskKind = 'intent' | 'playbook' | 'changes' | 'explain'
 
@@ -420,8 +445,10 @@ export interface AiTaskRun {
   status: 'running' | 'done' | 'error'
   by: string
   at: string
-  /** The answer, in Markdown, written from the server's response. */
+  /** The answer, in Markdown, written from the server's response (what Ask AI keeps as the chat's context). */
   answer?: string
+  /** The same answer, structured for display: text, and a card per finding with what can be done about it. */
+  parts?: AiAnswerPart[]
   /** The server's response(s), exactly as returned (structured tasks: the JSON). */
   raw?: unknown
   error?: string

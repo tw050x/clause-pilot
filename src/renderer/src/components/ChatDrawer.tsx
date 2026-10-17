@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AiTaskRun, ChatMessage, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
+import { AiAnswer } from './AiAnswer'
 import { Chevron, Icon } from '../lib/icons'
 
 /** A message as shown: from a card, an assistant message waits for its AI task (`runId`). */
@@ -18,14 +19,17 @@ export function ChatPanel({
   session,
   inject,
   onReturn,
-  onShowText
+  onShowText,
+  onChange
 }: {
   session: ReviewSession | null
+  /** The review after an action in an answer (applying suggested wording). */
+  onChange: (s: ReviewSession) => void
   inject: ChatInject | null
   /** Back to the Review tab. */
   onReturn: () => void
-  /** Back to the review, with this text highlighted again. */
-  onShowText: (blockIds: string[], quote: string) => void
+  /** Back to the review, with this text highlighted again (and these paragraphs within it pointed at). */
+  onShowText: (blockIds: string[], quote: string, flash?: string[]) => void
 }) {
   const [history, setHistory] = useState<Shown[]>([])
   const [input, setInput] = useState('')
@@ -99,6 +103,13 @@ export function ChatPanel({
     }
   }
 
+  // A card's answer, with its finding cards and actions; anything else as Markdown.
+  const answer = (m: Shown) => {
+    const run = m.runId && !m.pending ? session?.doc?.aiRuns?.find((r) => r.id === m.runId) : undefined
+    if (!run?.parts || !session) return <Markdown text={m.content} />
+    return <AiAnswer parts={run.parts} session={session} onChange={onChange} onShow={(ids) => onShowText(run.blockIds, run.quote, ids)} />
+  }
+
   return (
     <div className="chat">
       <div className="chat-log" ref={logRef}>
@@ -122,7 +133,7 @@ export function ChatPanel({
           ) : (
             // The AI's answer: Markdown, in the flow of the page, not in a bubble.
             <div key={i} className="msg assistant">
-              {m.pending && !m.content ? <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} /> : <Markdown text={m.content} />}
+              {m.pending && !m.content ? <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} /> : answer(m)}
               {/* An answer to a card, until the chat goes on: back to the review, where it's on the card too. */}
               {m.runId && !m.pending && i === history.length - 1 && (
                 <button className="btn sm msg-return" onClick={onReturn}>

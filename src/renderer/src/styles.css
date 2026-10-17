@@ -820,3 +820,25 @@ del.us-del ins.th-ins { color: inherit; }
 /* Under an answer to an AI card in Ask AI: back to the review. */
 .msg-return { margin-top: 10px; }
 .back-chevron { display: inline-flex; transform: rotate(180deg); }
+
+/* ---- structured AI answers: text, then a card per finding with its actions ---- */
+.ai-answer { display: flex; flex-direction: column; gap: 8px; }
+.ai-answer > .md p:last-child { margin-bottom: 0; }
+.ai-finding { border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; background: var(--surface); }
+.ai-finding .md { padding-top: 4px; font-size: 13px; }
+.ai-finding .md p { margin: 0 0 6px; }
+.ai-finding-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; font-size: 13px; }
+.ai-verdict { flex-shrink: 0; font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+.ai-verdict.good { background: var(--exact-tint); color: var(--exact); }
+.ai-verdict.warn { background: var(--review-tint); color: var(--review); }
+.ai-verdict.bad { background: var(--rejected-tint); color: var(--rejected); }
+.ai-verdict.neutral { background: var(--surface-2); color: var(--text-2); }
+.ai-where.msg-link { margin-top: 5px; }
+.ai-action { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.ai-action-label { font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.ai-action-text { font-family: var(--doc-font); font-size: 13.5px; line-height: 1.5; padding: 7px 9px; border-radius: 6px; background: var(--surface-2); }
+.ai-action-foot { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+.ai-done { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--exact); }
+.msg.assistant .ai-answer { margin-top: 2px; }
+@keyframes ed-flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 16%, transparent); } 100% { background: transparent; } }
+.ed-p.ed-flash { animation: ed-flash 1.6s ease-out; border-radius: 3px; }

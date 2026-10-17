@@ -29,7 +29,7 @@ export function App() {
   // A question posted to Ask AI from an AI card in the review column.
   const [chatInject, setChatInject] = useState<ChatInject | null>(null)
   // Text to highlight again in the review (a link in Ask AI).
-  const [reselect, setReselect] = useState<{ blockIds: string[]; quote: string } | null>(null)
+  const [reselect, setReselect] = useState<{ blockIds: string[]; quote: string; flash?: string[] } | null>(null)
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
@@ -321,10 +321,11 @@ export function App() {
               session={session}
               inject={chatInject}
               onReturn={() => setRightTab('review')}
-              onShowText={(blockIds, quote) => {
+              onShowText={(blockIds, quote, flash) => {
                 setRightTab('review')
-                setReselect({ blockIds, quote })
+                setReselect({ blockIds, quote, flash })
               }}
+              onChange={setSession}
             />
           </div>
         </aside>

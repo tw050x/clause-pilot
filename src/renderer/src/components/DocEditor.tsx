@@ -38,11 +38,50 @@ interface Props {
   onShowComments: (blockId: string) => void
   readOnly?: boolean
   /** Highlight this text again (a new object each time it's asked for). */
-  reselect?: { blockIds: string[]; quote: string } | null
+  /** Select this text again (from Ask AI); `flash` the paragraphs to point at within it. */
+  reselect?: { blockIds: string[]; quote: string; flash?: string[] } | null
 }
 
 /** A redline picked out by selecting text: one of their changes, or one of ours. */
 /** Highlighted text: the paragraph it starts in, every paragraph it touches, and the text. */
+/** The open editor, for pointing at paragraphs from outside it. */
+let flashView: EditorView | null = null
+const FLASH = 'flash'
+/** Paragraphs being pointed at: a passing tint, as a decoration (ProseMirror owns its DOM). */
+const flashPlugin = new Plugin<string[]>({
+  state: {
+    init: () => [],
+    apply: (tr, ids) => (tr.getMeta(FLASH) as string[] | undefined) ?? ids
+  },
+  props: {
+    decorations(state) {
+      const ids = new Set(this.getState(state))
+      if (!ids.size) return null
+      const out: Decoration[] = []
+      state.doc.forEach((node, pos) => {
+        if (ids.has(node.attrs.id)) out.push(Decoration.node(pos, pos + node.nodeSize, { class: 'ed-flash' }))
+      })
+      return DecorationSet.create(state.doc, out)
+    }
+  }
+})
+let flashTimer = 0
+
+/** Point at paragraphs without changing the selection: scroll to the first and flash them. */
+export function flashParagraphs(blockIds: string[]) {
+  const v = flashView
+  if (!v) return
+  document.querySelector(`p[data-block="${blockIds[0]}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  window.clearTimeout(flashTimer)
+  v.dispatch(v.state.tr.setMeta(FLASH, []).setMeta('addToHistory', false))
+  // A frame later, so a repeat flash starts its animation again.
+  requestAnimationFrame(() => {
+    if (flashView !== v) return
+    v.dispatch(v.state.tr.setMeta(FLASH, blockIds).setMeta('addToHistory', false))
+    flashTimer = window.setTimeout(() => flashView === v && v.dispatch(v.state.tr.setMeta(FLASH, []).setMeta('addToHistory', false)), 1600)
+  })
+}
+
 export type Highlight = { blockId: string; blockIds: string[]; quote: string }
 
 export type SelectedChange = { blockId: string; kind: 'theirs'; seg: number } | { blockId: string; kind: 'ours'; op: 'ins' | 'del'; text: string }
@@ -491,7 +530,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             }
           }),
           keymap(baseKeymap),
-          redline
+          redline,
+          flashPlugin
         ]
       }),
       editable: () => !readOnly,
@@ -631,11 +671,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       }
     })
     view.current = editor
+    flashView = editor
     return () => {
       // Leaving the review saves what's typed.
       for (const id of pending.current.keys()) save(id, `type:${id}`)
       editor.destroy()
       view.current = null
+      if (flashView === editor) flashView = null
     }
   }, [session.id])
 
@@ -710,9 +752,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       })
     })
     const norm = (t: string) => t.replace(/\s/g, ' ')
-    let i = norm(flat).indexOf(norm(reselect.quote))
+    let i = reselect.quote.trim() ? norm(flat).indexOf(norm(reselect.quote)) : -1
     let len = reselect.quote.length
-    // Changed since: the paragraphs as they are.
+    // Changed since (or no quote): the paragraphs as they are.
     if (i < 0) {
       i = 0
       len = flat.length
@@ -724,7 +766,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     v.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to + 1)).scrollIntoView())
     window.setTimeout(() => {
       reportRef.current?.(v)
-      v.domAtPos(from).node.parentElement?.closest('p')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (reselect.flash?.length) flashParagraphs(reselect.flash)
+      else v.domAtPos(from).node.parentElement?.closest('p')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, 0)
   }, [reselect])
 

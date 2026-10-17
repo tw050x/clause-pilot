@@ -69,9 +69,11 @@ export type OverridesOut = z.infer<typeof OverridesSchema>
 export const PositionSchema = z.object({
   status: z.enum(['compliant', 'deviation', 'missing', 'not-applicable']),
   clause_ids: z.array(z.string()).describe('Clauses relevant to this position (empty if missing or not applicable).'),
-  deviation: z.string().describe('What differs from our standard position; empty if compliant.'),
+  deviation: z.string().describe('What differs from our standard position, naming clauses by their number; empty if compliant.'),
   severity: z.enum(['high', 'medium', 'low']),
-  suggested_redline: z.string().describe('Replacement wording we would propose; empty if compliant.'),
+  suggested_redline: z
+    .string()
+    .describe('The complete wording we would propose for the first clause in clause_ids, to replace that clause\'s text as it stands (without its number), ready to drop in. Not instructions or commentary. Empty if compliant or no wording change would fix it.'),
   within_fallback: z.boolean().describe('True if the contract position is within our acceptable fallback.'),
   ...injection
 })

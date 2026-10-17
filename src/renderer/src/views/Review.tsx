@@ -16,7 +16,7 @@ interface Props {
   /** An AI card was used: show Ask AI with its question (the task is already running). */
   onAskAi: (runId: string, question: string) => void
   /** Highlight this text again (from a link in Ask AI). */
-  reselect?: { blockIds: string[]; quote: string } | null
+  reselect?: { blockIds: string[]; quote: string; flash?: string[] } | null
 }
 
 /** A review: the document screen. Reviews saved by earlier versions (clause by clause) can't be reopened. */

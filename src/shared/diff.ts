@@ -13,7 +13,7 @@ export interface DiffOp {
  * of `old`. Used both to show our edits on screen and to write them into the
  * Word file as tracked changes, so the two always agree.
  */
-export function diffWords(old: string, next: string): DiffOp[] {
+export function diffWords(old: string, next: string, wholeWords = false): DiffOp[] {
   const tok = (s: string) => {
     const out: { word: string; text: string; at: number }[] = []
     for (const m of s.matchAll(/\S+\s*/g)) out.push({ word: m[0].trim(), text: m[0], at: m.index! })
@@ -59,6 +59,7 @@ export function diffWords(old: string, next: string): DiffOp[] {
   }
   // Within a replaced word, mark only the characters that changed ("regarded" → "regar": "ded"
   // struck), as Word does. Only shared runs of two or more characters are kept.
+  if (wholeWords) return ops
   for (const op of ops) {
     if (op.to === op.from || !op.insert) continue
     const gone = old.slice(op.from, op.to)
@@ -137,7 +138,7 @@ export function overlay(segments: TrackedSegment[], ours: string | undefined): M
 }
 
 /** A word-level diff from `old` to `next`, as redline segments (for changes found by comparison). */
-export function diffSegments(old: string, next: string, author?: string): TrackedSegment[] {
+export function diffSegments(old: string, next: string, author?: string, wholeWords = false): TrackedSegment[] {
   const out: TrackedSegment[] = []
   const push = (op: TrackedSegment['op'], text: string) => {
     if (!text) return
@@ -146,7 +147,7 @@ export function diffSegments(old: string, next: string, author?: string): Tracke
     else out.push(op === 'same' ? { op, text } : { op, text, author })
   }
   let at = 0
-  for (const op of diffWords(old, next)) {
+  for (const op of diffWords(old, next, wholeWords)) {
     push('same', old.slice(at, op.from))
     push('del', old.slice(op.from, op.to))
     push('ins', op.insert)

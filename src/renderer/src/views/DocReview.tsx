@@ -6,7 +6,8 @@ import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
-import { DocEditor, type Highlight, type SelectedChange } from '../components/DocEditor'
+import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
+import { AiAnswer } from '../components/AiAnswer'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
 import { diffSegments } from '@shared/diff'
@@ -27,7 +28,7 @@ interface Props {
   /** An AI card was used: show Ask AI with its question (the task is already running). */
   onAskAi: (runId: string, question: string) => void
   /** Highlight this text again (from a link in Ask AI). */
-  reselect?: { blockIds: string[]; quote: string } | null
+  reselect?: { blockIds: string[]; quote: string; flash?: string[] } | null
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
@@ -250,6 +251,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           session={session}
           highlight={highlight}
           onHold={onHold}
+          onChange={onChange}
           run={async (kind) => {
             if (!highlight) return
             // The task starts; its question goes to Ask AI, and the answer arrives as session updates.
@@ -930,7 +932,19 @@ const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((
  * (the question goes to Ask AI too), and the answer, written from the server's response, comes
  * back onto the card, with the response as returned.
  */
-function AiSection({ session, highlight, onHold, run }: { session: ReviewSession; highlight: Highlight | null; onHold: boolean; run: (kind: AiTaskKind) => Promise<unknown> }) {
+function AiSection({
+  session,
+  highlight,
+  onHold,
+  run,
+  onChange
+}: {
+  session: ReviewSession
+  highlight: Highlight | null
+  onHold: boolean
+  run: (kind: AiTaskKind) => Promise<unknown>
+  onChange: (s: ReviewSession) => void
+}) {
   const d = session.doc!
   const lib = useLibrary()
   if (!highlight?.quote)
@@ -946,20 +960,40 @@ function AiSection({ session, highlight, onHold, run }: { session: ReviewSession
   const fits = (kind: AiTaskKind) => (kind === 'intent' ? candidates.length > 0 : kind === 'changes' ? d.blocks.some((b) => highlight.blockIds.includes(b.id) && hasOpenChanges(d, b)) : true)
   const detail = (kind: AiTaskKind, base: string) =>
     kind === 'intent' && against.length ? `Compares it with our ${against.slice(0, 3).map((t) => `“${t}”`).join(', ')}${against.length > 3 ? ` and ${against.length - 3} more` : ''}` : base
-  const latest = (kind: AiTaskKind) =>
-    [...(d.aiRuns ?? [])].reverse().find((r) => r.kind === kind && r.quote === highlight.quote && sameIds(r.blockIds, highlight.blockIds))
+  // The last time this was asked of these paragraphs. Only Explain is about the exact words; the
+  // others work on whole paragraphs, so a run still fits after the wording or selection within them changed.
+  const latest = (kind: AiTaskKind) => {
+    const runs = [...(d.aiRuns ?? [])].reverse().filter((r) => r.kind === kind && sameIds(r.blockIds, highlight.blockIds))
+    return runs.find((r) => r.quote === highlight.quote) ?? (kind === 'explain' ? undefined : runs[0])
+  }
   return (
     <section className="rc-section ai-section">
       <div className="dr-mini-h">AI</div>
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
       {AI_TASKS.filter((t) => fits(t.kind)).map((t) => (
-        <AiCard key={t.kind} title={t.title} detail={detail(t.kind, t.detail)} result={latest(t.kind)} disabled={onHold} onRun={() => run(t.kind)} />
+        <AiCard key={t.kind} title={t.title} detail={detail(t.kind, t.detail)} result={latest(t.kind)} disabled={onHold} onRun={() => run(t.kind)} session={session} onChange={onChange} />
       ))}
     </section>
   )
 }
 
-function AiCard({ title, detail, result, disabled, onRun }: { title: string; detail: string; result?: AiTaskRun; disabled: boolean; onRun: () => void }) {
+function AiCard({
+  title,
+  detail,
+  result,
+  disabled,
+  onRun,
+  session,
+  onChange
+}: {
+  title: string
+  detail: string
+  result?: AiTaskRun
+  disabled: boolean
+  onRun: () => void
+  session: ReviewSession
+  onChange: (s: ReviewSession) => void
+}) {
   const [raw, setRaw] = useState(false)
   const running = result?.status === 'running'
   return (
@@ -974,7 +1008,7 @@ function AiCard({ title, detail, result, disabled, onRun }: { title: string; det
       </button>
       {result?.status === 'done' && (
         <div className="ai-card-body">
-          <Markdown text={result.answer ?? ''} />
+          {result.parts ? <AiAnswer parts={result.parts} session={session} onChange={onChange} onShow={flashParagraphs} /> : <Markdown text={result.answer ?? ''} />}
           <div className="ai-card-foot">
             <span className="faint">
               {result.by} · {new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}

@@ -86,7 +86,7 @@ file ─▶ paragraphs (Word XML: numbering, key-terms rows, tracked changes, co
   - **Ask: What do their changes do?** (when it has open changes of theirs): one request per change, with the whole contract (cached), our playbook and earlier negotiations: what it does, who it favours, what to do, suggested wording and a comment.
   - **Ask: What does this mean?** In plain English: what it means for us.
 
-  Using a card switches to **Ask AI** and posts the question there, as yours; the answer comes back in Markdown (only your messages are in bubbles), and the same answer is written onto the card, with the server's response as returned (**Raw response**). Ask AI also takes free questions, with the cards' questions and answers as context.
+  Using a card switches to **Ask AI** and posts the question there, as yours; the answer comes back as a line of text and a card per finding (a paragraph, playbook position or change): its verdict, a link that points at the paragraphs in the document, the explanation, and what to do about it. Suggested wording is shown as a redline against the paragraph as it stands, with **Apply to §x** to make it our tracked edit; a suggested comment to them has **Add comment**. Only your messages are in bubbles. The same answer is written onto the card, with the server's response as returned (**Raw response**). Ask AI also takes free questions, with the cards' questions and answers as context.
 
 ### Our response as a marked-up copy
 
