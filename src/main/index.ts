@@ -174,10 +174,24 @@ function emitThrottled(s: ReviewSession) {
 }
 
 function session(id: string): ReviewSession {
-  const s = sessions.get(id) ?? ws.store.loadSession(id)
+  const loaded = sessions.get(id)
+  const s = loaded ?? ws.store.loadSession(id)
   if (!s) throw new Error(`Unknown session ${id}`)
+  if (!loaded) settleStaleRuns(s)
   sessions.set(id, s)
   return s
+}
+
+/** AI tasks waiting on an answer in this run of the app. */
+const inFlight = new Set<string>()
+/** The longest an AI task on highlighted text may take before it is given up as failed. */
+const AI_TASK_LIMIT_MS = 4 * 60_000
+
+/** A task saved as running whose answer can no longer arrive (the app closed while it ran) is marked failed, so it can be asked again. */
+function settleStaleRuns(s: ReviewSession) {
+  const stale = (s.doc?.aiRuns ?? []).filter((r) => r.status === 'running' && !inFlight.has(r.id))
+  for (const r of stale) Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
+  if (stale.length) wsFor(s).store.saveSession(s)
 }
 
 const resolvePath = (p: string) => (isAbsolute(p) ? p : join(appRoot, p))
@@ -907,12 +921,20 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
   d.aiRuns = [...(d.aiRuns ?? []), run]
   w.audit.append(actor(), 'ai.task-requested', s.id, { kind: task.kind, paragraphs: places })
   persist(s)
+  inFlight.add(run.id)
   const finish = (patch: Partial<AiTaskRun>) => {
     const r = d.aiRuns!.find((x) => x.id === run.id)!
+    // Settled already (it timed out, then the answer came late): keep what the reviewer was shown.
+    if (r.status !== 'running') return
+    inFlight.delete(run.id)
     Object.assign(r, patch, { at: new Date().toISOString() })
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
     persist(s)
   }
+  const limit = setTimeout(
+    () => finish({ status: 'error', error: `No answer after ${AI_TASK_LIMIT_MS / 60_000} minutes. The AI server may be busy; ask again.` }),
+    AI_TASK_LIMIT_MS
+  )
   ;(async () => {
     if (task.kind === 'intent') {
       const results = await runIntent(s, blocks.filter((b) => intentCandidate(d, b)))
@@ -953,7 +975,9 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
       const text = await model.chat(chatSystem(s), [{ role: 'user', content: run.question }], (t) => send('chat:delta', { requestId: run.id, text: t }))
       finish({ status: 'done', answer: text, raw: text })
     }
-  })().catch((e) => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) }))
+  })()
+    .catch((e) => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) }))
+    .finally(() => clearTimeout(limit))
   return { session: s, runId: run.id }
 })
 
