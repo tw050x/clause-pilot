@@ -1,6 +1,7 @@
 import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
 import { changeGroups, changeKey, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { labelOf } from '@shared/numbering'
+import { wordDiff } from './engine/text'
 
 /**
  * The cover email for a document review, built from what was done in the document: one
@@ -18,7 +19,7 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     const words = text.split(' ')
     const opening = words.length > 7 ? `${words.slice(0, 7).join(' ')}…` : text
     const l = labelOf(d, b)?.replace(/\.$/, '')
-    const num = l ? (/^\d/.test(l) ? `clause ${l}` : `item ${l}`) : ''
+    const num = l ? (/^\d/.test(l) ? `clause ${l}` : /^[A-Z][a-z]+ \d/.test(l) ? l : `item ${l}`) : ''
     if (b.ours) return `${num ? `New ${num}` : 'A new paragraph'}${opening ? ` ("${opening}")` : ''}`
     if (num) return `${num.charAt(0).toUpperCase()}${num.slice(1)} ("${opening}")`
     return `The paragraph beginning "${opening}"`
@@ -26,6 +27,27 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
   const quote = (t: string) => {
     const x = t.replace(/\s+/g, ' ').trim()
     return `"${x.length > 120 ? `${x.slice(0, 120).trimEnd()}…` : x}"`
+  }
+  /**
+   * Our wording for a paragraph: the words we changed, when that's a few edits in a long
+   * paragraph (a quote cut short would hide them), otherwise the whole wording.
+   */
+  const proposal = (from: string, to: string) => {
+    // Whole words, so a quote never stops half way through one ("four (4" for "four (4)").
+    const segs = wordDiff(from, to)
+    const edits: string[] = []
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i]
+      if (s.op === 'same') continue
+      const next = segs[i + 1]
+      if (s.op === 'del' && next?.op === 'add') {
+        edits.push(`${quote(next.text)} in place of ${quote(s.text)}`)
+        i++
+      } else edits.push(s.op === 'add' ? `adding ${quote(s.text)}` : `removing ${quote(s.text)}`)
+    }
+    const changed = segs.filter((s) => s.op !== 'same').reduce((n, s) => n + s.text.length, 0)
+    if (to.length > 120 && edits.length && edits.length <= 3 && changed < to.length / 3) return `We propose ${list(edits)}.`
+    return `We propose: ${quote(to)}`
   }
   const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
 
@@ -57,11 +79,11 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     if (b.ours && ourWording?.trim()) lines.push(`We propose adding a new ${labelOf(d, b) ? 'clause' : 'paragraph'}: ${quote(ourWording)}`)
     else if (ourWording !== undefined && !ourWording.trim()) lines.push(b.kind === 'deleted' ? '' : 'We ask for this to be removed.')
     else if (ourWording !== undefined && b.kind === 'deleted') lines.push('We have reinstated this paragraph.')
-    else if (ourWording !== undefined) lines.push(`We propose: ${quote(ourWording)}`)
+    else if (ourWording !== undefined) lines.push(proposal(plain, ourWording))
     lines.push(...notes)
     const body = lines.filter(Boolean)
     if (body.length) points.push([whereOf(b), ...body.map((l) => `   ${l}`)].join('\n'))
-    else if (accepted.length) acceptedIn.push(labelOf(d, b) ? labelOf(d, b)!.replace(/\.$/, '') : whereOf(b))
+    else if (accepted.length) acceptedIn.push(labelOf(d, b) ? labelOf(d, b)!.replace(/\.$/, '') : whereOf(b).replace(/^The paragraph/, 'the paragraph'))
   }
 
   // Changes they made without Track Changes since our last draft: worth saying, politely.
@@ -70,7 +92,7 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     ? `\n\nOne more thing: ${list(silent)} ${silent.length === 1 ? 'was' : 'were'} changed without being shown as tracked changes. Please make sure every change is tracked in the next draft so nothing is missed on either side.`
     : ''
   const acceptedLine = acceptedIn.length
-    ? `We have accepted your changes to ${acceptedIn.every((x) => /^\d/.test(x)) ? `${acceptedIn.length === 1 ? 'clause' : 'clauses'} ` : ''}${list(acceptedIn)}.`
+    ? `We have accepted your changes to ${acceptedLabels(acceptedIn)}.`
     : ''
   const numbered = points.map((p, i) => `${i + 1}. ${p}`).join('\n\n')
   const subject = points.length ? `${name}: PortSwigger comments` : `${name}: approved`
@@ -78,4 +100,12 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     ? `Hello,\n\nThank you for sending this through. We have reviewed the draft. ${acceptedLine ? `${acceptedLine} ` : ''}Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}${note}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
     : `Hello,\n\nThank you for sending this through. We have reviewed the draft${acceptedLine ? ` and accepted your changes` : ''} and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
   return { subject, body, generatedBy: 'template' }
+}
+
+/** "clauses 1.3 and 2.1; the paragraph beginning "…"": numbered clauses together, then the rest. */
+function acceptedLabels(xs: string[]): string {
+  const join = (ys: string[]) => (ys.length < 2 ? ys.join('') : `${ys.slice(0, -1).join(', ')} and ${ys[ys.length - 1]}`)
+  const nums = xs.filter((x) => /^\d/.test(x))
+  const rest = xs.filter((x) => !/^\d/.test(x))
+  return [...(nums.length ? [`${nums.length === 1 ? 'clause' : 'clauses'} ${join(nums)}`] : []), ...(rest.length ? [join(rest)] : [])].join('; ')
 }

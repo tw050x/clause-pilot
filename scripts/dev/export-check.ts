@@ -7,7 +7,7 @@ import { readDocx } from '../../src/main/ingest/docxTracked'
 import { createDocSession } from '../../src/main/docreview'
 import { buildDocRedline } from '../../src/main/redline/docx'
 
-const f = process.argv[2] ?? 'demo/contracts/Acme-Mutual-NDA-redlined.docx'
+const f = process.argv[2] ?? 'test-pack/test-1/Brightwater-Mutual-NDA-v1-client-redline.docx'
 const doc = await parseFile(f)
 const s = createDocSession(doc, await readBlocks(f, doc.sourceType), f, 'live', { library: [] })
 const d = s.doc!

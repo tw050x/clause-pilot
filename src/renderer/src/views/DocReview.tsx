@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { DocBlock, DocComment, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, marksFor, proposedText, segmentsOf, theyChanged } from '@shared/changes'
+import type { DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
+import { aiSame, authorsOf, changeKey, contractDigest, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, proposedText, segmentsOf, stillOpen, theyChanged } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -26,6 +26,17 @@ interface Props {
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
+
+/** Our library, for naming the clauses a paragraph was matched with. Loaded once per review screen. */
+let libraryCache: Promise<LibraryClause[]> | null = null
+function useLibrary(): Map<string, LibraryClause> {
+  const [lib, setLib] = useState<Map<string, LibraryClause>>(new Map())
+  useEffect(() => {
+    libraryCache ??= window.api.kb.library()
+    libraryCache.then((l) => setLib(new Map(l.map((c) => [c.id, c]))))
+  }, [])
+  return lib
+}
 
 /**
  * A review: the contract as an editable document (their changes in blue, yours
@@ -81,7 +92,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     setCommentsFor((c) => (c === id ? c : null))
   }, [])
 
-  const changed = useMemo(() => d.blocks.filter((b) => hasOpenChanges(d, b)), [d])
+  useEffect(() => {
+    libraryCache = null
+  }, [session.id])
+  const changed = useMemo(() => d.blocks.filter((b) => stillOpen(d, b)), [d])
+  const toRead = d.blocks.filter((b) => needsReading(d, b)).length
   const decided = Object.keys(d.resolved ?? {}).length
   const authors = authorsOf(changed.filter((b) => !b.untracked))
   const untracked = changed.filter((b) => b.untracked).length
@@ -93,6 +108,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const checking = Object.values(d.intent ?? {}).some((x) => x.status === 'running')
   const aiOk = d.blocks.filter((b) => intentCandidate(d, b) && aiSame(d, b)).length
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
+  const jumpTo = (blockId: string) => {
+    document.querySelector(`p[data-block="${blockId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    setFocus(blockId)
+  }
   const hlBlock = highlight ? (d.blocks.find((b) => b.id === highlight.blockId) ?? null) : null
 
   const column = (
@@ -142,6 +161,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
               <i className="dot untracked" /> {untracked} of them without Track Changes
             </span>
           )}
+          {toRead > 0 && (
+            <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
+              <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
+            </span>
+          )}
           <span>
             <i className="dot ours" /> {ourEdits} edited by you
           </span>
@@ -160,7 +184,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             <i className="bar ours" /> Your edits
           </span>
           <span>
-            <i className="bar none" /> Not checked
+            <i className="bar none" /> To read (not our wording)
           </span>
         </div>
         {d.baseline && (
@@ -168,6 +192,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             {d.baseline.kind === 'sent'
               ? `Compared with what we sent for version ${d.baseline.version}.`
               : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
+          </p>
+        )}
+        {!d.baseline && toRead > 0 && (
+          <p className="faint rc-note">
+            Not on our paper: nothing here is our approved wording, so every paragraph needs reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
           </p>
         )}
         {onHold && (
@@ -188,6 +217,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             {checking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {checking ? 'Checking intent…' : `Intent check with AI (${toCheck.length})`}
           </button>
         )}
+        <PlaybookCheckBlock session={session} act={act} onHold={onHold} onJump={jumpTo} />
         <div className="rc-actions">
           <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
             <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
@@ -202,15 +232,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       </section>
 
       {showHistory ? (
-        <HistoryPanel
-          session={session}
-          act={act}
-          onClose={() => setShowHistory(false)}
-          onJump={(blockId) => {
-            document.querySelector(`p[data-block="${blockId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-            setFocus(blockId)
-          }}
-        />
+        <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
       ) : picked && picked.length > 0 ? (
         <>
           <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} />
@@ -472,6 +494,12 @@ function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: strin
         {where} {item.added ? 'added' : 'removed'}: {item.added ? <ins className="us-ins">{short(item.text)}</ins> : <del className="us-del">{short(item.text)}</del>}
       </div>
     )
+  if (item.kind === 'checked')
+    return (
+      <div className="hist-row">
+        {where} {item.added ? 'marked as checked' : 'unmarked'}: <span className="faint">{short(item.text)}</span>
+      </div>
+    )
   return (
     <div className="hist-row">
       {where} {item.added ? 'comment' : 'comment deleted'}: <span className="hist-comment">“{short(item.text)}”</span>
@@ -587,6 +615,8 @@ function ParagraphPanel({
   const edit = d.edits[b.id]
   const authors = [...new Set(segmentsOf(b).filter((s) => s.op !== 'same').map((s) => s.author ?? 'Unknown'))]
   const last = d.lastRound?.[b.id]
+  const toRead = needsReading(d, b)
+  const checked = markedChecked(d, b) ? d.checked![b.id] : null
 
   return (
     <section className="rc-section">
@@ -600,7 +630,13 @@ function ParagraphPanel({
         {b.wasApproved && <span className="dr-fact">Was our approved “{b.wasApproved}”</span>}
         {b.approved && <span className="dr-fact ok">Our approved “{b.approved}”, word for word</span>}
         {!b.ours && edit !== undefined && <span className="dr-fact">{edit.trim() ? 'Edited by you' : 'Struck by you'}</span>}
-        {!b.ours && !theyChanged(b) && edit === undefined && !b.approved && <span className="dr-fact">Unchanged</span>}
+        {!b.ours && !theyChanged(b) && edit === undefined && !b.approved && !checked && !toRead && <span className="dr-fact">Unchanged</span>}
+        {toRead && <span className="dr-fact warn">Not our wording: to read</span>}
+        {checked && (
+          <span className="dr-fact ok">
+            Checked by {checked.by}, {new Date(checked.at).toLocaleDateString()}
+          </span>
+        )}
       </div>
       {last && (last.ourEdit || last.comments.length > 0) && (
         <div className="dr-last">
@@ -609,6 +645,16 @@ function ParagraphPanel({
         </div>
       )}
       <div className="dr-card-actions">
+        {toRead && (
+          <button className="btn sm primary" title="You've read it and it's fine as it is: the bar turns green" onClick={() => act(window.api.doc.check(session.id, [b.id], true))}>
+            <Icon name="check" size={13} /> Mark as checked
+          </button>
+        )}
+        {checked && (
+          <button className="btn sm ghost" onClick={() => act(window.api.doc.check(session.id, [b.id], false))}>
+            Unmark
+          </button>
+        )}
         {b.kind === 'deleted' && edit === undefined && (
           <button className="btn sm" onClick={() => act(window.api.doc.edit(session.id, b.id, b.text))}>
             Restore paragraph
@@ -626,6 +672,7 @@ function ParagraphPanel({
         )}
       </div>
 
+      {quote !== undefined && <IntentSection session={session} b={b} act={act} />}
       {showComments && <CommentsBlock session={session} b={b} quote={quote} draft={draft} setDraft={setDraft} act={act} />}
     </section>
   )
@@ -703,7 +750,11 @@ function IntentSection({ session, b, act, many }: { session: ReviewSession; b: D
   const r = d.intent?.[b.id]
   const current = r && r.text === proposedText(d, b)
   const canAsk = intentCandidate(d, b)
+  const lib = useLibrary()
+  const toRead = needsReading(d, b)
   if (!canAsk && !(r && current)) return null
+  const against = b.standard ?? b.wasApproved
+  const names = (b.matches ?? []).map((id) => lib.get(id)?.title).filter(Boolean)
   return (
     <div className="dr-ai">
       <div className="dr-mini-h">
@@ -714,7 +765,14 @@ function IntentSection({ session, b, act, many }: { session: ReviewSession; b: D
           </button>
         )}
       </div>
-      {(!r || !current) && <p className="faint dr-small">Ask the AI whether this means the same as our approved “{b.standard ?? b.wasApproved}”. It only advises: if it agrees, the bar turns dashed green until you accept or reject the changes yourself.</p>}
+      {(!r || !current) &&
+        (against ? (
+          <p className="faint dr-small">Ask the AI whether this means the same as our approved “{against}”. It only advises: if it agrees, the bar turns dashed green until you accept or reject the changes yourself.</p>
+        ) : (
+          <p className="faint dr-small">
+            Not our wording. Ask the AI whether it means the same as the closest of our clauses{names.length ? `: ${names.map((n) => `“${n}”`).join(', ')}` : ''}. It only advises: if it agrees, the bar turns dashed green until you mark it as checked yourself.
+          </p>
+        ))}
       {r?.status === 'running' && current && (
         <p className="faint dr-small">
           <span className="spinner sm" /> Comparing with our approved wording…
@@ -738,7 +796,7 @@ function IntentSection({ session, b, act, many }: { session: ReviewSession; b: D
               ))}
             </div>
           )}
-          {r.same && <p className="faint dr-small">The AI only advises. Accept or reject their changes here yourself to mark it checked.</p>}
+          {r.same && <p className="faint dr-small">The AI only advises. {toRead ? 'Read it and mark it as checked yourself.' : 'Accept or reject their changes here yourself to mark it checked.'}</p>}
         </div>
       )}
     </div>
@@ -798,6 +856,85 @@ function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (te
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+// ---- the whole contract against our playbook ------------------------------------------------------
+
+const PB_STATUS = { compliant: 'Meets our standard', deviation: 'Deviates', missing: 'Missing', 'not-applicable': 'Not applicable', error: 'Failed' } as const
+
+/**
+ * On request: the AI checks the whole contract, as it now reads, against each playbook position
+ * that applies. Each result links to the paragraphs it's about. It only advises.
+ */
+function PlaybookCheckBlock({ session, act, onHold, onJump }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onHold: boolean; onJump: (blockId: string) => void }) {
+  const d = session.doc!
+  const pc = d.playbookCheck
+  const [open, setOpen] = useState(true)
+  const stale = !!pc && pc.status === 'done' && pc.digest !== contractDigest(d)
+  const running = pc?.status === 'running'
+  const rank = (r: { status: string; severity: string }) => (r.status === 'deviation' || r.status === 'missing' ? (r.severity === 'high' ? 0 : r.severity === 'medium' ? 1 : 2) : r.status === 'error' ? 3 : 4)
+  const results = [...(pc?.results ?? [])].sort((a, b) => rank(a) - rank(b))
+  const issues = results.filter((r) => r.status === 'deviation' || r.status === 'missing').length
+  return (
+    <div className="pbc">
+      <div className="pbc-head">
+        <button
+          className="btn sm"
+          disabled={onHold || running}
+          title={onHold ? 'On security hold: nothing goes to the AI' : 'Sends the contract as it now reads to the AI, once per playbook position that applies. Nothing is changed by it.'}
+          onClick={() => act(window.api.doc.checkPlaybook(session.id))}
+        >
+          {running ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {running ? 'Checking against the playbook…' : pc?.status === 'done' ? 'Check against playbook again' : 'Check against playbook with AI'}
+        </button>
+        {pc?.status === 'done' && (
+          <button className="link-btn" onClick={() => setOpen((v) => !v)}>
+            {open ? 'Hide' : 'Show'} results
+          </button>
+        )}
+      </div>
+      {pc?.status === 'error' && <p className="dr-small dr-err">{pc.error}</p>}
+      {pc?.status === 'done' && open && (
+        <div className="pbc-results">
+          <p className="faint dr-small">
+            {issues ? `${issues} of ${results.length} positions need attention` : `All ${results.length} positions met`} · {new Date(pc.at).toLocaleString()}
+            {stale && ' · the contract has changed since: check again to update'}
+          </p>
+          {results.map((r) => (
+            <div key={r.positionId} className={`pbc-row ${r.status} sev-${r.severity}`}>
+              <div className="pbc-row-head">
+                <strong>{r.title}</strong>
+                <span className={`dr-chip ${r.status === 'compliant' ? 'rec-accept' : r.status === 'deviation' || r.status === 'missing' ? 'rec-escalate' : ''}`}>
+                  {PB_STATUS[r.status]}
+                  {(r.status === 'deviation' || r.status === 'missing') && ` · ${r.severity}`}
+                </span>
+              </div>
+              {r.status === 'deviation' && <div className="faint dr-small">{r.withinFallback ? 'Within our acceptable fallback' : 'Outside our acceptable fallback'}</div>}
+              {r.deviation && <p className="dr-small">{r.deviation}</p>}
+              {r.error && <p className="dr-small dr-err">{r.error}</p>}
+              {r.suggestedRedline && (
+                <div className="dr-small pbc-redline">
+                  <span className="faint">Suggested wording: </span>
+                  {r.suggestedRedline}
+                </div>
+              )}
+              {r.blockIds.length > 0 && (
+                <div className="pbc-links">
+                  {r.blockIds.map((id) => {
+                    const b = d.blocks.find((x) => x.id === id)
+                    return b ? (
+                      <button key={id} className="link-btn" onClick={() => onJump(id)}>
+                        {whereOf(d, b)}
+                      </button>
+                    ) : null
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

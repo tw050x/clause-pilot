@@ -1,5 +1,5 @@
-// Source of truth for the seed pre-approved clause library. `npm run demo:build` writes data/seed/library.json.
-import type { LibraryClause } from '../src/shared/types'
+// PortSwigger's approved clauses for the test pack. `npm run test-pack` writes test-pack/library.json (import it on the Library page).
+import type { LibraryClause } from '../../src/shared/types'
 
 const by = 'Legal team'
 const on = '2026-03-01'

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { LibraryClause, Precedent } from '@shared/types'
+import { useTransfer } from '../components/Transfer'
 
 /** Shared page frame: title, one-line explanation, count and a filter box. */
-function KnowledgePage({ title, lede, count, q, setQ, children }: {
+function KnowledgePage({ title, lede, count, q, setQ, actions, children }: {
   title: string
+  actions?: React.ReactNode
   lede: string
   count: number
   q: string
@@ -19,7 +21,10 @@ function KnowledgePage({ title, lede, count, q, setQ, children }: {
           </h1>
           <p className="lede" style={{ margin: 0 }}>{lede}</p>
         </div>
-        <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="row-gap">
+          <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {actions}
+        </div>
       </div>
       {children}
     </div>
@@ -31,7 +36,9 @@ const matcher = (q: string) => (...fields: string[]) => !q || fields.some((f) =>
 export function LibraryView() {
   const [library, setLibrary] = useState<LibraryClause[]>([])
   const [q, setQ] = useState('')
-  useEffect(() => void window.api.kb.library().then(setLibrary), [])
+  const load = () => void window.api.kb.library().then(setLibrary)
+  useEffect(load, [])
+  const transfer = useTransfer('library', load)
   const match = matcher(q)
   return (
     <KnowledgePage
@@ -40,10 +47,12 @@ export function LibraryView() {
       count={library.length}
       q={q}
       setQ={setQ}
+      actions={transfer.buttons}
     >
+      {transfer.banner}
       {library.length === 0 && (
         <div className="empty-state">
-          No approved wording yet. When you accept a change during a review, choose “Nominate this wording for the library”, then approve it on the Approvals page. From then on, drafts are compared with it.
+          No approved wording yet. Import a library file, or when you accept a change during a review, choose “Nominate this wording for the library” and approve it on the Approvals page. From then on, drafts are compared with it.
         </div>
       )}
       <div className="card" style={{ overflow: 'hidden' }}>

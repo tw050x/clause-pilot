@@ -1,4 +1,4 @@
-import { hasOpenChanges, theyChanged } from '@shared/changes'
+import { rejectedCount, stillOpen, theyChanged } from '@shared/changes'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Account, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
@@ -67,6 +67,10 @@ export class Store {
     this.write('playbook-proposals.json', p)
   }
 
+  saveLibrary(c: LibraryClause[]): void {
+    this.write('library.json', c)
+  }
+
   addLibraryClause(c: LibraryClause): void {
     this.write('library.json', [...this.library(), c])
   }
@@ -116,8 +120,8 @@ export class Store {
           mode: s.mode,
           contractType: s.contractType,
           clauses: d ? changed.length : s.clauses.length,
-          decided: d ? changed.filter((b) => !hasOpenChanges(d, b)).length : decisions.length,
-          rejected: d ? Object.values(d.resolved ?? {}).filter((r) => r === 'rejected').length : decisions.filter((x) => x.decision === 'rejected').length,
+          decided: d ? changed.filter((b) => !stillOpen(d, b)).length : decisions.length,
+          rejected: d ? rejectedCount(d) : decisions.filter((x) => x.decision === 'rejected').length,
           closed: !!s.closed,
           contractArchived: !!contract?.archived
         }

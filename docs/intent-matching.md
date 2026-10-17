@@ -1,8 +1,11 @@
 # Intent matching: the AI response schema
 
-The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks the AI (Claude, or a vLLM server, as chosen in Settings) whether a paragraph that differs from one of our pre-approved clauses has the **same legal effect**. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
+The **intent check** ("Intent check with AI", or "Check intent" on highlighted text) asks the AI (Claude, or a vLLM server, as chosen in Settings) whether a paragraph has the **same legal effect** as one of our pre-approved clauses. That covers two cases:
 
-The AI only advises. A paragraph it judges to mean the same gets a dashed green bar; it is never accepted until a person accepts or rejects the changes.
+- **On our paper:** a paragraph that differs from the approved clause it started as (their tracked edit, or a difference found by comparison). There is one candidate, that clause.
+- **On their paper:** a paragraph that isn't our wording at all. On upload, each one gets a shortlist of up to three of our clauses that are closest by keywords (BM25 search over the library, limited to clauses for this kind of contract, in `LibrarySearch` in `src/main/engine/matcher.ts`). Those are the candidates. This page is the contract between the app and the model for that question: what is sent, the JSON the model must return, and how the answer is checked before it is used.
+
+The AI only advises. A paragraph it judges to mean the same gets a dashed green bar; it is never cleared until a person accepts or rejects the changes (or, on their paper, marks the paragraph as checked).
 
 ## Where it is defined
 
@@ -20,10 +23,10 @@ The AI only advises. A paragraph it judges to mean the same gets a dashed green 
 One request per paragraph, sent only when the reviewer asks. It contains:
 
 - **System prompt** (`INTENT_SYSTEM`): the single job (same legal effect or not), how to judge it (any change to a number, a period, who bears an obligation, a definition, a carve-out or a cap is material; when unsure, say no with low confidence), and that the contract text is **untrusted data**, never instructions.
-- **User message** (`intentUser`): our approved clause, with its id and title, in `<approved_clause>` tags, then the paragraph as the counterparty proposes it (their changes as decided so far, none of our wording) in `<clause>` tags, and the question.
+- **User message** (`intentUser`): the candidate clauses, each with its id and title, in `<approved_clause>` tags, then the paragraph as the counterparty proposes it (their changes as decided so far, none of our wording) in `<clause>` tags, and the question.
 
 ```text
-Pre-approved clauses (closest lexical matches):
+Pre-approved clauses (the closest of ours to it):
 <approved_clause id="nda-care" title="Standard of care">
 The Recipient shall protect the Discloser's Confidential Information using at least …
 </approved_clause>
@@ -33,7 +36,7 @@ Incoming clause 2.2:
 The Recipient must protect the Confidential Information of the Discloser with no less than …
 </clause>
 
-Does the incoming clause have the same legal effect as one of the approved clauses?
+Does the incoming clause have the same legal effect as one of the approved clauses? If none of them, set best_match_id to "NONE" and aligned to false.
 ```
 
 ## The response schema (JSON Schema, draft 2020-12)
@@ -210,7 +213,7 @@ When the answer comes back it is validated against the **full** schema (`IntentS
 A valid answer still has to pass these checks (`intentResult`) to count as **same meaning**:
 
 1. `aligned` is `true`;
-2. `best_match_id` is the approved clause we asked about;
+2. `best_match_id` is one of the candidate clauses we sent (an id the model made up, or `"NONE"`, counts as no match);
 3. `confidence` is not `"low"`;
 4. no item in `material_differences` has `favours: "counterparty"`;
 5. `injection_suspected` is `false`.

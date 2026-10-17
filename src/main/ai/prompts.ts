@@ -30,7 +30,7 @@ export function intentUser(input: IntentInput): string {
   const approved = input.candidates
     .map((c) => `<approved_clause id="${c.id}" title="${esc(c.title)}">\n${c.text}\n</approved_clause>`)
     .join('\n')
-  return `Pre-approved clauses (closest lexical matches):
+  return `Pre-approved clauses (the closest of ours to it):
 ${approved}
 
 Incoming clause${input.clause.number ? ` ${input.clause.number}` : ''}${input.clause.heading ? ` (section: ${esc(input.clause.heading)})` : ''}:
@@ -38,7 +38,7 @@ Incoming clause${input.clause.number ? ` ${input.clause.number}` : ''}${input.cl
 ${input.clause.text}
 </clause>
 
-Does the incoming clause have the same legal effect as one of the approved clauses?`
+Does the incoming clause have the same legal effect as one of the approved clauses? If none of them, set best_match_id to "NONE" and aligned to false.`
 }
 
 export const DOCUMENT_SYSTEM = `You support the in-house legal team at ${OUR_COMPANY}, a software company that licenses web security testing tools.

@@ -34,6 +34,39 @@ export class LibraryIndex {
   }
 }
 
+/**
+ * Keyword search (BM25) over our approved clauses, for paragraphs not on our paper: their
+ * drafting of the same point shares terms ("confidential", "disclose", "five years") even
+ * when the wording is entirely different. Only a shortlist for the AI to compare intent with.
+ */
+export class LibrarySearch {
+  private ms: MiniSearch<LibraryClause>
+
+  constructor(library: LibraryClause[]) {
+    this.ms = new MiniSearch<LibraryClause>({
+      fields: ['text', 'title'],
+      storeFields: ['id'],
+      processTerm: (t) => {
+        const term = t.toLowerCase()
+        return term.length < 3 || STOP.has(term) ? null : term
+      },
+      searchOptions: { boost: { title: 1.5 }, fuzzy: 0.15, prefix: true, combineWith: 'OR' }
+    })
+    this.ms.addAll(library)
+  }
+
+  /** Up to `limit` library ids, best first; only results scoring near the best one. */
+  closest(text: string, limit = MAX_CANDIDATES): string[] {
+    const results = this.ms.search(text)
+    if (!results.length) return []
+    const top = results[0].score
+    return results
+      .filter((r) => r.score >= top * 0.5 && r.terms.length >= 2)
+      .slice(0, limit)
+      .map((r) => r.id as string)
+  }
+}
+
 const STOP = new Set(
   'the a an and or of to in on for by with as at be is are was were shall will may any all such this that its it their his her which from under than other each party parties agreement'.split(' ')
 )

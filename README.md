@@ -21,7 +21,7 @@ The title bar shows which AI is in use.
 | `npm run dev` | Run the app with hot reload |
 | `npm run build && npm start` | Production build and preview |
 | `npm run typecheck` | Type-check main, preload and renderer |
-| `npm run samples:build` | Regenerate the sample contracts (`demo/contracts/`) and sample knowledge (`data/seed/`) |
+| `npm run test-pack` | Regenerate the test pack (`test-pack/`): library, playbook and test contracts |
 | `npm run docs:check` | Check the documented AI schemas match the code |
 | `npm run pack` | Build an unpacked app for this machine (in `release/`) |
 | `npm run release` | Build installers for this machine (in `release/`) |
@@ -44,13 +44,18 @@ Set `CLAUSEPILOT_USER_DATA=/some/folder` to use a different folder, for example 
 
 Builds are not code-signed yet. On macOS, right-click the app and choose Open the first time; on Windows, choose "More info → Run anyway".
 
-## Sample contracts
+## Test pack
 
-`demo/contracts/` has sample contracts to upload by hand (Open a contract, or a contract's Upload draft): Word drafts with tracked changes and comments (`Acme-Mutual-NDA-redlined.docx`, then its later drafts `-v2` and `-v3` for the same contract), a text NDA on our paper (`Initech-Mutual-NDA.txt`) and a PDF order form with a hidden override and a prompt-injection attempt (`Globex-Order-Form-Burp-Suite-DAST.pdf`). `data/seed/` has a matching sample library and playbook; the app starts with an empty workspace, as a real team would.
+The app starts with an empty workspace, as a real team would. `test-pack/` has what's needed to test it as a user, with real AI: PortSwigger's approved clauses (`library.json`) and playbook (`playbook.json`) to import on the Library and Playbook pages, and test contracts to open from the filesystem:
 
-## Real-world test contracts
+- **Test 1 (two rounds):** our mutual NDA as a client redlined it (tracked changes, comments, and changes made without Track Changes), then the client's next draft, which is compared with what you actually sent back.
+- **Test 2 (one round):** a confidentiality agreement on the client's own paper, with a different structure. Nothing matches our wording, so the intent check compares each paragraph with the closest of our clauses, and the playbook check reviews the whole contract against our positions.
 
-`test-contracts/` holds real published agreements (Common Paper, CC BY 4.0) and counterparty drafts of them with tracked changes, for trying the app on documents it wasn't written around. See `test-contracts/README.md`.
+See `test-pack/README.md` for the steps and what to expect.
+
+## Library and playbook: import and export
+
+**Import…** and **Export…** on the Library and Playbook pages move the knowledge base between machines or teams as JSON (`{"format": "clause-pilot/library", "version": 1, "clauses": [...]}`, and `clause-pilot/playbook` with `positions`). Imports are validated (Zod, `src/main/transfer.ts`) and merged by id: new entries are added, changed ones updated (a playbook position gets a new version), identical ones left alone, and nothing is removed. Every import and export is in the audit log.
 
 ## How a review works
 
@@ -71,6 +76,7 @@ file ─▶ paragraphs (Word XML: numbering, key-terms rows, tracked changes, co
 
 - **Change sets.** All their edits in one paragraph, and consecutive changed paragraphs in the same numbered section (2.1 and its (a), (b)), are one thing to decide, however many edits it has. A changed heading takes its sub-clauses with it (an inserted "5. NON-SOLICITATION" and its 5.1 are one change). Key-terms rows and unnumbered paragraphs found by comparison stand alone.
 - **Untracked changes.** A later draft is lined up with what we sent (paragraph alignment, then a word diff), so anything they changed, added or removed without Track Changes shows as a change marked **not tracked**, next to what we proposed last round. A first draft that is mostly our approved wording is compared with the library the same way. The response email asks them to track changes next time.
+- **Their paper.** A contract that isn't our wording has nothing to compare with, so every paragraph shows as **to read** (grey bar). On upload each paragraph gets a shortlist of the closest of our approved clauses (keyword search, locally). **Intent check with AI** asks whether it means the same as one of them (dashed green if so), and **Check against playbook with AI** checks the whole contract against each position that applies, linking to the paragraphs concerned. A person clears each paragraph with **Mark as checked** (in the history, so it can be undone).
 - **Editing in place.** Double-click a paragraph (or ✎) to edit it as text. Your wording is shown and exported as tracked changes in your name, layered over theirs. Restore original writes the reversal of their change as your redline. Any paragraph can be edited, not just their changes.
 - **Comments** go in the margin next to the paragraph, as replies when they commented. They become Word comments (threaded replies) and the reasons in the email.
 - **Seen before.** Every change you accept or answer is saved: what they proposed, what was there, how we answered and why. A later change with the same wording (or the same words added elsewhere) is shown as **same change**, with **Answer the same way**; similar ones are found by keyword search (BM25).
@@ -125,13 +131,14 @@ src/main/
   ai/                    task schemas (Zod), prompts, Claude and vLLM providers, recorder
   redline/docx.ts        our response as a marked-up .docx (tracked changes and comments)
   email.ts, chat.ts      cover email; the chat panel's context
+  transfer.ts            library and playbook import / export (file format, validation, merge)
   store.ts, audit.ts     JSON store; hash-chained audit log
   index.ts               Electron main + IPC
 src/shared/
   changes.ts             change sets and their status
   diff.ts                word diff, and our edit layered over their redline
 src/renderer/            React UI (views/DocReview.tsx is the review screen)
-scripts/                 sample data and contracts, test contracts, docs check; dev/ has small CLI checks
+scripts/                 test-pack/ (the test pack generator), docs check; dev/ has small CLI checks
 ```
 
 `npx tsx --tsconfig tsconfig.node.json scripts/dev/sets.ts <files…>` prints the change sets the app finds in contracts.

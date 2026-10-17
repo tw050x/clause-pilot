@@ -4,6 +4,7 @@ import { beforeTheirs, proposedText, type ChangeSet } from '@shared/changes'
 import { RESPONSE } from './engine/seen'
 import { compareWithSent, compareWithTemplate } from './engine/baseline'
 import { injectionHits } from './engine/injection'
+import { LibrarySearch } from './engine/matcher'
 import type { ChangeInput, ChangeOut, IntentInput, IntentOut } from './ai/tasks'
 import type { ParsedDocument } from './ingest/parse'
 import { guessContractType } from './ingest/headings'
@@ -50,6 +51,16 @@ export function createDocSession(
     const r = compareWithTemplate(blocks, opts.library)
     d.blocks = r.blocks
     if (r.baseline) d.baseline = r.baseline
+  }
+  // Paragraphs that aren't our wording (their paper): a shortlist of our closest clauses, so the
+  // AI can be asked whether they mean the same. Found by keywords, locally; nothing is decided by it.
+  if (opts.library.length) {
+    const search = new LibrarySearch(opts.library.filter((c) => c.contractType === 'general' || s.contractType === 'general' || c.contractType === s.contractType))
+    d.blocks = d.blocks.map((b) => {
+      if (b.ours || b.approved || b.standard || b.wasApproved || (b.kind !== 'para' && b.kind !== 'row') || b.text.split(/\s+/).length < 8) return b
+      const matches = search.closest(b.text)
+      return matches.length ? { ...b, matches } : b
+    })
   }
   // Local prompt-injection screen, before anything could go to a model.
   for (const b of d.blocks) {
@@ -112,12 +123,15 @@ export function applicable(playbook: PlaybookPosition[], type: ContractType): Pl
   return playbook.filter((p) => type === 'general' || p.appliesTo.includes(type))
 }
 
-/** What the AI is asked for a paragraph: does it mean the same as the approved clause it differs from? */
+/**
+ * What the AI is asked for a paragraph: does it mean the same as the approved clause it differs
+ * from, or (their paper) as one of our clauses closest to it by keywords?
+ */
 export function intentInput(d: DocReview, b: DocBlock, library: LibraryClause[]): IntentInput | null {
   const title = b.standard ?? b.wasApproved
-  const lib = title ? library.find((c) => c.title === title) : undefined
-  if (!lib) return null
-  return { clause: { number: b.label ?? null, heading: null, text: proposedText(d, b) }, candidates: [{ id: lib.id, title: lib.title, text: lib.text }] }
+  const libs = title ? library.filter((c) => c.title === title).slice(0, 1) : (b.matches ?? []).map((id) => library.find((c) => c.id === id)).filter((c): c is LibraryClause => !!c)
+  if (!libs.length) return null
+  return { clause: { number: b.label ?? null, heading: null, text: proposedText(d, b) }, candidates: libs.map((c) => ({ id: c.id, title: c.title, text: c.text })) }
 }
 
 /**
@@ -126,18 +140,20 @@ export function intentInput(d: DocReview, b: DocBlock, library: LibraryClause[])
  * injection. The model's opinion alone never clears a paragraph.
  */
 export function intentResult(input: IntentInput, out: IntentOut): Omit<IntentCheck, 'status' | 'at'> {
-  const lib = input.candidates[0]
+  // The clause it matched has to be one we offered: an id it made up counts for nothing.
+  const lib = input.candidates.find((c) => c.id === out.best_match_id) ?? input.candidates[0]
+  const offered = input.candidates.some((c) => c.id === out.best_match_id)
   const against = out.material_differences.filter((x) => x.favours === 'counterparty')
   let note = ''
-  if (!out.aligned) note = 'The legal effect differs from our approved clause.'
-  else if (out.best_match_id !== lib.id) note = 'The AI did not match it to our approved clause.'
+  if (!offered) note = input.candidates.length > 1 ? 'The AI found none of our approved clauses means the same.' : 'The AI did not match it to our approved clause.'
+  else if (!out.aligned) note = `The legal effect differs from our approved “${lib.title}”.`
   else if (out.confidence === 'low') note = 'The AI’s confidence was too low.'
   else if (against.length) note = `${against.length} difference${against.length === 1 ? '' : 's'} favour${against.length === 1 ? 's' : ''} the counterparty.`
   else if (out.injection_suspected) note = 'Possible text addressed to an AI reviewer.'
   return {
     text: input.clause.text,
     same: !note,
-    title: lib.title,
+    title: offered ? lib.title : undefined,
     confidence: out.confidence,
     reasoning: out.reasoning,
     differences: out.material_differences,

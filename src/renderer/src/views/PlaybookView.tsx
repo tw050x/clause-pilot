@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTransfer } from '../components/Transfer'
 import type { ContractType, PlaybookPosition, PlaybookProposal } from '@shared/types'
 import { Icon } from '../lib/icons'
 
@@ -24,6 +25,7 @@ export function PlaybookView({ onProposalsChanged }: { onProposalsChanged: () =>
     window.api.kb.playbook().then(setPlaybook)
     window.api.kb.playbookProposals().then(setProposals)
   }, [])
+  const transfer = useTransfer('playbook', () => void window.api.kb.playbook().then(setPlaybook))
 
   const pendingFor = (id: string) => proposals.filter((p) => p.status === 'pending' && p.positionId === id).length
   const pendingNew = proposals.filter((p) => p.status === 'pending' && p.kind === 'add').length
@@ -49,12 +51,14 @@ export function PlaybookView({ onProposalsChanged }: { onProposalsChanged: () =>
         </div>
         <div className="row-gap">
           <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {transfer.buttons}
           <button className="btn primary" onClick={() => setDraft({ mode: 'add' })}>
             Propose new position
           </button>
         </div>
       </div>
 
+      {transfer.banner}
       {notice && (
         <div className="banner info" style={{ marginBottom: 14 }}>
           <Icon name="check" /> {notice}
@@ -70,7 +74,7 @@ export function PlaybookView({ onProposalsChanged }: { onProposalsChanged: () =>
 
       {playbook.length === 0 && draft?.mode !== 'add' && (
         <div className="empty-state">
-          No standard positions yet, so when you ask the AI about a change it has nothing of ours to check it against. Use “Propose new position” to add one (for example,
+          No standard positions yet, so when you ask the AI about a change it has nothing of ours to check it against. Import a playbook file, or use “Propose new position” to add one (for example,
           governing law or a liability cap). Each approved position is checked in every review.
         </div>
       )}

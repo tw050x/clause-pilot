@@ -126,6 +126,6 @@ export const labelOf = (d: DocReview, b: DocBlock) => labelsOf(d).get(b.id) ?? (
 /** "§2.4", or a description when it has no number. */
 export function whereOf(d: DocReview, b: DocBlock): string {
   const l = labelOf(d, b)
-  if (l) return /^\d/.test(l) ? `§${l.replace(/\.$/, '')}` : `Item ${l}`
+  if (l) return /^\d/.test(l) ? `§${l.replace(/\.$/, '')}` : /^[A-Z][a-z]+ \d/.test(l) ? l.replace(/\.$/, '') : `Item ${l}`
   return b.ours ? 'New paragraph' : b.kind === 'heading' ? 'Heading' : 'Paragraph'
 }

@@ -1,4 +1,4 @@
-import type { DocBlock, DocReview, HistoryAction, OurComment } from './types'
+import type { CheckedMark, DocBlock, DocReview, HistoryAction, OurComment } from './types'
 import { marksFor, segmentsOf, shownText } from './changes'
 import { whereOf } from './numbering'
 
@@ -23,6 +23,7 @@ export function snapshot(d: DocReview): Facets {
   for (const [id, text] of Object.entries(d.edits)) f[`edit:${id}`] = text
   for (const [key, r] of Object.entries(d.resolved ?? {})) f[`res:${key}`] = r
   for (const c of d.comments) f[`com:${c.id}`] = c
+  for (const [id, m] of Object.entries(d.checked ?? {})) f[`chk:${id}`] = m
   d.blocks.forEach((b, i) => {
     if (b.ours) f[`para:${b.id}`] = { block: b, after: d.blocks[i - 1]?.id ?? null }
   })
@@ -56,6 +57,10 @@ export function apply(d: DocReview, values: Facets) {
       d.resolved ??= {}
       if (v === null) delete d.resolved[id]
       else d.resolved[id] = v as 'accepted' | 'rejected'
+    } else if (kind === 'chk') {
+      d.checked ??= {}
+      if (v === null) delete d.checked[id]
+      else d.checked[id] = v as CheckedMark
     } else if (kind === 'com') {
       d.comments = d.comments.filter((c) => c.id !== id)
       if (v !== null) d.comments.push(v as OurComment)
@@ -130,6 +135,11 @@ export function describe(d: DocReview, a: HistoryAction): string {
   if (removed) parts.push(`removed ${removed === 1 ? 'a paragraph' : `${removed} paragraphs`}`)
   const edits = keys.filter((k) => k.startsWith('edit:') && !paras.includes(`para:${k.slice(5)}`)).map((k) => k.slice(5))
   if (edits.length && !res.length) parts.push(`edited ${places(edits)}`)
+  const chk = keys.filter((k) => k.startsWith('chk:'))
+  const chkOn = chk.filter((k) => a.after[k] !== null).map((k) => k.slice(4))
+  const chkOff = chk.filter((k) => a.after[k] === null).map((k) => k.slice(4))
+  if (chkOn.length) parts.push(`marked ${places(chkOn)} as checked`)
+  if (chkOff.length) parts.push(`unmarked ${places(chkOff)}`)
   const coms = keys.filter((k) => k.startsWith('com:'))
   const cAdded = coms.filter((k) => a.after[k] !== null)
   if (cAdded.length) parts.push(`commented on ${places(cAdded.map((k) => (a.after[k] as OurComment).blockId))}`)
@@ -144,6 +154,7 @@ export type ActionItem =
   | { kind: 'edited'; blockId: string; where: string; before: string; after: string }
   | { kind: 'paragraph'; blockId: string; where: string; added: boolean; text: string }
   | { kind: 'comment'; blockId: string; where: string; added: boolean; text: string }
+  | { kind: 'checked'; blockId: string; where: string; added: boolean; text: string }
 
 /** What an action did, item by item, in document order. */
 export function details(d: DocReview, a: HistoryAction): ActionItem[] {
@@ -180,6 +191,10 @@ export function details(d: DocReview, a: HistoryAction): ActionItem[] {
       const added = a.after[k] !== null
       const text = ((added ? a.after[`edit:${id}`] : a.before[`edit:${id}`]) as string | null) ?? ''
       items.push({ kind: 'paragraph', blockId: id, where: 'New paragraph', added, text })
+    } else if (kind === 'chk') {
+      const id = rest.join(':')
+      const m = (a.after[k] ?? a.before[k]) as CheckedMark
+      items.push({ kind: 'checked', blockId: id, where: where(id), added: a.after[k] !== null, text: m.text })
     } else if (kind === 'com') {
       const c = (a.after[k] ?? a.before[k]) as OurComment
       items.push({ kind: 'comment', blockId: c.blockId, where: where(c.blockId), added: a.after[k] !== null, text: c.text })

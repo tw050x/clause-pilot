@@ -99,7 +99,11 @@ export function ourOtherEdits(doc: DocReview, sets: ChangeSet[]): DocBlock[] {
 }
 
 /** The block as we'd have it (our edit, or as received). */
-export const ourText = (doc: DocReview, b: DocBlock) => doc.edits[b.id] ?? (b.kind === 'deleted' ? '' : b.text)
+/**
+ * The paragraph as we send it back: their changes as we accepted or rejected them, with our
+ * wording over that. Changes left undecided go back as they proposed them.
+ */
+export const ourText = (doc: DocReview, b: DocBlock) => shownText(marksFor(doc, b)).replace(/\s+/g, ' ').trim()
 
 // ---- individual changes: accept / reject, as in Word -------------------------------------
 
@@ -176,13 +180,32 @@ export function textWithout(marks: Mark[], pick: (m: Mark, i: number) => boolean
     .join('')
 }
 
-/** Cleared without anyone reading it: word for word our approved wording, or exactly what we sent last round. */
+/**
+ * Nothing left to read: word for word our approved wording, exactly what we sent last round,
+ * or marked as checked by the reviewer (while it still reads the same).
+ */
 export const isCleared = (doc: DocReview, b: DocBlock) =>
-  !theyChanged(b) && !b.ours && (!!b.approved || (doc.baseline?.kind === 'sent' && !!doc.lastRound?.[b.id]))
+  !theyChanged(b) && !b.ours && (!!b.approved || (doc.baseline?.kind === 'sent' && !!doc.lastRound?.[b.id]) || markedChecked(doc, b))
 
-/** Paragraphs the AI can check for meaning: changed (tracked or not) from one of our approved clauses. */
+/** The reviewer marked it as checked, and it hasn't changed since. */
+export const markedChecked = (doc: DocReview, b: DocBlock) => {
+  const m = doc.checked?.[b.id]
+  return !!m && m.text === proposedText(doc, b)
+}
+
+/** A paragraph with nothing to accept or reject that hasn't been cleared: someone has to read it. */
+export const needsReading = (doc: DocReview, b: DocBlock) =>
+  b.kind !== 'deleted' && b.kind !== 'heading' && !b.ours && !hasOpenChanges(doc, b) && doc.edits[b.id] === undefined && !theyChanged(b) && !isCleared(doc, b)
+
+/**
+ * Paragraphs the AI can check for meaning: changed (tracked or not) from one of our approved
+ * clauses, or (their paper) not yet read and close by keywords to some of our clauses.
+ */
 export const intentCandidate = (doc: DocReview, b: DocBlock) =>
-  b.kind !== 'deleted' && !b.ours && !!(b.standard ?? b.wasApproved) && hasOpenChanges(doc, b) && doc.edits[b.id] === undefined
+  b.kind !== 'deleted' &&
+  !b.ours &&
+  doc.edits[b.id] === undefined &&
+  ((!!(b.standard ?? b.wasApproved) && hasOpenChanges(doc, b)) || (!!b.matches?.length && needsReading(doc, b)))
 
 /** The paragraph as they propose it now (their changes, as decided so far; none of our wording). */
 export const proposedText = (doc: DocReview, b: DocBlock) => shownText(marksFor({ ...doc, edits: {} }, b))
@@ -218,3 +241,27 @@ export function changeGroups(b: DocBlock): number[][] {
 
 /** The group (replacement or single change) a segment belongs to. */
 export const groupOf = (b: DocBlock, seg: number) => changeGroups(b).find((g) => g.includes(seg)) ?? [seg]
+
+/** A short fingerprint of the contract as it now reads (with our edits), to tell when an AI check is out of date. */
+export function contractDigest(doc: DocReview): string {
+  const text = doc.blocks.filter((b) => b.kind !== 'deleted').map((b) => shownText(marksFor(doc, b))).join('\n')
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return `${text.length.toString(36)}-${(h >>> 0).toString(36)}`
+}
+
+/**
+ * Their changes here still to decide. A change found by comparison (not tracked in their file)
+ * is rejected by restoring the wording with our edit, so a paragraph we put back exactly as
+ * it was before their change is decided too.
+ */
+export const stillOpen = (doc: DocReview, b: DocBlock) => {
+  if (!hasOpenChanges(doc, b)) return false
+  const edit = doc.edits[b.id]
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
+  return !(b.untracked && edit !== undefined && norm(edit) === norm(beforeTheirs(b)))
+}
+
+/** Their changes we rejected, counted as the reader sees them (a replacement is one). */
+export const rejectedCount = (doc: DocReview) =>
+  doc.blocks.reduce((n, b) => n + changeGroups(b).filter((g) => doc.resolved?.[changeKey(b.id, g[0])] === 'rejected').length, 0)

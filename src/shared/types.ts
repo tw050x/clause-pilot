@@ -280,6 +280,11 @@ export interface DocBlock {
   approved?: string
   /** Before their change it was word for word this pre-approved clause. */
   wasApproved?: string
+  /**
+   * Not our wording (their paper): ids of the library clauses closest to it by keywords, for
+   * the AI to compare intent with. Found locally on upload; nothing is decided by it.
+   */
+  matches?: string[]
   /** A paragraph we added (by pressing Enter): its wording is in `edits`, all of it our insertion. */
   ours?: boolean
   /** A paragraph we added in a numbered list: numbered like its neighbours (see shared/numbering.ts). */
@@ -381,6 +386,40 @@ export interface DocReview {
   history?: HistoryAction[]
   /** AI checks, on request, of whether a paragraph means the same as our approved wording. */
   intent?: Record<string, IntentCheck>
+  /** Paragraphs with nothing to accept or reject that the reviewer has read and marked as checked. */
+  checked?: Record<string, CheckedMark>
+  /** The AI's check of the whole contract against each playbook position, when asked. */
+  playbookCheck?: PlaybookCheck
+}
+
+/** A reviewer marked a paragraph as checked; it stands while the paragraph reads `text`. */
+export interface CheckedMark {
+  by: string
+  at: string
+  text: string
+}
+
+/** The whole contract checked against our playbook, one AI request per position. */
+export interface PlaybookCheck {
+  status: 'running' | 'done' | 'error'
+  at: string
+  /** The contract text that was checked: results are marked out of date once it changes. */
+  digest: string
+  results: PlaybookCheckResult[]
+  error?: string
+}
+
+export interface PlaybookCheckResult {
+  positionId: string
+  title: string
+  status: 'compliant' | 'deviation' | 'missing' | 'not-applicable' | 'error'
+  /** Paragraphs the AI said this position is about (checked to exist). */
+  blockIds: string[]
+  deviation: string
+  severity: 'high' | 'medium' | 'low'
+  withinFallback: boolean
+  suggestedRedline: string
+  error?: string
 }
 
 /** The AI's view of whether a paragraph has the same legal effect as our approved clause. */

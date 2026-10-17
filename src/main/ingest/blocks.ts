@@ -5,7 +5,9 @@ import { parseFile } from './parse'
 import { isHeading, isSectionTitle } from './headings'
 
 // A printed clause number typed into the text: "4", "4.", "4.2", "4.2.1".
-const TYPED_NUMBER = /^(\d{1,2}(?:\.\d{1,2}){0,3}\.?)\s+/
+// A typed number at the start of a paragraph: "2.1", "3.", or with a word in front, as some
+// firms draft ("Section 1.01", "Clause 4").
+const TYPED_NUMBER = /^((?:(?:Section|Clause|Article)\s+)?\d{1,2}(?:\.\d{1,2}){0,3}\.?)\s+/
 
 /**
  * The contract as blocks: one per paragraph (or key-terms table row), in

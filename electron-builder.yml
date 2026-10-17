@@ -6,8 +6,6 @@ directories:
 files:
   - out/**
   - data/**
-  - demo/contracts/**
-  - demo/recordings/**
   - package.json
 # Builds are unsigned for now; macOS will ask users to confirm on first open.
 mac:

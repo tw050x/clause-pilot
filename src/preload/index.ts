@@ -53,6 +53,8 @@ const api: Api = {
     setList: (id, blockId, list) => invoke('doc:setList', id, blockId, list),
     unsplit: (id, blockId) => invoke('doc:unsplit', id, blockId),
     checkIntent: (id, blockIds) => invoke('doc:checkIntent', id, blockIds),
+    check: (id, blockIds, on) => invoke('doc:check', id, blockIds, on),
+    checkPlaybook: (id) => invoke('doc:checkPlaybook', id),
     resolve: (id, blockId, seg, outcome, group) => invoke('doc:resolve', id, blockId, seg, outcome, group),
     undoOurs: (id, blockId, mark, group) => invoke('doc:undoOurs', id, blockId, mark, group),
     undo: (id, actionId) => invoke('doc:undo', id, actionId),
@@ -72,7 +74,9 @@ const api: Api = {
     dismiss: (id) => invoke('kb:dismiss', id),
     playbookProposals: () => invoke('kb:playbookProposals'),
     proposePlaybook: (p) => invoke('kb:proposePlaybook', p),
-    decidePlaybook: (id, approve, note) => invoke('kb:decidePlaybook', id, approve, note)
+    decidePlaybook: (id, approve, note) => invoke('kb:decidePlaybook', id, approve, note),
+    export: (kind) => invoke('kb:export', kind),
+    import: (kind) => invoke('kb:import', kind)
   },
   audit: {
     list: (sessionId) => invoke('audit:list', sessionId),

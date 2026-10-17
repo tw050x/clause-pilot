@@ -7,7 +7,7 @@ import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
 import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
-import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, segmentsOf, shownText, theyChanged } from '@shared/changes'
+import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { Icon } from '../lib/icons'
 
@@ -200,7 +200,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         decos.push(
           Decoration.node(offset, offset + node.nodeSize, {
             // The AI found it means the same as our approved wording: dashed green until you decide it.
-            class: `${open && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
+            // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
+            class: `${(open || needsReading(d, b)) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : needsReading(d, b) && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
             ...(tag ? { 'data-tag': tag } : {})
           })
         )

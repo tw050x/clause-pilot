@@ -12,11 +12,12 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { beforeTheirs, changeKey, changeSets, intentCandidate, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
-import type { ChangeStatus, DocBlock, ListStyle, OurComment } from '@shared/types'
-import type { IntentInput } from './ai/tasks'
+import { beforeTheirs, changeKey, changeSets, contractDigest, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import type { ChangeStatus, DocBlock, ListStyle, OurComment, PlaybookCheckResult } from '@shared/types'
+import type { ClauseRef, IntentInput } from './ai/tasks'
 import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem } from './chat'
+import { libraryFile, mergeLibrary, mergePlaybook, parseImport, playbookFile } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
@@ -559,6 +560,35 @@ ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
  * Accept or reject one of their changes (null: undecided again), as in Word. A tracked change is
  * resolved in the file; a change found by comparison can't be, so rejecting it is our edit.
  */
+/**
+ * Mark paragraphs with nothing to accept or reject as checked (read, and fine as they are),
+ * or unmark them. One action in the history. A paragraph with their changes in it is decided
+ * by accepting or rejecting them instead.
+ */
+ipcMain.handle('doc:check', (_e, sessionId: string, blockIds: string[], on: boolean) => {
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    d.checked ??= {}
+    const at = new Date().toISOString()
+    const done: string[] = []
+    for (const id of blockIds) {
+      const b = d.blocks.find((x) => x.id === id)
+      if (!b || b.ours || b.kind === 'deleted' || b.kind === 'heading') continue
+      if (on) {
+        if (hasOpenChanges(d, b) || theyChanged(b) || d.edits[id] !== undefined) continue
+        if (s.injection[id] && alertFor(s.id)?.status !== 'false-positive') throw new Error('This paragraph is on security hold: text in it is addressed to an AI reviewer.')
+        d.checked[id] = { by: actor(), at, text: proposedText(d, b) }
+      } else delete d.checked[id]
+      done.push(blockWhere(s, id))
+    }
+    if (done.length) ws.audit.append(actor(), on ? 'doc.marked-checked' : 'doc.unmarked-checked', s.id, { paragraphs: done })
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
+})
+
 ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string) => {
   const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
@@ -791,6 +821,67 @@ ipcMain.handle('doc:checkIntent', (_e, sessionId: string, blockIds: string[]) =>
   return s
 })
 
+/**
+ * The whole contract (as it now reads, with our edits) checked against each playbook position
+ * that applies, one request per position. Results cite paragraphs; only ids in the contract count.
+ */
+ipcMain.handle('doc:checkPlaybook', (_e, sessionId: string) => {
+  const { s, d } = docOf(sessionId)
+  if (alertFor(s.id)?.status === 'open')
+    throw new Error('On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.')
+  const w = wsFor(s)
+  const positions = applicable(w.store.playbook(), s.contractType)
+  if (!positions.length) throw new Error('No playbook positions apply to this kind of contract. Add or import some on the Playbook page.')
+  if (d.playbookCheck?.status === 'running') return s
+  const clauses: ClauseRef[] = d.blocks
+    .filter((b) => b.kind !== 'deleted')
+    .map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) }))
+    .filter((c) => c.text.trim())
+  const digest = contractDigest(d)
+  d.playbookCheck = { status: 'running', at: new Date().toISOString(), digest, results: [] }
+  w.audit.append(actor(), 'ai.playbook-requested', s.id, { positions: positions.map((p) => p.id) })
+  persist(s)
+  const ai = provider()
+  const ids = new Set(clauses.map((c) => c.id))
+  ;(async () => {
+    const results: PlaybookCheckResult[] = []
+    for (let i = 0; i < positions.length; i += 4) {
+      await Promise.all(
+        positions.slice(i, i + 4).map(async (p) => {
+          try {
+            const out = await ai.position({ clauses, position: p })
+            results.push({
+              positionId: p.id,
+              title: p.title,
+              status: out.status,
+              blockIds: out.clause_ids.filter((id) => ids.has(id)),
+              deviation: out.deviation.trim(),
+              severity: out.severity,
+              withinFallback: out.within_fallback,
+              suggestedRedline: out.suggested_redline.trim()
+            })
+            if (out.injection_suspected && out.injection_notes.trim()) {
+              s.aiInjectionReports.push(`Playbook check (${p.title}): ${out.injection_notes.trim()}`)
+              syncSecurityAlert(w, s)
+            }
+          } catch (e) {
+            results.push({ positionId: p.id, title: p.title, status: 'error', blockIds: [], deviation: '', severity: 'low', withinFallback: false, suggestedRedline: '', error: e instanceof Error ? e.message : String(e) })
+          }
+        })
+      )
+    }
+    const order = new Map(positions.map((p, i) => [p.id, i]))
+    results.sort((a, b) => order.get(a.positionId)! - order.get(b.positionId)!)
+    d.playbookCheck = { status: 'done', at: new Date().toISOString(), digest, results }
+    w.audit.append('system', 'ai.playbook', s.id, { results: results.map((r) => ({ position: r.positionId, status: r.status, severity: r.severity })) })
+    persist(s)
+  })().catch((e) => {
+    d.playbookCheck = { status: 'error', at: new Date().toISOString(), digest, results: [], error: String(e) }
+    persist(s)
+  })
+  return s
+})
+
 ipcMain.handle('doc:ask', (_e, sessionId: string, setIds: string[]) => {
   const { s } = docOf(sessionId)
   if (alertFor(s.id)?.status === 'open')
@@ -844,6 +935,40 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, history: ChatMessage[]
 // ---- IPC: knowledge base -------------------------------------------------------------------
 
 ipcMain.handle('kb:library', () => ws.store.library())
+
+// ---- import / export of the library and the playbook -------------------------------------
+
+/** Save the library or the playbook as a JSON file anyone can import. */
+ipcMain.handle('kb:export', async (_e, kind: 'library' | 'playbook') => {
+  const data = kind === 'library' ? libraryFile(ws.store.library(), actor()) : playbookFile(ws.store.playbook(), actor())
+  const entries = 'clauses' in data ? data.clauses.length : data.positions.length
+  const res = await dialog.showSaveDialog(win!, {
+    title: `Export the ${kind}`,
+    defaultPath: `clause-pilot-${kind}-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  })
+  if (res.canceled || !res.filePath) return null
+  await writeFile(res.filePath, JSON.stringify(data, null, 2))
+  ws.audit.append(actor(), `${kind}.exported`, null, { file: res.filePath, entries })
+  return res.filePath
+})
+
+/** Import a library or playbook file, merged by id (nothing is removed). */
+ipcMain.handle('kb:import', async (_e, kind: 'library' | 'playbook') => {
+  const res = await dialog.showOpenDialog(win!, { title: `Import a ${kind} file`, properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+  if (res.canceled || !res.filePaths[0]) return null
+  const raw = await readFile(res.filePaths[0], 'utf8')
+  if (kind === 'library') {
+    const { next, result } = mergeLibrary(ws.store.library(), parseImport<LibraryClause>('library', raw))
+    ws.store.saveLibrary(next)
+    ws.audit.append(actor(), 'library.imported', null, { file: res.filePaths[0], ...result })
+    return result
+  }
+  const { next, result } = mergePlaybook(ws.store.playbook(), parseImport<PlaybookPosition>('playbook', raw), actor())
+  ws.store.savePlaybook(next)
+  ws.audit.append(actor(), 'playbook.imported', null, { file: res.filePaths[0], ...result })
+  return result
+})
 ipcMain.handle('kb:playbook', () => ws.store.playbook())
 ipcMain.handle('kb:precedents', () => ws.store.precedents())
 ipcMain.handle('kb:nominations', () => ws.store.nominations())

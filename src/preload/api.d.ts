@@ -62,6 +62,10 @@ export interface Api {
     redo(id: string, actionId: string): Promise<ReviewSession>
     /** Ask the AI whether paragraphs mean the same as the approved clauses they differ from. */
     checkIntent(id: string, blockIds: string[]): Promise<ReviewSession>
+    /** Mark paragraphs with nothing to accept or reject as checked (or unmark them). */
+    check(id: string, blockIds: string[], on: boolean): Promise<ReviewSession>
+    /** Check the whole contract against each playbook position that applies (AI, in the background). */
+    checkPlaybook(id: string): Promise<ReviewSession>
     /** Remove a paragraph we added. */
     unsplit(id: string, blockId: string): Promise<ReviewSession>
     /** Earlier negotiations per change set (identical first, then similar). */
@@ -92,6 +96,10 @@ export interface Api {
     playbookProposals(): Promise<PlaybookProposal[]>
     proposePlaybook(p: { kind: PlaybookProposal['kind']; positionId: string | null; after: PlaybookPosition | null; reason: string }): Promise<PlaybookProposal[]>
     decidePlaybook(id: string, approve: boolean, note: string): Promise<{ proposals: PlaybookProposal[]; playbook: PlaybookPosition[] }>
+    /** Save the library or the playbook as a JSON file; returns the path (null if cancelled). */
+    export(kind: 'library' | 'playbook'): Promise<string | null>
+    /** Import a library or playbook file, merged by id; null if cancelled. */
+    import(kind: 'library' | 'playbook'): Promise<{ added: number; updated: number; unchanged: number } | null>
   }
   audit: {
     list(sessionId?: string): Promise<AuditEntry[]>

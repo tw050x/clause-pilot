@@ -669,6 +669,7 @@ del.us-del ins.th-ins { color: inherit; }
 .dot.ours { background: var(--rejected); }
 .dot.untracked { background: var(--review); }
 .dot.decided { background: var(--exact); }
+.dot.none { background: transparent; box-shadow: inset 0 0 0 1px var(--muted, #888); }
 .rc-note { margin: 0; font-size: 12.5px; }
 .rc-actions { display: flex; gap: 6px; }
 .rc-actions .btn { flex: 1; justify-content: center; }
@@ -746,7 +747,9 @@ del.us-del ins.th-ins { color: inherit; }
 .rc-key .bar.checked { background: var(--exact); }
 .rc-key .bar.theirs { background: color-mix(in srgb, #1d4ed8 45%, transparent); }
 .rc-key .bar.ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }
-.rc-key .bar.none { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.rc-key .bar.none { background: var(--border-strong); }
+/* Their paper: a paragraph nobody has read yet (nothing to accept or reject, nothing cleared). */
+.ed-doc .ed-p.chg-read { border-left-color: var(--border-strong); }
 
 /* The AI found it means the same as our approved wording: green, dashed, until a person decides it. */
 .ed-doc .ed-p.chg-ai { border-left: 4px dashed var(--exact); }
@@ -762,3 +765,16 @@ del.us-del ins.th-ins { color: inherit; }
 .btn.row-action { background: var(--surface); border-color: var(--border-strong); color: var(--text-2); }
 .btn.row-action:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 .t tr.row-hidden td:last-child { opacity: 1; }
+
+/* Playbook check (whole contract, on request) */
+.pbc { display: grid; gap: 8px; }
+.pbc-head { display: flex; align-items: center; gap: 10px; }
+.pbc-results { display: grid; gap: 8px; }
+.pbc-row { border-left: 3px solid var(--border); padding: 4px 0 4px 10px; display: grid; gap: 4px; }
+.pbc-row.deviation, .pbc-row.missing { border-left-color: var(--conflict); }
+.pbc-row.deviation.sev-low, .pbc-row.missing.sev-low { border-left-color: var(--review); }
+.pbc-row.compliant { border-left-color: var(--exact); }
+.pbc-row-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pbc-row p { margin: 0; }
+.pbc-links { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.pbc-redline { font-family: var(--doc-font); }
