@@ -220,8 +220,15 @@ table.t td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical
 
 /* Stays at the top of the right column however far the analysis is scrolled. */
 .right-nav { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 4px; margin-top: -12px; font-size: 13px; background: var(--surface); }
-.ask-seg { align-self: flex-start; }
-.ask-seg button { padding: 4px 10px; }
+/* What a rejection asks for: two radio cards, the chosen one outlined and tinted. */
+.ask-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ask-choice button { display: flex; gap: 9px; align-items: flex-start; text-align: left; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text-2); font: inherit; }
+.ask-choice button:hover { border-color: var(--focus); }
+.ask-choice strong { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.ask-choice small { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.ask-choice .radio { flex: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: var(--surface); }
+.ask-choice button.on { border-color: var(--focus); background: color-mix(in srgb, var(--focus) 8%, var(--surface)); box-shadow: 0 0 0 1px var(--focus); }
+.ask-choice button.on .radio { border-color: var(--focus); box-shadow: inset 0 0 0 3px var(--surface); background: var(--focus); }
 .link-btn { border: none; background: none; padding: 2px 0; cursor: pointer; color: var(--focus); font-weight: 600; }
 
 /* The selected clause's analysis: tinted and outlined, joined to the clause on its left. */

@@ -334,14 +334,19 @@ function DecisionPanel({
   const [redline, setRedline] = useState('')
   const [nominate, setNominate] = useState(false)
   const [removal, setRemoval] = useState(false)
+  // Where the pre-filled wording came from, shown under it so the reviewer knows what they're sending.
+  const [source, setSource] = useState('')
+  // The pre-filled reason, until the reviewer edits it: switching the ask then rewrites its last sentence.
+  const [autoNote, setAutoNote] = useState<string | null>(null)
   const playbook = usePlaybook()
   const d = flags.decision
 
   /**
    * Starting a rejection: pre-fill what the counterparty will read. The reason comes from our
-   * playbook position (or our standard wording); the ask is either our wording - the playbook's
-   * suggested replacement or our closest approved clause - or, when our position is that the
-   * clause shouldn't be there at all, a request to remove it.
+   * playbook position (or our standard wording). Our wording is always prepared, from the best
+   * source we have: the playbook's suggested replacement, our closest approved library clause, or
+   * wording we have accepted before (a precedent), else our playbook position itself. When our position is that the clause shouldn't
+   * be there at all, the ask starts as a removal, but the wording is ready if they switch.
    */
   const startReject = () => {
     // Prefer a finding that offers real wording, then one asking for removal, then any.
@@ -352,19 +357,34 @@ function DecisionPanel({
       flags.playbook[0]
     const position = finding && playbook.find((p) => p.id === finding.positionId)
     const best = session.match[clause.id]?.data?.candidates?.[0]
+    const agreed = session.precedents[clause.id]?.data?.find((p) => p.outcome === 'accepted')
     const suggestion = finding?.suggestedRedline ?? ''
-    const askRemoval = /^\s*delete\b/i.test(suggestion) || (!suggestion && flags.redlined === 'inserted' && !best)
+    const askRemoval = !!flags.injection.length || /^\s*delete\b/i.test(suggestion) || (!suggestion && flags.redlined === 'inserted' && !best)
     let reason = ''
     if (flags.injection.length) reason = 'This clause contains instructions addressed to an automated review system rather than to us. It needs to be removed.'
     else if (position) reason = `This doesn’t match our standard position on ${position.title.toLowerCase()}. ${position.standard}`
     else if (flags.overriding.length) reason = 'This clause overrides other terms of the agreement and changes their effect. We can’t accept that.'
     else if (best) reason = 'This departs from our standard wording for this clause.'
-    const wording = askRemoval ? '' : isInstruction(suggestion) ? best?.text ?? '' : suggestion || best?.text || ''
-    if (reason && wording && !askRemoval && !flags.injection.length) reason += ' We propose the wording below instead.'
-    setNote(reason)
-    setRemoval(askRemoval || !!flags.injection.length)
+
+    let wording = ''
+    let from = ''
+    if (suggestion && !isInstruction(suggestion)) [wording, from] = [suggestion, `Suggested by the playbook (${position?.title ?? 'standard position'})`]
+    else if (best) [wording, from] = [best.text, `Our approved wording: ${best.title}`]
+    else if (agreed) [wording, from] = [agreed.text, `Precedent: accepted with ${agreed.counterparty}, ${agreed.date}`]
+    else if (position) [wording, from] = [position.standard, `Our standard position (${position.title}); reword it as a clause before sending`]
+
+    setRemoval(askRemoval)
     setRedline(wording)
+    setSource(from)
+    setAutoNote(reason)
+    setNote(withAsk(reason, askRemoval, !!wording))
     setMode('rejected')
+  }
+  const withAsk = (reason: string, removal: boolean, hasWording: boolean) =>
+    !reason || flags.injection.length ? reason : `${reason} ${removal ? 'We ask for this clause to be removed.' : hasWording ? 'We propose the wording below instead.' : ''}`.trim()
+  const chooseAsk = (r: boolean) => {
+    setRemoval(r)
+    if (autoNote !== null) setNote(withAsk(autoNote, r, !!redline.trim()))
   }
   const cleared = isCleared(flags)
   const exact = flags.match === 'exact'
@@ -460,22 +480,36 @@ function DecisionPanel({
             autoFocus
             placeholder={mode === 'accepted' ? 'Why is this acceptable? (becomes a precedent)' : 'Why we can’t accept it (shared with the counterparty)'}
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value)
+              setAutoNote(null)
+            }}
           />
           {mode === 'rejected' && (
             <>
-              <div className="seg ask-seg">
-                <button className={!removal ? 'on' : ''} onClick={() => setRemoval(false)}>
-                  Propose our wording
-                </button>
-                <button className={removal ? 'on' : ''} onClick={() => setRemoval(true)}>
-                  Ask them to remove it
-                </button>
+              <div className="ask-choice" role="radiogroup" aria-label="What we ask for">
+                {([
+                  [false, 'Propose our wording', 'Send replacement wording'],
+                  [true, 'Ask them to remove it', 'Delete the clause entirely']
+                ] as const).map(([r, label, hint]) => (
+                  <button key={label} role="radio" aria-checked={removal === r} className={removal === r ? 'on' : ''} onClick={() => chooseAsk(r)}>
+                    <span className="radio" />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{hint}</small>
+                    </span>
+                  </button>
+                ))}
               </div>
               {removal ? (
                 <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>The response will ask for this clause to be removed.</p>
               ) : (
-                <textarea rows={4} placeholder="The wording we propose instead" value={redline} onChange={(e) => setRedline(e.target.value)} />
+                <>
+                  <textarea rows={4} placeholder="The wording we propose instead" value={redline} onChange={(e) => setRedline(e.target.value)} />
+                  <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+                    {source ? `Pre-filled from: ${source}.` : 'No approved wording or precedent found for this clause. Write the wording we propose.'}
+                  </p>
+                </>
               )}
             </>
           )}
