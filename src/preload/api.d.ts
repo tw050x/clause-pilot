@@ -1,7 +1,7 @@
 import type {
   Account, ContractRecord,
   AuditEntry, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination,
-  PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert, Settings
+  PlaybookPosition, PlaybookProposal, Precedent, RedlineComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
 
 type Unsub = () => void
@@ -38,6 +38,13 @@ export interface Api {
     onUpdate(cb: (s: ReviewSession) => void): Unsub
   }
   email: { draft(id: string): Promise<EmailDraft> }
+  redline: {
+    /** Build the marked-up .docx without saving it (for the in-app preview). */
+    preview(id: string): Promise<{ bytes: Uint8Array; stats: RedlineStats; comments: RedlineComment[]; name: string }>
+    /** Build it and ask where to save it. Returns the saved path, or null if cancelled. */
+    save(id: string): Promise<string | null>
+    open(path: string): Promise<void>
+  }
   chat: {
     send(id: string, history: ChatMessage[], requestId: string): Promise<string>
     onDelta(cb: (d: { requestId: string; text: string }) => void): Unsub

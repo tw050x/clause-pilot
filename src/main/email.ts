@@ -24,7 +24,7 @@ export function emailBrief(s: ReviewSession, reviewer: string): { points: EmailP
         label: clauseLabel(c),
         heading: c.heading,
         text: c.text,
-        note: d.note,
+        note: d.removal || d.redline ? d.note.replace(/\s*We propose the wording below instead\.?$/i, '') : d.note,
         removal: !!d.removal,
         redline: d.removal ? '' : d.redline || ''
       }
@@ -43,6 +43,8 @@ ${points
    What we ask: ${p.removal ? 'remove this clause' : p.redline ? `replace it with: ${p.redline}` : 'revert to our standard wording'}`
   )
   .join('\n')}
+
+A marked-up copy of the contract is attached: our changes are tracked changes and each point has a comment explaining it. Refer to it briefly; the email is the cover note.
 
 Return a subject line and the email body (plain text, no markdown).`
   return { points, prompt }
@@ -82,7 +84,7 @@ export function templateEmail(s: ReviewSession, reviewer: string): EmailDraft {
     .join('\n')
   return {
     subject: `${name}: PortSwigger comments`,
-    body: `Hello,\n\nThank you for sending this through. We have reviewed the draft and are happy with most of it. There ${points.length === 1 ? 'is one point' : `are ${points.length} points`} we need to resolve before signing:\n\n${items}\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`,
+    body: `Hello,\n\nThank you for sending this through. We have reviewed the draft and are happy with most of it. There ${points.length === 1 ? 'is one point' : `are ${points.length} points`} we need to resolve before signing. Our proposed changes are marked up as tracked changes in the attached copy, with a comment on each point:\n\n${items}\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`,
     generatedBy: 'template'
   }
 }

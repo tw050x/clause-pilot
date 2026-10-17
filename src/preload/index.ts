@@ -42,6 +42,7 @@ const api: Api = {
     onUpdate: on('session:update')
   },
   email: { draft: (id) => invoke('email:draft', id) },
+  redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
   chat: { send: (id, history, requestId) => invoke('chat:send', id, history, requestId), onDelta: on('chat:delta') },
   kb: {
     library: () => invoke('kb:library'),

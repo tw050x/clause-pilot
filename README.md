@@ -60,7 +60,21 @@ Negotiated drafts usually arrive as Word files with Track Changes and margin com
 - The clause is reviewed as **proposed** (their insertions in, deletions out), and anything they changed with Track Changes is **never accepted automatically**, even if the result looks standard.
 - **Whole clauses they deleted** are listed. If the deleted text was our pre-approved wording it is a must-change issue, and the response email asks for it to be reinstated.
 
-Not yet built: exporting our response as a redlined `.docx`, and comparing a new draft against the version we sent (to catch untracked edits).
+### Our response as a marked-up copy
+
+**Marked-up copy (.docx)** (in the review's sidebar, and linked from the email) turns the decisions into the document lawyers actually send back, previewed in the app and saved for attaching to the email:
+
+- **Rejected with our wording:** a word-level redline from their text to ours, as tracked changes in the reviewer's name. Only the words that differ are marked; the clause number is never touched.
+- **Rejected as a removal:** the clause struck through. **Rejected without wording:** a comment only.
+- **Accepted:** their tracked changes in that clause are accepted. **Undecided:** left exactly as they sent it.
+- **Our standard clauses they deleted:** their deletion is rejected, which reinstates the clause, with a comment saying why.
+- **Comments:** each rejection's reason becomes a Word comment. Where they had commented on the clause, ours is a threaded reply ("Agreed." on clauses we accepted). Notes on accepted clauses are internal precedent notes and are never exported.
+- **Formats:** a Word upload is edited in place, so their formatting, numbering and redline survive. PDF and text uploads have no Word original, so a plain `.docx` is built from the clauses and marked up the same way. Track Changes is switched on in the file, so their next edits are tracked too.
+- Saving is blocked while the review is on security hold. Each save is in the audit log with the file's SHA-256.
+
+`npx tsx scripts/dev/redline-check.ts <contract> <out.docx>` builds one outside the app (sample decisions via `PLAN`, or `ALL=1` to comment on every clause) and prints the result as read back.
+
+Not yet built: comparing a new draft against the version we sent (to catch untracked edits).
 
 ## Accounts, contracts and versions
 
@@ -123,6 +137,7 @@ src/main/
   ai/tasks.ts          task inputs and output schemas (Zod)
   ai/prompts.ts        prompts
   ai/provider.ts       Claude provider, replay provider, recorder
+  redline/docx.ts      our response as a marked-up .docx (tracked changes and comments)
   pipeline.ts          orchestration: steps (a) to (d), gates, live progress events
   store.ts, audit.ts   JSON store; hash-chained audit log
   index.ts             Electron main + IPC

@@ -5,6 +5,7 @@ import { clauseLabel, summarise, triage, type Visual } from '@shared/derive'
 import { Chevron, Icon } from '../lib/icons'
 import { ReviewGrid, type ReviewGridHandle, type RightMode } from '../components/ReviewGrid'
 import { EmailModal } from '../components/EmailModal'
+import { RedlineModal } from '../components/RedlineModal'
 
 interface Props {
   session: ReviewSession
@@ -34,6 +35,7 @@ export function Review({ session, panel, onChange, onNominationsChanged, alert, 
   const [mode, setMode] = useState<RightMode>('issues')
   const [selected, setSelected] = useState<string | null>(null)
   const [emailOpen, setEmailOpen] = useState(false)
+  const [redlineOpen, setRedlineOpen] = useState(false)
   const [exported, setExported] = useState<string | null>(null)
   const grid = useRef<ReviewGridHandle>(null)
 
@@ -163,6 +165,14 @@ export function Review({ session, panel, onChange, onNominationsChanged, alert, 
         </button>
         <button
           className="btn"
+          onClick={() => setRedlineOpen(true)}
+          disabled={running || alert?.status === 'open'}
+          title={alert?.status === 'open' ? 'On security hold: nothing goes back to the counterparty until the security team has reviewed it' : 'Their contract with our changes as tracked changes and our reasons as comments'}
+        >
+          <Icon name="doc" /> Marked-up copy (.docx)
+        </button>
+        <button
+          className="btn"
           onClick={async () => {
             const p = await window.api.audit.export(session.id)
             if (p) setExported(p)
@@ -258,7 +268,8 @@ export function Review({ session, panel, onChange, onNominationsChanged, alert, 
         alert={alert}
       />
       {panel && createPortal(sidebar, panel)}
-      {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} />}
+      {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
+      {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </>
   )
 }

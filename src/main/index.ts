@@ -14,6 +14,8 @@ import { compareVersions } from './engine/versions'
 import { DEMO_SCENARIOS } from '@shared/demoScenarios'
 import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
 import { emailBrief, templateEmail } from './email'
+import { buildRedline } from './redline/docx'
+import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -502,6 +504,35 @@ ipcMain.handle('email:draft', async (_e, sessionId: string): Promise<EmailDraft>
   }
   ws.audit.append(reviewer, 'email.drafted', s.id, { generatedBy: draft.generatedBy, rejected: Object.values(s.decisions).filter((d) => d.decision === 'rejected').length })
   return draft
+})
+
+/** Our response as a marked-up Word copy: tracked changes for our wording, comments for our reasons. */
+async function redline(sessionId: string) {
+  const s = session(sessionId)
+  if (alertFor(s.id)?.status === 'open') throw new Error('This review is on security hold. Nothing can go back to the counterparty until the security team has reviewed the alert.')
+  const out = await buildRedline(s, actor(), await readFile(resolvePath(s.filePath)))
+  return { s, ...out, name: `${s.docName.replace(/\.[a-z]+$/i, '')} - PortSwigger comments.docx` }
+}
+const savedRedlines = new Set<string>()
+
+ipcMain.handle('redline:preview', async (_e, sessionId: string) => {
+  const { bytes, stats, comments, name } = await redline(sessionId)
+  return { bytes: new Uint8Array(bytes), stats, comments, name }
+})
+ipcMain.handle('redline:save', async (_e, sessionId: string) => {
+  const { s, bytes, stats, name } = await redline(sessionId)
+  const res = await dialog.showSaveDialog(win!, { title: 'Save marked-up copy', defaultPath: name, filters: [{ name: 'Word document', extensions: ['docx'] }] })
+  if (res.canceled || !res.filePath) return null
+  await writeFile(res.filePath, bytes)
+  savedRedlines.add(res.filePath)
+  ws.audit.append(actor(), 'redline.exported', s.id, { file: res.filePath, sha256: createHash('sha256').update(bytes).digest('hex'), ...stats })
+  return res.filePath
+})
+// Only files this app just saved can be opened (in Word, or whatever handles .docx).
+ipcMain.handle('redline:open', async (_e, path: string) => {
+  if (!savedRedlines.has(path)) throw new Error('Unknown file.')
+  const err = await shell.openPath(path)
+  if (err) throw new Error(err)
 })
 
 ipcMain.handle('chat:send', async (_e, sessionId: string, history: ChatMessage[], requestId: string) => {

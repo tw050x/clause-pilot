@@ -3,7 +3,7 @@ import type { EmailDraft, ReviewSession } from '@shared/types'
 import { flagsFor, isCleared } from '@shared/derive'
 import { Icon } from '../lib/icons'
 
-export function EmailModal({ session, onClose }: { session: ReviewSession; onClose: () => void }) {
+export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSession; onClose: () => void; onMarkup: () => void }) {
   const [draft, setDraft] = useState<EmailDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -57,6 +57,15 @@ export function EmailModal({ session, onClose }: { session: ReviewSession; onClo
           )}
         </div>
         <div className="modal-foot">
+          {rejected > 0 && (
+            <span className="faint" style={{ marginRight: 'auto', alignSelf: 'center', fontSize: 12.5 }}>
+              Attach the{' '}
+              <button className="link-btn" onClick={onMarkup}>
+                marked-up copy (.docx)
+              </button>{' '}
+              the email refers to.
+            </span>
+          )}
           <button className="btn" onClick={generate}>
             Regenerate
           </button>

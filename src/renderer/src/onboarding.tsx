@@ -53,7 +53,7 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
   },
   {
     title: 'An email built from your decisions',
-    body: 'Each rejection becomes a numbered point with your reason and our proposed wording. In demo mode this is a template; live, Claude drafts it in our house style. Edit it, then copy it into your email client.',
+    body: 'Each rejection becomes a numbered point with your reason and our proposed wording, and the email refers to the marked-up copy. In demo mode this is a template; live, Claude drafts it in our house style. Edit it, then copy it into your email client.',
     target: () => q('.modal'),
     placement: 'left',
     action: 'Close the email to continue.',
@@ -370,6 +370,22 @@ const reviewAcme: Tour = {
       done: () => isDecided(clause('4.1'), 'accepted')
     },
     ...draftEmail('Your rejections, reasons and proposed wording become the response to Acme.'),
+    {
+      title: 'And a marked-up copy',
+      body: 'Lawyers reply in Word. The same decisions also mark up Acme’s own document, ready to attach to the email.',
+      target: () => withText('.rp-actions .btn', 'Marked-up copy'),
+      placement: 'left',
+      action: 'Click Marked-up copy.',
+      done: () => !!q('.redline-modal')
+    },
+    {
+      title: 'Our changes, in their Word file',
+      body: 'Our changes are tracked changes in your name: 2.4 struck out, and 3.3 put back. Our reasons are Word comments; where Acme left a comment, ours is a reply to it. Their change to 4.1, which you accepted, is accepted in the file. Click a comment to find it in the document.',
+      target: () => q('.redline-modal'),
+      placement: 'left',
+      action: 'Close the marked-up copy to continue.',
+      done: () => !q('.redline-modal')
+    },
     {
       title: 'A redline, decided on precedent',
       body: 'Each change was shown against our approved wording and against what we agreed before, so you could decide in seconds and consistently. Try “Second draft” to see what happens when Acme replies.'

@@ -258,6 +258,32 @@ export interface ReviewSession {
   decisions: Record<string, Decision>
 }
 
+/** A comment we put in the marked-up response. */
+export interface RedlineComment {
+  where: string
+  author: string
+  text: string
+  /** The clause text the comment is on (to find it in the preview). */
+  quote: string
+  /** Their comment this replies to. */
+  replyTo?: { author: string; text: string }
+}
+
+/** What went into a marked-up response (.docx). */
+export interface RedlineStats {
+  /** 'original': their Word file, marked up. 'generated': built from the clauses (PDF / text uploads). */
+  source: 'original' | 'generated'
+  replaced: number
+  removed: number
+  commentedOnly: number
+  reinstated: number
+  /** Accepted clauses whose tracked changes we accepted. */
+  acceptedChanges: number
+  comments: number
+  /** Decided clauses that couldn't be located in the document (should be 0). */
+  unmatched: string[]
+}
+
 export interface ReviewSummary {
   id: string
   accountId?: string
