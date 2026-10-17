@@ -793,3 +793,9 @@ del.us-del ins.th-ins { color: inherit; }
 .dr-resolved { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-2); margin-top: 2px; }
 .dr-resolved .link-btn { font-size: 11.5px; }
 .dr-resolve { font-size: 12px; }
+/* The highlight runs on through tracked changes: their text keeps its colour, the background is the comment's. */
+.ed-doc ins.ed-anchor, .ed-doc del.ed-anchor { background: color-mix(in srgb, #f5c542 28%, transparent); border-bottom: 2px solid color-mix(in srgb, #e0a800 70%, transparent); }
+.ed-doc ins.ed-anchor.ours, .ed-doc del.ed-anchor.ours { border-bottom-color: var(--comment-ours); }
+/* The bar beside a paragraph is 4px wide: a wider, invisible strip makes it easy to click (selects the paragraph). */
+.ed-doc .ed-p::after { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 24px; cursor: pointer; }
+.ed-doc .ed-p.gone::after { display: none; }

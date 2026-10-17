@@ -227,17 +227,22 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         }
         const hl = (m: Mark) =>
           !!f && f.blockId === b.id && (f.kind === 'theirs' ? m.theirs !== undefined && m.seg !== undefined && groupOf(b, f.seg).includes(m.seg) : m.ours === f.op && m.text === f.text)
+        // Comment ranges here (see below): struck text inside one is highlighted with it, so the
+        // highlight runs on across a deletion as it does in Word.
+        const anchors = anchorRanges(d, b, node.textContent)
+        const anchorAt = (pos: number) => anchors.find((r) => (r.from < pos && pos < r.to) || (r.whole && pos >= r.from && pos <= r.to))
         for (const x of spans(marks)) {
           const m = x.m
           const attrs = { 'data-mark': String(x.i), 'data-block': b.id }
           if (x.struck) {
+            const a = anchorAt(x.s)
             const ours = m.ours === 'del'
             decos.push(
               Decoration.widget(
                 Math.min(start + x.s, start + node.content.size),
                 () => {
                   const del = document.createElement('del')
-                  del.className = `${ours ? 'us-del' : 'th-del'}${hl(m) ? ' ed-hl' : ''}`
+                  del.className = `${ours ? 'us-del' : 'th-del'}${hl(m) ? ' ed-hl' : ''}${a ? ` ed-anchor ${a.ours ? 'ours' : 'theirs'}` : ''}`
                   del.title = ours ? 'Deleted by you' : `Deleted${m.author ? ` by ${m.author}` : ''}`
                   del.contentEditable = 'false'
                   del.dataset.mark = String(x.i)
@@ -245,7 +250,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
                   del.textContent = m.text
                   return del
                 },
-                { side: -1, key: `del:${b.id}:${x.i}:${m.text}:${hl(m)}`, ignoreSelection: true, marks: [] }
+                { side: -1, key: `del:${b.id}:${x.i}:${m.text}:${hl(m)}:${a ? (a.ours ? 'o' : 't') : ''}`, ignoreSelection: true, marks: [] }
               )
             )
           } else if (m.theirs === 'ins' || m.ours === 'ins') {
@@ -263,7 +268,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // in their file) and ours (the text selected when it was made). Found in the paragraph as it
         // now reads; if the words have changed since, there's nothing to highlight. Clicking the
         // highlight shows the comments.
-        for (const r of anchorRanges(d, b, node.textContent))
+        for (const r of anchors)
           decos.push(Decoration.inline(start + r.from, start + r.to, { class: `ed-anchor ${r.ours ? 'ours' : 'theirs'}`, 'data-anchor': b.id }))
       })
       return DecorationSet.create(state.doc, decos)
@@ -334,6 +339,15 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     }
 
     /** The paragraphs a clause number covers: the clause, its sub-clauses and items, and unnumbered paragraphs under it. */
+    /** One paragraph's text, start to end. */
+    const paraRange = (state: EditorState, id: string): { from: number; to: number } | null => {
+      let r: { from: number; to: number } | null = null
+      state.doc.forEach((node, pos) => {
+        if (node.attrs.id === id) r = { from: pos + 1, to: pos + 1 + node.content.size }
+      })
+      return r
+    }
+
     const clauseRange = (state: EditorState, id: string): { from: number; to: number } | null => {
       const d = model.current
       const labels = labelsOf(d)
@@ -485,11 +499,14 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         mousedown: (_v, e) => {
           const t = e.target as HTMLElement
           // A clause number: select the whole clause (with its sub-clauses), as a highlight.
+          // A clause number selects the whole clause (with its sub-clauses); the bar beside a
+          // paragraph (its left edge, widened for clicking) selects that paragraph.
           const label = t.closest<HTMLElement>('.dr-label')
-          const para = label?.closest<HTMLElement>('p[data-block]')
-          if (label && para) {
+          const onBar = t.matches('p[data-block]') && e.clientX < t.getBoundingClientRect().left + 10
+          const para = label?.closest<HTMLElement>('p[data-block]') ?? (onBar ? t : null)
+          if (para) {
             e.preventDefault()
-            const r = clauseRange(_v.state, para.dataset.block!)
+            const r = label ? clauseRange(_v.state, para.dataset.block!) : paraRange(_v.state, para.dataset.block!)
             if (r) {
               _v.focus()
               _v.dispatch(_v.state.tr.setSelection(TextSelection.create(_v.state.doc, r.from, r.to)))
@@ -664,12 +681,12 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
 }
 
 /** Where in a paragraph's text (as now shown) its comments are anchored, theirs and ours. */
-function anchorRanges(d: DocReview, b: DocBlock, text: string): { from: number; to: number; ours: boolean }[] {
-  const out: { from: number; to: number; ours: boolean }[] = []
+function anchorRanges(d: DocReview, b: DocBlock, text: string): { from: number; to: number; ours: boolean; whole?: boolean }[] {
+  const out: { from: number; to: number; ours: boolean; whole?: boolean }[] = []
   const find = (quote: string | undefined, isOurs: boolean) => {
     // No quote (a comment on the paragraph as a whole): the whole paragraph.
     if (!quote?.trim()) {
-      if (text.trim()) out.push({ from: 0, to: text.length, ours: isOurs })
+      if (text.trim()) out.push({ from: 0, to: text.length, ours: isOurs, whole: true })
       return
     }
     let q = quote.replace(/\s+/g, ' ').trim()
