@@ -815,3 +815,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ai-card-foot .link-btn { font-size: 11.5px; }
 .ai-raw { margin: 6px 0 0; max-height: 260px; overflow: auto; font: 11px ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
 .ai-card-go svg { color: inherit; margin-top: 0; }
+/* Under an answer to an AI card in Ask AI: back to the review. */
+.msg-return { margin-top: 10px; }
+.back-chevron { display: inline-flex; transform: rotate(180deg); }

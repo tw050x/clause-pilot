@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
+import { Chevron } from '../lib/icons'
 
 /** A message as shown: from a card, an assistant message waits for its AI task (`runId`). */
 type Shown = ChatMessage & { runId?: string; pending?: boolean }
@@ -13,7 +14,7 @@ export interface ChatInject {
 
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
-export function ChatPanel({ session, inject }: { session: ReviewSession | null; inject: ChatInject | null }) {
+export function ChatPanel({ session, inject, onReturn }: { session: ReviewSession | null; inject: ChatInject | null; onReturn: () => void }) {
   const [history, setHistory] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -108,6 +109,15 @@ export function ChatPanel({ session, inject }: { session: ReviewSession | null; 
             // The AI's answer: Markdown, in the flow of the page, not in a bubble.
             <div key={i} className="msg assistant">
               {m.pending && !m.content ? <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} /> : <Markdown text={m.content} />}
+              {/* An answer to a card: back to the review, where it's on the card too. */}
+              {m.runId && !m.pending && (
+                <button className="btn sm msg-return" onClick={onReturn}>
+                  <span className="back-chevron">
+                    <Chevron size={10} />
+                  </span>{' '}
+                  Return to review
+                </button>
+              )}
             </div>
           )
         )}
