@@ -5,7 +5,8 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
 import { history, undo, redo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
-import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
+import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
+import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { hasOpenChanges, marksFor, shownText } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 
@@ -193,20 +194,25 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             ...(tag ? { 'data-tag': tag } : {})
           })
         )
-        if (b.label)
+        // The number as it now reads: clauses we add are numbered, and the ones after move up.
+        const label = labelOf(d, b)
+        if (label) {
+          const moved = !b.ours && label !== b.label
           decos.push(
             Decoration.widget(
               start,
               () => {
                 const l = document.createElement('span')
-                l.className = 'dr-label'
+                l.className = `dr-label${b.ours ? ' us-num' : moved ? ' renumbered' : ''}`
                 l.contentEditable = 'false'
-                l.textContent = b.label!
+                l.textContent = label
+                if (moved) l.title = `Was ${b.label}: renumbered after a clause you added`
                 return l
               },
-              { side: -100, key: `label:${b.id}:${b.label}`, ignoreSelection: true }
+              { side: -100, key: `label:${b.id}:${label}:${moved}`, ignoreSelection: true }
             )
           )
+        }
         const hl = (m: Mark) =>
           !!f && f.blockId === b.id && (f.kind === 'theirs' ? m.theirs !== undefined && m.seg === f.seg : m.ours === f.op && m.text === f.text)
         for (const x of spans(marks)) {
@@ -311,6 +317,12 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     // A new paragraph (Enter): ours, after this one, with the text after the caret.
     const split = (state: EditorState, dispatch?: (tr: Transaction) => void) => {
       if (!dispatch) return true
+      const here = blocksById().get(state.selection.$from.parent.attrs.id)
+      // Enter on an empty numbered paragraph of ours ends the list (as in Word).
+      if (here?.ours && here.list && !state.selection.$from.parent.textContent) {
+        setList(here.id, null)
+        return true
+      }
       let st = state
       if (crosses(st)) replaceAcross(st, (tr) => (st = st.apply(tr)))
       const { $from, from, to } = st.selection
@@ -323,8 +335,30 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const $n = tr.doc.resolve(tr.selection.from)
       const lead = $n.parent.textContent.match(/^\s+/)?.[0].length ?? 0
       if (lead) tr.delete($n.start(), $n.start() + lead)
-      tr.setMeta('split', { from: node.attrs.id, id }).setMeta('addToHistory', false)
+      const src = blocksById().get(node.attrs.id)
+      tr.setMeta('split', { from: node.attrs.id, id, list: src ? (listAfter(model.current, src) ?? null) : null }).setMeta('addToHistory', false)
       dispatch(tr)
+      return true
+    }
+
+    const setList = (id: string, list: ListStyle | null) => cb.current.act(window.api.doc.setList(sessionId.current, id, list))
+    /** Tab / Shift-Tab on a numbered paragraph of ours: one level down or up. */
+    const indent = (by: 1 | -1) => (state: EditorState) => {
+      const b = blocksById().get(state.selection.$from.parent.attrs.id)
+      if (!b?.ours || !b.list) return true // Tab never leaves the document
+      if (b.list.kind === 'dec') {
+        const depth = b.list.depth + by
+        if (depth >= 1) setList(b.id, { kind: 'dec', depth })
+      } else if (by === -1) {
+        // A lettered item back up to the clause level it sits under ("(c)" under 2.3 → 2.4).
+        const at = model.current.blocks.indexOf(b)
+        const parent = model.current.blocks
+          .slice(0, at)
+          .reverse()
+          .map((x) => parseLabel(labelsOf(model.current).get(x.id) ?? x.label))
+          .find((p) => p?.kind === 'dec')
+        if (parent?.kind === 'dec') setList(b.id, { kind: 'dec', depth: parent.parts.length })
+      } else setList(b.id, { kind: 'roman', depth: 0, open: '(', close: ')' })
       return true
     }
 
@@ -339,12 +373,19 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             'Mod-y': redo,
             Enter: split,
             'Shift-Enter': split,
+            Tab: indent(1),
+            'Shift-Tab': indent(-1),
             Backspace: (state, dispatch) => {
               if (crosses(state)) return replaceAcross(state, dispatch!)
               const { $from, empty } = state.selection
               if (!empty || $from.parentOffset > 0) return false
               // At the start of a paragraph: never merge; an empty one you added is removed.
               const b = blocksById().get($from.parent.attrs.id)
+              // A numbered paragraph of ours loses its number first (as in Word).
+              if (b?.ours && b.list) {
+                setList(b.id, null)
+                return true
+              }
               if (b?.ours && !$from.parent.textContent && dispatch) {
                 const start = $from.before()
                 const tr = state.tr.delete(start, start + $from.parent.nodeSize)
@@ -434,7 +475,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         v.updateState(state)
         if (tr.getMeta('sync')) return
 
-        const split = tr.getMeta('split') as { from: string; id: string } | undefined
+        const split = tr.getMeta('split') as { from: string; id: string; list: ListStyle | null } | undefined
         if (split) {
           const text = (id: string) => {
             let t = ''
@@ -445,7 +486,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           }
           window.clearTimeout(pending.current.get(split.from))
           pending.current.delete(split.from)
-          window.api.doc.split(sessionId.current, split.from, text(split.from), text(split.id), split.id).then(
+          window.api.doc.split(sessionId.current, split.from, text(split.from), text(split.id), split.id, split.list).then(
             (r) => cb.current.act(Promise.resolve(r.session)),
             (e) => cb.current.act(Promise.reject(e))
           )

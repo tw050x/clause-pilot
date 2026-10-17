@@ -1,5 +1,6 @@
 import type { DocBlock, DocReview, HistoryAction, OurComment } from './types'
 import { marksFor, segmentsOf, shownText } from './changes'
+import { whereOf } from './numbering'
 
 /**
  * Undo history for a document review, by action.
@@ -104,7 +105,8 @@ export function describe(d: DocReview, a: HistoryAction): string {
   const where = (id: string) => {
     const b = blocks.get(id) ?? ((a.before[`para:${id}`] ?? a.after[`para:${id}`]) as { block: DocBlock } | null)?.block
     if (!b) return 'a paragraph'
-    return b.ours ? 'a new paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'a heading' : 'a paragraph'
+    const w = whereOf(d, b)
+    return w.startsWith('§') || w.startsWith('Item') ? w : `a ${w.toLowerCase()}`
   }
   const places = (ids: string[]) => {
     const w = [...new Set(ids.map(where))]
@@ -151,7 +153,7 @@ export function details(d: DocReview, a: HistoryAction): ActionItem[] {
   const where = (id: string) => {
     const b = blocks.get(id) ?? paraOf(id)?.block
     if (!b) return 'Paragraph'
-    return b.ours ? 'New paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph'
+    return whereOf(d, b)
   }
   // The paragraph's text with no wording of ours: what an edit started from when there was none.
   const plain = (id: string) => {

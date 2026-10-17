@@ -14,7 +14,7 @@ import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, marksFor, segmentsOf, shownText, statusOf, textWithout, type ChangeSet } from '@shared/changes'
-import type { ChangeStatus, OurComment } from '@shared/types'
+import type { ChangeStatus, ListStyle, OurComment } from '@shared/types'
 import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
 import { applicable, applyScriptedChanges, changeInput, createDocSession, toChangeReview, type ScriptedChange } from './docreview'
@@ -507,14 +507,14 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
  * Enter in the document: the paragraph keeps the text before the caret, and a new paragraph
  * of ours, after it, gets the rest. Both are our tracked changes.
  */
-ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string, newId?: string) => {
+ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string, newId?: string, list?: ListStyle | null) => {
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const at = d.blocks.findIndex((x) => x.id === blockId)
     if (at < 0) throw new Error('Unknown paragraph.')
     const b = d.blocks[at]
     const id = newId && /^n[a-z0-9]+$/.test(newId) && !d.blocks.some((x) => x.id === newId) ? newId : `n${Date.now().toString(36)}`
-    d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level })
+    d.blocks.splice(at + 1, 0, { id, kind: 'para', text: '', ours: true, level: b.level, ...(list ? { list } : {}) })
     const keep = clean(head)
     if (b.ours || keep !== clean(b.kind === 'deleted' ? '' : b.text)) d.edits[blockId] = keep
     else delete d.edits[blockId]
@@ -522,6 +522,21 @@ ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: strin
     ws.audit.append(actor(), 'doc.paragraph-added', s.id, { after: blockWhere(s, blockId) })
     persist(s)
     return { session: s, id }
+  })
+  persist(session(sessionId))
+  return out
+})
+
+/** Number a paragraph we added (Tab / Shift-Tab change its level; null: unnumbered). */
+ipcMain.handle('doc:setList', (_e, sessionId: string, blockId: string, list: ListStyle | null) => {
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const b = d.blocks.find((x) => x.id === blockId)
+    if (!b?.ours) throw new Error('Only paragraphs you added can be renumbered.')
+    const i = d.blocks.indexOf(b)
+    d.blocks[i] = list ? { ...b, list } : (({ list: _l, ...rest }) => rest)(b)
+    ws.audit.append(actor(), 'doc.paragraph-numbered', s.id, { list })
+    return s
   })
   persist(session(sessionId))
   return out

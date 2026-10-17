@@ -8,6 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, type SelectedChange } from '../components/DocEditor'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
+import { whereOf } from '@shared/numbering'
 import { diffSegments } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
 import { Redline } from '../components/Redline'
@@ -194,7 +195,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
 
 // ---- the redlines in a selection ---------------------------------------------------------------
 
-const where = (b: DocBlock) => (b.ours ? 'New paragraph' : b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'heading' ? 'Heading' : 'Paragraph')
+
 const snippet = (t: string) => (t.length > 140 ? `${t.slice(0, 140).trimEnd()}…` : t)
 
 /** Only the redlines you selected: accept or reject each of theirs, undo any of yours. */
@@ -247,7 +248,7 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
             return (
               <div key={`t${x.blockId}:${x.seg}`} className={`sel-item st-${st}`}>
                 <div className="sel-head">
-                  <strong>{where(b)}</strong>
+                  <strong>{whereOf(d, b)}</strong>
                   <span className="faint">
                     {seg.op === 'ins' ? 'Inserted' : 'Deleted'} by {seg.author ?? 'them'}
                     {b.untracked ? ' (not tracked)' : ''}
@@ -275,7 +276,7 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
           return (
             <div key={`o${x.blockId}:${x.op}:${x.text}`} className={`sel-item ours ${at < 0 ? 'st-undone' : ''}`}>
               <div className="sel-head">
-                <strong>{where(b)}</strong>
+                <strong>{whereOf(d, b)}</strong>
                 <span className="faint">{x.op === 'ins' ? 'Inserted' : 'Deleted'} by you</span>
                 <span style={{ flex: 1 }} />
                 {at < 0 && <span className="sel-st">Reverted</span>}
@@ -467,7 +468,7 @@ function ParagraphPanel({
 
   return (
     <section className="rc-section">
-      <h4 className="rp-h">{where(b)}</h4>
+      <h4 className="rp-h">{whereOf(d, b)}</h4>
       <div className="dr-facts">
         {b.ours && <span className="dr-fact">Added by you</span>}
         {!b.ours && b.kind === 'deleted' && <span className="dr-fact warn">Deleted{authors.length ? ` by ${authors.join(', ')}` : ''}</span>}

@@ -743,3 +743,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-doc .ed-cbadge { position: absolute; right: -56px; top: 2px; }
 .ed-doc:focus { outline: none; }
 .ProseMirror { word-wrap: break-word; white-space: pre-wrap; -webkit-font-variant-ligatures: none; font-variant-ligatures: none; }
+
+.ed-doc .dr-label.us-num { color: var(--rejected); }
+.ed-doc .dr-label.renumbered { color: var(--rejected); text-decoration: underline dotted; text-underline-offset: 3px; }

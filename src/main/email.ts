@@ -1,5 +1,6 @@
 import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
 import { beforeTheirs, changeSets, statusOf, type ChangeSet } from '@shared/changes'
+import { labelOf } from '@shared/numbering'
 
 /**
  * The cover email for a document review: one numbered point per change of
@@ -13,7 +14,7 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
   const sets = changeSets(d)
   const inSet = new Map(sets.flatMap((set) => set.blocks.map((b) => [b.id, set] as const)))
   const notesFor = (ids: string[]) => d.comments.filter((c) => ids.includes(c.blockId)).map((c) => c.text)
-  const whereOf = (b: DocBlock) => (b.ours ? 'A new paragraph' : b.label ? `Clause ${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `"${b.text.slice(0, 40)}…"`)
+  const whereOf = (b: DocBlock) => (labelOf(d, b) ? `Clause ${labelOf(d, b)!.replace(/\.$/, '')}` : b.ours ? 'A new paragraph' : b.label ? `Clause ${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `"${b.text.slice(0, 40)}…"`)
 
   const points: string[] = []
   const covered = new Set<string>()
@@ -43,7 +44,7 @@ export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
     const edit = d.edits[b.id]
     const notes = notesFor([b.id])
     if (edit === undefined && !notes.length) continue
-    const ask = edit === undefined ? '' : !edit.trim() ? (b.ours ? '' : 'We ask for this to be removed.') : b.ours ? `We propose adding: "${edit.trim()}"` : `We propose: "${edit.trim()}"`
+    const ask = edit === undefined ? '' : !edit.trim() ? (b.ours ? '' : 'We ask for this to be removed.') : b.ours ? `We propose adding a new ${labelOf(d, b) ? 'clause' : 'paragraph'}: "${edit.trim()}"` : `We propose: "${edit.trim()}"`
     if (b.ours && !edit?.trim() && !notes.length) continue
     points.push([whereOf(b), ...notes.map((n) => `   ${n}`), ask && `   ${ask}`].filter(Boolean).join('\n'))
   }

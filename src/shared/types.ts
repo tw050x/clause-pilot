@@ -280,6 +280,16 @@ export interface DocBlock {
   wasApproved?: string
   /** A paragraph we added (by pressing Enter): its wording is in `edits`, all of it our insertion. */
   ours?: boolean
+  /** A paragraph we added in a numbered list: numbered like its neighbours (see shared/numbering.ts). */
+  list?: ListStyle
+}
+
+/** How a paragraph we added is numbered: a decimal level ("2.4" is depth 2), or a lettered / roman item. */
+export interface ListStyle {
+  kind: 'dec' | 'alpha' | 'Alpha' | 'roman'
+  depth: number
+  open?: string
+  close?: string
 }
 
 /** A comment of ours, in the margin. */

@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
-import type { DocBlock, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
+import type { DocBlock, DocReview, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
+import { labelsOf, parseLabel } from '../../shared/numbering'
 import { changeKey, changeSets, segmentsOf, statusOf } from '../../shared/changes'
 import { readNumbering } from '../ingest/docxTracked'
 import { diffWords } from '../../shared/diff'
@@ -82,7 +83,17 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
         .map((x) => (added.has(x.id) ? [added.get(x.id)!] : parasOf(x)))
         .find((p) => p.length)
       const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
-      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, edit.trim())
+      // Numbered: in a Word list, it joins the list and Word numbers it (and renumbers the rest);
+      // with typed numbers, its number is typed in too.
+      const label = labelsOf(d).get(b.id)
+      let text = edit.trim()
+      let opts: { styleFrom?: Element; ilvl?: number } = {}
+      if (b.list && label) {
+        const model = listModel(d, b, parasOf)
+        if (model) opts = model
+        else text = `${label} ${text}`
+      }
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, text, opts)
       if (p) added.set(b.id, p)
       stats.replaced++
       continue
@@ -111,6 +122,18 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     m.redlineTo(paras, edit)
     edit ? stats.replaced++ : stats.removed++
   }
+  // Typed numbers after a clause we added move up, as our tracked changes ("2.4" → "2.5").
+  // Word's automatic numbers renumber themselves.
+  const now = labelsOf(d)
+  for (const b of d.blocks) {
+    if (b.ours || !b.label || b.kind === 'deleted') continue
+    const next = now.get(b.id)
+    const paras = parasOf(b)
+    if (!next || next === b.label || !paras.length || labels.get(paras[0])) continue
+    if (!visibleText(paras[0]).trimStart().startsWith(b.label)) continue
+    m.renumber(paras, b.label, next)
+    stats.replaced++
+  }
   for (const c of d.comments) {
     const b = d.blocks.find((x) => x.id === c.blockId)
     const paras = b ? parasOf(b) : []
@@ -124,6 +147,25 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc))
   const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
   return { bytes, stats, comments: m.log }
+}
+
+/**
+ * For a numbered paragraph we added, in a document with Word's automatic numbering: the
+ * paragraph of the same list to take its properties from, and the list level it goes at.
+ */
+function listModel(d: DocReview, b: DocBlock, parasOf: (b: DocBlock) => Element[]): { styleFrom: Element; ilvl: number } | undefined {
+  if (b.list?.kind !== 'dec') return undefined
+  const at = d.blocks.indexOf(b)
+  for (const x of d.blocks.slice(0, at).reverse()) {
+    if (x.ours) continue
+    const parsed = parseLabel(x.label)
+    if (parsed?.kind !== 'dec') continue
+    const p = parasOf(x)[0]
+    if (!p || !labels.get(p)) return undefined // typed numbers
+    const ilvl = Number(p.getElementsByTagNameNS(W, 'ilvl')[0]?.getAttributeNS(W, 'val') ?? 0)
+    return { styleFrom: p, ilvl: ilvl + (b.list.depth - parsed.parts.length) }
+  }
+  return undefined
 }
 
 /** A plain .docx of the contract as received (PDF / text uploads): one paragraph per block. */
@@ -416,14 +458,27 @@ class Markup {
     }
   }
 
+  /** Change a typed clause number, as a tracked change. */
+  renumber(paras: Element[], from: string, to: string) {
+    const lead = visiblePieces(paras).map((x) => x.text).join('').match(/^\s*/)![0].length
+    this.insertAt(paras, lead, to, 0)
+    this.deleteRange(paras, lead + to.length, lead + to.length + from.length)
+  }
+
   /** A whole new paragraph as our tracked insertion, after `after` (or before `before`), styled like its neighbour. */
-  insertParagraph(after: Element | null, before: Element | null, text: string): Element | null {
+  insertParagraph(after: Element | null, before: Element | null, text: string, opts: { styleFrom?: Element; ilvl?: number } = {}): Element | null {
     const near = after ?? before
     if (!near) return null
     const p = this.el('p')
-    const pPr = near.getElementsByTagNameNS(W, 'pPr')[0]
-    const ppr = pPr && pPr.parentNode === near ? (pPr.cloneNode(true) as Element) : this.el('pPr')
-    for (const n of ['rPr', 'numPr', 'sectPr', 'pPrChange']) for (const x of Array.from(ppr.getElementsByTagNameNS(W, n))) if (x.parentNode === ppr) ppr.removeChild(x)
+    // Paragraph properties from a neighbour, or (numbered) from the paragraph whose list it joins.
+    const from = opts.styleFrom ?? near
+    const pPr = from.getElementsByTagNameNS(W, 'pPr')[0]
+    const ppr = pPr && pPr.parentNode === from ? (pPr.cloneNode(true) as Element) : this.el('pPr')
+    const drop = opts.styleFrom ? ['rPr', 'sectPr', 'pPrChange'] : ['rPr', 'numPr', 'sectPr', 'pPrChange']
+    for (const n of drop) for (const x of Array.from(ppr.getElementsByTagNameNS(W, n))) if (x.parentNode === ppr) ppr.removeChild(x)
+    // Word numbers it: same list, at the level asked for.
+    const ilvl = opts.ilvl !== undefined ? ppr.getElementsByTagNameNS(W, 'ilvl')[0] : undefined
+    if (ilvl) ilvl.setAttributeNS(W, 'w:val', String(Math.max(0, opts.ilvl!)))
     // The paragraph mark itself is inserted too, so rejecting the change removes the whole paragraph.
     const rPr = this.el('rPr')
     rPr.appendChild(this.track('ins'))
