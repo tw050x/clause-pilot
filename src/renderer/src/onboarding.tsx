@@ -122,7 +122,7 @@ const reviewInitech: Tour = {
       title: 'Compared with our wording',
       body: 'There are no tracked changes, but the document is on our paper, so every paragraph was compared with our approved wording. 18 match word for word. Only 3 differ, and they’re listed as changes to decide.',
       target: () => q('.dr-baseline'),
-      placement: 'bottom',
+      placement: 'left',
       prepare: reviewPanel
     },
     openStep('§2.2', 'One clause was reworded', 'The party details and the signature block are different in every deal. Clause 2.2 is the interesting one.'),
@@ -190,9 +190,9 @@ const reviewAcme: Tour = {
     },
     {
       title: 'Grouped into changes',
-      body: 'Every edit in a paragraph, and the paragraphs of one clause, are a single change to decide, however many edits it has: their new section 5 (heading and clause) is one change, not two. The bar above the contract counts them; the sidebar shows whatever you select.',
+      body: 'Every edit in a paragraph, and the paragraphs of one clause, are a single change to decide, however many edits it has: their new section 5 (heading and clause) is one change, not two. The top of the sidebar counts them; below it, the sidebar shows whatever you select in the document.',
       target: () => q('.dr-bar'),
-      placement: 'bottom',
+      placement: 'left',
       prepare: reviewPanel
     },
     openStep('§3.3', 'They deleted one of our clauses', 'Deletions are the easiest edits to miss when reading a redline.'),
@@ -269,7 +269,7 @@ const reviewGlobex: Tour = {
       title: 'Compared with our wording',
       body: 'With no tracked changes, the PDF was compared with our approved wording. 17 paragraphs match word for word. Eight don’t, including a whole “Special conditions” section that isn’t in our template at all.',
       target: () => q('.dr-baseline'),
-      placement: 'bottom',
+      placement: 'left',
       prepare: reviewPanel
     },
     {
@@ -359,14 +359,14 @@ const secondDraft: Tour = {
       title: 'Compared with what we sent',
       body: 'Version 2 was compared with what we sent back: their text with our edits. They took our wording in 3.3, 5.1 and 6.8. One paragraph was changed without Track Changes.',
       target: () => q('.dr-baseline'),
-      placement: 'bottom',
+      placement: 'left',
       prepare: reviewPanel
     },
     {
       title: 'Only what changed',
       body: 'Fold away everything that is as we sent it.',
       target: () => q('.dr-toggle'),
-      placement: 'bottom',
+      placement: 'left',
       action: 'Tick Only what changed.',
       done: () => !!q('.dr-fold')
     },
@@ -410,7 +410,7 @@ const thirdDraft: Tour = {
       title: 'The last fix landed',
       body: 'They took our English-courts wording in 6.9. But one paragraph was added without Track Changes.',
       target: () => q('.dr-baseline'),
-      placement: 'bottom',
+      placement: 'left',
       prepare: reviewPanel
     },
     openStep('§6.10', 'Something new appeared', 'A clause that wasn’t in what we sent. Easy to miss in a late round, when everyone assumes the contract is done.'),

@@ -651,12 +651,13 @@ del.us-del ins.th-ins { color: inherit; }
 .dr-original { width: min(1100px, calc(100vw - 48px)); height: calc(100vh - 80px); }
 .dr-original-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-/* Overview bar above the document; contextual sidebar. */
-.dr-bar { position: sticky; top: 0; z-index: 6; display: flex; flex-direction: column; gap: 6px; padding: 10px 20px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); font-size: 13px; }
-.dr-bar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dr-bar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dr-bar .dr-counts { margin: 0; }
-.dr-bar .dr-toggle { margin: 0; }
-.dr-bar .dr-baseline, .dr-bar .banner { margin: 0; }
-.dr-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; color: var(--text-3); padding: 48px 24px; font-size: 13px; }
+/* Review overview at the top of the sidebar; the contextual part below it. */
+.dr-bar { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.dr-bar-row { display: flex; align-items: center; gap: 8px; }
+.dr-bar-title { line-height: 1.4; }
+.dr-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.dr-bar-actions .btn { flex: 1; justify-content: center; }
+.dr-bar-actions .btn.primary { flex-basis: 100%; }
+.dr-bar .dr-counts, .dr-bar .dr-toggle, .dr-bar .dr-baseline, .dr-bar .banner { margin: 0; }
+.dr-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; color: var(--text-3); padding: 32px 24px; font-size: 13px; }
 .dr-empty p { margin: 0; max-width: 240px; }

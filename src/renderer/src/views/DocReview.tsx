@@ -161,9 +161,91 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const selectedPara = selBlock ? d.blocks.find((b) => b.id === selBlock) ?? null : null
   const contextBlocks = new Set(current ? current.blocks.map((b) => b.id) : selectedPara ? [selectedPara.id] : [])
 
-  // The sidebar is contextual: it shows only what's selected in the document.
+  // The overview and the actions for the whole review, at the top of the sidebar.
+  const bar = (
+    <section className="rp-section dr-bar">
+      <div className="dr-bar-title">
+        <strong>{session.version ? `${accountName} · ${contractTitle}` : session.docName}</strong>
+        {session.version && (
+          <div className="faint">
+            Version {session.version}
+            {session.previous && (
+              <>
+                {' '}
+                · after{' '}
+                <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
+                  version {session.previous.version}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="dr-bar-changes">
+        <strong>
+          {sets.length} change{sets.length === 1 ? '' : 's'}
+        </strong>
+        {authors.length > 0 && <span className="faint"> by {authors.join(', ')}</span>}
+      </div>
+      {sets.length > 0 && (
+        <div className="dr-counts">
+          {(Object.keys(STATUS_LABEL) as SetStatus[])
+            .filter((k) => counts[k])
+            .map((k) => (
+              <span key={k} className={`dr-count st-${k}`}>
+                <i /> {STATUS_LABEL[k]} <strong>{counts[k]}</strong>
+              </span>
+            ))}
+        </div>
+      )}
+      {d.baseline && <BaselineNote session={session} untrackedSets={untrackedSets} />}
+      {!sets.length && (
+        <div className="dr-baseline">
+          {d.baseline ? 'Nothing changed: every paragraph is as we sent it or our approved wording.' : 'No tracked changes in this draft.'} Edit or comment anywhere in the document.
+        </div>
+      )}
+      {alert?.status === 'open' && (
+        <div className="banner danger">
+          <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found. Nothing goes to the AI or back to them until the security team has looked at it.{' '}
+          <button className="link-btn" onClick={onOpenSecurity}>
+            Security
+          </button>
+        </div>
+      )}
+      <div className="dr-bar-row">
+        <label className="row-gap dr-toggle">
+          <input type="checkbox" checked={changesOnly} onChange={(e) => setChangesOnly(e.target.checked)} /> Only what changed
+        </label>
+        <span style={{ flex: 1 }} />
+        <button className="btn sm" onClick={nextOpen} disabled={!counts.open} title="Next change to decide (N)">
+          Next to decide <Icon name="next" size={13} />
+        </button>
+      </div>
+      <div className="dr-bar-actions">
+        {sets.length > 0 && (
+          <button
+            className="btn sm"
+            disabled={onHold || asking || !unasked.length}
+            title={onHold ? 'On security hold: nothing goes to the AI' : 'One request per change, each with the whole contract for context'}
+            onClick={() => act(window.api.doc.ask(session.id, unasked.map((s) => s.id)))}
+          >
+            {asking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {unasked.length ? `Ask AI about ${unasked.length} open` : 'AI has reviewed the open changes'}
+          </button>
+        )}
+        <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
+          <Icon name="doc" size={14} /> Marked-up copy
+        </button>
+        <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
+          <Icon name="mail" size={14} /> Draft response
+        </button>
+      </div>
+    </section>
+  )
+
+  // Below it, the sidebar is contextual: it shows only what's selected in the document.
   const sidebar = (
     <div className="rp">
+      {bar}
       {!current && !selectedPara && (
         <div className="dr-empty">
           <Icon name="doc" size={22} />
@@ -222,92 +304,8 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     </div>
   )
 
-  // The overview and the actions for the whole review sit above the document.
-  const bar = (
-    <div className="dr-bar">
-      <div className="dr-bar-row">
-        <div className="dr-bar-title">
-          <strong>{session.version ? `${accountName} · ${contractTitle}` : session.docName}</strong>
-          {session.version && (
-            <span className="faint">
-              {' '}
-              Version {session.version}
-              {session.previous && (
-                <>
-                  {' '}
-                  · after{' '}
-                  <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
-                    version {session.previous.version}
-                  </button>
-                </>
-              )}
-            </span>
-          )}
-        </div>
-        <span style={{ flex: 1 }} />
-        {sets.length > 0 && (
-          <button
-            className="btn sm"
-            disabled={onHold || asking || !unasked.length}
-            title={onHold ? 'On security hold: nothing goes to the AI' : 'One request per change, each with the whole contract for context'}
-            onClick={() => act(window.api.doc.ask(session.id, unasked.map((s) => s.id)))}
-          >
-            {asking ? <span className="spinner sm" /> : <Icon name="sparkle" size={14} />} {unasked.length ? `Ask AI about ${unasked.length} open` : 'AI has reviewed the open changes'}
-          </button>
-        )}
-        <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
-          <Icon name="doc" size={14} /> Marked-up copy
-        </button>
-        <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
-          <Icon name="mail" size={14} /> Draft response
-        </button>
-      </div>
-      <div className="dr-bar-row">
-        <span className="dr-bar-changes">
-          <strong>
-            {sets.length} change{sets.length === 1 ? '' : 's'}
-          </strong>
-          {authors.length > 0 && <span className="faint"> by {authors.join(', ')}</span>}
-        </span>
-        {sets.length > 0 && (
-          <span className="dr-counts">
-            {(Object.keys(STATUS_LABEL) as SetStatus[])
-              .filter((k) => counts[k])
-              .map((k) => (
-                <span key={k} className={`dr-count st-${k}`}>
-                  <i /> {STATUS_LABEL[k]} <strong>{counts[k]}</strong>
-                </span>
-              ))}
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <label className="row-gap dr-toggle">
-          <input type="checkbox" checked={changesOnly} onChange={(e) => setChangesOnly(e.target.checked)} /> Only what changed
-        </label>
-        <button className="btn sm" onClick={nextOpen} disabled={!counts.open} title="Next change to decide (N)">
-          Next to decide <Icon name="next" size={13} />
-        </button>
-      </div>
-      {d.baseline && <BaselineNote session={session} untrackedSets={untrackedSets} />}
-      {!sets.length && (
-        <div className="dr-baseline">
-          {d.baseline ? 'Nothing changed: every paragraph is as we sent it or our approved wording.' : 'No tracked changes in this draft.'} Edit or comment anywhere in the document.
-        </div>
-      )}
-      {alert?.status === 'open' && (
-        <div className="banner danger">
-          <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found. Nothing goes to the AI or back to them until the security team has looked at it.{' '}
-          <button className="link-btn" onClick={onOpenSecurity}>
-            Security
-          </button>
-        </div>
-      )}
-    </div>
-  )
-
   return (
     <div className="dr-wrap" onScroll={() => setBubble(null)} ref={page}>
-      {bar}
       {error && (
         <div className="banner danger dr-error">
           <Icon name="alert" /> {error}
