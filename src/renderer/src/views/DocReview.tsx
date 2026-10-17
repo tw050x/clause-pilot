@@ -43,11 +43,14 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   /** Each new selection is a new action: everything decided in it undoes together. */
   const [selection, setSelection] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
-  /** The selection was text you highlighted (not a caret placed in a change). */
-  const [highlighted, setHighlighted] = useState(false)
-  const onSelectChanges = useCallback((x: SelectedChange[] | null, hl = false) => {
+  /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
+  const [highlight, setHighlight] = useState<{ blockId: string; quote: string } | null>(null)
+  const highlighted = !!highlight
+  /** A paragraph whose comments were asked for (its comment badge). */
+  const [commentsFor, setCommentsFor] = useState<string | null>(null)
+  const onSelectChanges = useCallback((x: SelectedChange[] | null, hl?: { blockId: string; quote: string }) => {
     setPicked(x)
-    setHighlighted(!!x && hl)
+    setHighlight(x && hl ? hl : null)
     if (x) {
       setSelection((n) => n + 1)
       setShowHistory(false)
@@ -73,7 +76,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
     },
     [onChange]
   )
-  const onFocusBlock = useCallback((id: string | null) => setFocus(id), [])
+  const onFocusBlock = useCallback((id: string | null) => {
+    setFocus(id)
+    setCommentsFor((c) => (c === id ? c : null))
+  }, [])
 
   const changed = useMemo(() => d.blocks.filter((b) => hasOpenChanges(d, b)), [d])
   const decided = Object.keys(d.resolved ?? {}).length
@@ -87,6 +93,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   const checking = Object.values(d.intent ?? {}).some((x) => x.status === 'running')
   const aiOk = d.blocks.filter((b) => intentCandidate(d, b) && aiSame(d, b)).length
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
+  const hlBlock = highlight ? (d.blocks.find((b) => b.id === highlight.blockId) ?? null) : null
 
   const column = (
     <div className="rc">
@@ -191,9 +198,26 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           }}
         />
       ) : picked && picked.length > 0 ? (
-        <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} />
+        <>
+          <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} />
+          {highlight && hlBlock && (
+            <section className="rc-section">
+              <CommentsBlock session={session} b={hlBlock} quote={highlight.quote} draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
+            </section>
+          )}
+        </>
+      ) : highlight && hlBlock ? (
+        <ParagraphPanel key={hlBlock.id} session={session} b={hlBlock} quote={highlight.quote} showComments draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
       ) : block ? (
-        <ParagraphPanel key={block.id} session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
+        <ParagraphPanel
+          key={block.id}
+          session={session}
+          b={block}
+          showComments={commentsFor === block.id || draft?.blockId === block.id}
+          draft={draft?.blockId === block.id ? draft : null}
+          setDraft={setDraft}
+          act={act}
+        />
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
       )}
@@ -216,6 +240,12 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         act={act}
         onFocusBlock={onFocusBlock}
         onSelectChanges={onSelectChanges}
+        onShowComments={(id) => {
+          setFocus(id)
+          setCommentsFor(id)
+          setPicked(null)
+          setHighlight(null)
+        }}
         onComment={(blockId, quote) => {
           setFocus(blockId)
           setDraft({ blockId, quote })
@@ -526,25 +556,23 @@ function ParagraphPanel({
   b,
   draft,
   setDraft,
-  act
+  act,
+  showComments,
+  quote
 }: {
   session: ReviewSession
   b: DocBlock
   draft: Draft | null
   setDraft: (d: Draft | null) => void
   act: (p: Promise<ReviewSession>) => Promise<boolean>
+  /** Comments show only when something is referenced: highlighted text, or the comment badge. */
+  showComments?: boolean
+  quote?: string
 }) {
   const d = session.doc!
   const edit = d.edits[b.id]
-  const theirs = b.comments ?? []
-  const ours = d.comments.filter((c) => c.blockId === b.id)
-  const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
   const authors = [...new Set(segmentsOf(b).filter((s) => s.op !== 'same').map((s) => s.author ?? 'Unknown'))]
   const last = d.lastRound?.[b.id]
-  const done = async (text?: string) => {
-    if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
-    setDraft(null)
-  }
 
   return (
     <section className="rc-section">
@@ -584,11 +612,42 @@ function ParagraphPanel({
         )}
       </div>
 
+      {showComments && <CommentsBlock session={session} b={b} quote={quote} draft={draft} setDraft={setDraft} act={act} />}
+    </section>
+  )
+}
+
+/** A paragraph's comments: theirs (with our replies) and ours, and adding one (on the highlighted text, if any). */
+function CommentsBlock({
+  session,
+  b,
+  quote,
+  draft,
+  setDraft,
+  act
+}: {
+  session: ReviewSession
+  b: DocBlock
+  quote?: string
+  draft: Draft | null
+  setDraft: (d: Draft | null) => void
+  act: (p: Promise<ReviewSession>) => Promise<boolean>
+}) {
+  const d = session.doc!
+  const theirs = b.comments ?? []
+  const ours = d.comments.filter((c) => c.blockId === b.id)
+  const loose = ours.filter((c) => !c.replyTo || !theirs.some((t) => t.id === c.replyTo))
+  const done = async (text?: string) => {
+    if (text !== undefined && draft && !(await act(window.api.doc.comment(session.id, { ...draft, text })))) return
+    setDraft(null)
+  }
+  return (
+    <>
       <div className="dr-mini-h rc-comments-h">
         Comments
         {!draft && (
-          <button className="btn sm" onClick={() => setDraft({ blockId: b.id, replyTo: theirs[0]?.id })}>
-            <Icon name="chat" size={13} /> {theirs.length ? 'Reply' : 'Add'}
+          <button className="btn sm" onClick={() => setDraft(quote ? { blockId: b.id, quote } : { blockId: b.id, replyTo: theirs[0]?.id })}>
+            <Icon name="chat" size={13} /> {quote ? 'Comment on the highlighted text' : theirs.length ? 'Reply' : 'Add'}
           </button>
         )}
       </div>
@@ -620,7 +679,7 @@ function ParagraphPanel({
           </div>
         )}
       </div>
-    </section>
+    </>
   )
 }
 

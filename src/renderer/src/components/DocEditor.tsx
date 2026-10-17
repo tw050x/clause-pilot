@@ -33,7 +33,9 @@ interface Props {
   /** "Comment" on selected text. */
   onComment: (blockId: string, quote: string) => void
   /** The redlines inside a selection (null when you click elsewhere). */
-  onSelectChanges: (changes: SelectedChange[] | null, highlighted?: boolean) => void
+  onSelectChanges: (changes: SelectedChange[] | null, highlight?: { blockId: string; quote: string }) => void
+  /** A paragraph's comment badge was clicked. */
+  onShowComments: (blockId: string) => void
   readOnly?: boolean
 }
 
@@ -92,7 +94,7 @@ function spans(marks: Mark[]) {
 const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
   m.theirs && m.seg !== undefined ? { blockId: b.id, kind: 'theirs', seg: groupOf(b, m.seg)[0] } : m.ours ? { blockId: b.id, kind: 'ours', op: m.ours, text: m.text } : null
 
-export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, readOnly }: Props) {
+export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const model = useRef(session.doc!)
@@ -100,8 +102,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   const pending = useRef(new Map<string, number>())
   const focused = useRef<SelectedChange | null>(null)
   const clicked = useRef<SelectedChange | null>(null)
-  const cb = useRef({ act, onFocusBlock, onComment, onSelectChanges })
-  cb.current = { act, onFocusBlock, onComment, onSelectChanges }
+  const cb = useRef({ act, onFocusBlock, onComment, onSelectChanges, onShowComments })
+  cb.current = { act, onFocusBlock, onComment, onSelectChanges, onShowComments }
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string } | null>(null)
 
   // ---- set up the editor once per review ----------------------------------------------------
@@ -435,7 +437,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           const badge = t.closest<HTMLElement>('[data-badge]')
           if (badge) {
             e.preventDefault()
-            cb.current.onFocusBlock(badge.dataset.badge!)
+            cb.current.onShowComments(badge.dataset.badge!)
             return true
           }
           // Struck text isn't part of the text, so a click on it is caught here.
@@ -472,7 +474,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
               return
             }
             focused.current = null
-            cb.current.onSelectChanges(changesIn(state), true)
+            cb.current.onSelectChanges(changesIn(state), { blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to, ' ').trim() })
             v.dispatch(state.tr.setMeta('redraw', true))
             // Within one paragraph, offer a comment on the selected text.
             if (sel.$from.parent === sel.$to.parent) {
