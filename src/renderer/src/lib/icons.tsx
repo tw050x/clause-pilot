@@ -40,3 +40,12 @@ export function Chevron({ size = 10 }: { size?: number }) {
     </svg>
   )
 }
+
+/** Add a comment (Material Symbols "comment with alert", filled), in the current text colour. */
+export function CommentIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" aria-hidden>
+      <path d="M480-360q17 0 28.5-11.5T520-400q0-17-11.5-28.5T480-440q-17 0-28.5 11.5T440-400q0 17 11.5 28.5T480-360Zm-40-160h80v-240h-80v240ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z" />
+    </svg>
+  )
+}

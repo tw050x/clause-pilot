@@ -9,7 +9,7 @@ import type { DocBlock, DocReview, ListStyle, OurComment, ReviewSession } from '
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { aiSame, changeKey, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
-import { Icon } from '../lib/icons'
+import { CommentIcon } from '../lib/icons'
 
 /**
  * The contract as one editable column, like Word with Track Changes on, built on ProseMirror.
@@ -34,7 +34,7 @@ interface Props {
   onComment: (blockId: string, quote: string) => void
   /** The redlines inside a selection (null when you click elsewhere). */
   onSelectChanges: (changes: SelectedChange[] | null, highlight?: { blockId: string; quote: string }) => void
-  /** A paragraph's comment badge was clicked. */
+  /** Commented text was clicked: show that paragraph's comments. */
   onShowComments: (blockId: string) => void
   readOnly?: boolean
 }
@@ -192,7 +192,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // Their changes here have all been decided: checked.
         const decided = !open && theyChanged(b) && segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
         const edited = b.ours || tidy(node.textContent) !== tidy(plainOf(d, b))
-        const gone = b.kind === 'deleted' && !marks.length && !node.textContent
+        // Nothing left to show: their deletion accepted, or their inserted paragraph rejected.
+        const gone = !b.ours && (b.kind === 'deleted' || theyChanged(b)) && !marks.length && !node.textContent
         // Nothing to look at: its changes all decided, or (untouched) it's our approved wording
         // word for word, or exactly what we sent last round.
         const checked = !open && !edited && (decided || isCleared(d, b))
@@ -260,26 +261,10 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         }
         // The text each comment is anchored to, highlighted as in Word: theirs (the comment's range
         // in their file) and ours (the text selected when it was made). Found in the paragraph as it
-        // now reads; if the words have changed since, there's nothing to highlight.
+        // now reads; if the words have changed since, there's nothing to highlight. Clicking the
+        // highlight shows the comments.
         for (const r of anchorRanges(b, d.comments, node.textContent))
           decos.push(Decoration.inline(start + r.from, start + r.to, { class: `ed-anchor ${r.ours ? 'ours' : 'theirs'}`, 'data-anchor': b.id }))
-        const comments = (b.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === b.id).length
-        if (comments)
-          decos.push(
-            Decoration.widget(
-              start + node.content.size,
-              () => {
-                const s = document.createElement('span')
-                s.className = 'ed-cbadge'
-                s.contentEditable = 'false'
-                s.dataset.badge = b.id
-                s.textContent = `💬 ${comments}`
-                s.title = `${comments} comment${comments === 1 ? '' : 's'}`
-                return s
-              },
-              { side: 100, key: `badge:${b.id}:${comments}`, ignoreSelection: true }
-            )
-          )
       })
       return DecorationSet.create(state.doc, decos)
     }
@@ -499,12 +484,6 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         },
         mousedown: (_v, e) => {
           const t = e.target as HTMLElement
-          const badge = t.closest<HTMLElement>('[data-badge]')
-          if (badge) {
-            e.preventDefault()
-            cb.current.onShowComments(badge.dataset.badge!)
-            return true
-          }
           // A clause number: select the whole clause (with its sub-clauses), as a highlight.
           const label = t.closest<HTMLElement>('.dr-label')
           const para = label?.closest<HTMLElement>('p[data-block]')
@@ -677,7 +656,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             setBubble(null)
           }}
         >
-          <Icon name="chat" size={15} />
+          <CommentIcon size={18} />
         </button>
       )}
     </>
@@ -688,7 +667,12 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
 function anchorRanges(b: DocBlock, ours: OurComment[], text: string): { from: number; to: number; ours: boolean }[] {
   const out: { from: number; to: number; ours: boolean }[] = []
   const find = (quote: string | undefined, isOurs: boolean) => {
-    let q = (quote ?? '').replace(/\s+/g, ' ').trim()
+    // No quote (a comment on the paragraph as a whole): the whole paragraph.
+    if (!quote?.trim()) {
+      if (text.trim()) out.push({ from: 0, to: text.length, ours: isOurs })
+      return
+    }
+    let q = quote.replace(/\s+/g, ' ').trim()
     // A typed number ("2.4") is drawn beside the paragraph, not in its text.
     if (b.label && q.startsWith(b.label)) q = q.slice(b.label.length).trim()
     if (!q) return

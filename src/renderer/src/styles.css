@@ -554,8 +554,6 @@ del.us-del ins.th-ins { color: inherit; }
 .dr-thread { display: flex; flex-direction: column; gap: 6px; padding: 6px; margin: -6px; border-radius: 8px; }
 .dr-thread.on { background: var(--surface-2); }
 .dr-thread-where { align-self: flex-start; font-size: 12px; font-weight: 600; }
-.dr-cbadge { position: absolute; right: -46px; top: 6px; display: inline-flex; align-items: center; gap: 3px; font: 600 11px system-ui, sans-serif; color: #1d4ed8; background: var(--surface); border: 1px solid color-mix(in srgb, #1d4ed8 35%, var(--border)); border-radius: 99px; padding: 2px 7px; cursor: pointer; }
-.dr-cbadge.on, .dr-cbadge:hover { background: #1d4ed8; color: #fff; }
 .dr-comment.ours { border-left: 3px solid var(--rejected); }
 .dr-comment.reply { margin-top: 4px; box-shadow: none; }
 .dr-comment-head { display: flex; gap: 6px; align-items: center; font-size: 12px; }
@@ -663,8 +661,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-p.bold { font-weight: 700; }
 .ed-p .dr-label { user-select: none; }
 .ed-p del { cursor: default; }
-.ed-cbadge { position: absolute; right: -52px; top: 2px; display: inline-flex; align-items: center; gap: 3px; font: 600 11px system-ui, sans-serif; color: #1d4ed8; background: var(--surface); border: 1px solid color-mix(in srgb, #1d4ed8 35%, var(--border)); border-radius: 99px; padding: 2px 7px; cursor: pointer; user-select: none; }
-.ed-cbadge:hover { background: #1d4ed8; color: #fff; }
 .rc { display: flex; flex-direction: column; }
 .rc-section { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .rc-title { font-weight: 600; font-size: 14px; }
@@ -726,7 +722,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-doc .ed-p.tagged::before { content: attr(data-tag); display: table; margin-bottom: 2px; font: 600 10.5px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--review); border: 1px dashed var(--review); border-radius: 4px; padding: 0 5px; }
 .ed-doc .dr-label { margin-right: 8px; font-weight: 700; user-select: none; }
 .ed-doc del { cursor: default; }
-.ed-doc .ed-cbadge { position: absolute; right: -56px; top: 2px; }
 .ed-doc:focus { outline: none; }
 .ProseMirror { word-wrap: break-word; white-space: pre-wrap; -webkit-font-variant-ligatures: none; font-variant-ligatures: none; }
 
