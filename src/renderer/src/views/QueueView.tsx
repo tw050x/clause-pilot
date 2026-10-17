@@ -44,7 +44,7 @@ export function ApprovalsView({
       <h3 className="approvals-h">
         Library nominations <span className="faint">{pendingNoms.length}</span>
       </h3>
-      {!pendingNoms.length && <p className="faint">Nothing waiting. Nominate a clause when you accept it during a review.</p>}
+      {!pendingNoms.length && <p className="faint">Nothing waiting. Nominate wording when you accept a change during a review.</p>}
       <div style={{ display: 'grid', gap: 12 }}>
         {pendingNoms.map((n) => (
           <NominationCard key={n.id} n={n} onChange={onNominations} />

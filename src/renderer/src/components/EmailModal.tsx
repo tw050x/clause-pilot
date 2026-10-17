@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { EmailDraft, ReviewSession } from '@shared/types'
-import { flagsFor, isCleared } from '@shared/derive'
 import { changeSets, statusOf } from '@shared/changes'
 import { Icon } from '../lib/icons'
 
@@ -18,12 +17,9 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
 
   const doc = session.doc
   const sets = doc ? changeSets(doc) : []
-  const rejected = doc ? (sets.some((x) => statusOf(doc, x) === 'countered') || Object.keys(doc.edits).length || doc.comments.length ? 1 : 0) : Object.values(session.decisions).filter((d) => d.decision === 'rejected').length
-  // Cleared clauses are accepted by default, so only the rest can be undecided.
-  const undecided = doc
-    ? sets.filter((x) => statusOf(doc, x) === 'open').length
-    : session.clauses.filter((c) => { const f = flagsFor(session, c); return !f.decision && !isCleared(f) }).length
+  const undecided = doc ? sets.filter((x) => statusOf(doc, x) === 'open').length : 0
   const flagged = doc ? sets.filter((x) => statusOf(doc, x) === 'flagged').length : 0
+  const answered = !!doc && (sets.some((x) => statusOf(doc, x) === 'countered') || Object.keys(doc.edits).length > 0 || doc.comments.length > 0)
 
   return (
     <div className="modal-back" onClick={onClose}>
@@ -31,7 +27,7 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
         <div className="modal-head">
           <Icon name="mail" />
           <h3>Response to counterparty</h3>
-          {draft && <span className={`pill ${draft.generatedBy === 'ai' ? 'intent' : 'neutral'}`}>{draft.generatedBy === 'ai' ? 'AI draft' : 'template draft (demo/offline)'}</span>}
+          {draft && <span className={`pill ${draft.generatedBy === 'ai' ? 'intent' : 'neutral'}`}>{draft.generatedBy === 'ai' ? 'AI draft' : 'built from your decisions'}</span>}
           <div style={{ flex: 1 }} />
           <button className="icon-btn" onClick={onClose}>
             <Icon name="x" />
@@ -41,9 +37,7 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
           {undecided > 0 && (
             <div className="banner info" style={{ marginBottom: 12 }}>
               <Icon name="alert" />{' '}
-              {doc
-                ? `${undecided} of their change${undecided === 1 ? '' : 's'} still to decide. The email covers what you've answered so far.`
-                : `${undecided} clause${undecided === 1 ? '' : 's'} still undecided. The email covers only the ${rejected} rejected clause${rejected === 1 ? '' : 's'} so far.`}
+              {`${undecided} of their change${undecided === 1 ? '' : 's'} still to decide. The email covers what you've answered so far.`}
             </div>
           )}
           {flagged > 0 && (
@@ -71,7 +65,7 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
           )}
         </div>
         <div className="modal-foot">
-          {rejected > 0 && (
+          {answered && (
             <span className="faint" style={{ marginRight: 'auto', alignSelf: 'center', fontSize: 12.5 }}>
               Attach the{' '}
               <button className="link-btn" onClick={onMarkup}>

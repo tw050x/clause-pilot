@@ -37,8 +37,6 @@ const api: Api = {
     start: (path, contractId) => invoke('review:start', path, contractId),
     get: (id) => invoke('review:get', id),
     list: () => invoke('review:list'),
-    decide: (id, d) => invoke('review:decide', id, d),
-    undo: (id, clauseId) => invoke('review:undo', id, clauseId),
     onUpdate: on('session:update')
   },
   email: { draft: (id) => invoke('email:draft', id) },
@@ -47,7 +45,10 @@ const api: Api = {
     revert: (id, setId) => invoke('doc:revert', id, setId),
     decide: (id, setId, status, note) => invoke('doc:decide', id, setId, status, note),
     comment: (id, c) => invoke('doc:comment', id, c),
-    uncomment: (id, commentId) => invoke('doc:uncomment', id, commentId)
+    uncomment: (id, commentId) => invoke('doc:uncomment', id, commentId),
+    seen: (id) => invoke('doc:seen', id),
+    ask: (id, setIds) => invoke('doc:ask', id, setIds),
+    nominate: (id, setId, note) => invoke('doc:nominate', id, setId, note)
   },
   redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
   chat: { send: (id, history, requestId) => invoke('chat:send', id, history, requestId), onDelta: on('chat:delta') },

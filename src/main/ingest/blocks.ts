@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import type { DocBlock, TrackedSegment } from '@shared/types'
 import { readDocx } from './docxTracked'
 import { parseFile } from './parse'
-import { isHeading, isSectionTitle } from './clauses'
+import { isHeading, isSectionTitle } from './headings'
 
 // A printed clause number typed into the text: "4", "4.", "4.2", "4.2.1".
 const TYPED_NUMBER = /^(\d{1,2}(?:\.\d{1,2}){0,3}\.?)\s+/
@@ -21,7 +21,7 @@ export async function readBlocks(path: string, sourceType: 'pdf' | 'docx' | 'txt
     }
   }
   const doc = await parseFile(path)
-  return doc.lines.map((line, i) => {
+  return joinBrokenLines(doc.lines).map((line, i) => {
     const { label, text } = splitLabel(line)
     return { id: `b${i}`, kind: headingLike(label, text) ? 'heading' : 'para', label, text }
   })
@@ -80,6 +80,21 @@ function dropPrefix(segments: TrackedSegment[], label: string): TrackedSegment[]
       continue
     }
     out.push(s)
+  }
+  return out
+}
+
+/**
+ * PDF text breaks paragraphs at page ends. A line that doesn't start a numbered
+ * clause or heading, following one that doesn't end a sentence, continues it.
+ */
+function joinBrokenLines(lines: string[]): string[] {
+  const out: string[] = []
+  for (const line of lines) {
+    const prev = out[out.length - 1]
+    const continues = prev !== undefined && !/[.;:!?)"”']$/.test(prev.trim()) && !TYPED_NUMBER.test(line) && !isHeading(line) && !isHeading(prev)
+    if (continues) out[out.length - 1] = `${prev.trimEnd()} ${line.trimStart()}`
+    else out.push(line)
   }
   return out
 }

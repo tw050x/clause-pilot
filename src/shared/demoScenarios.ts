@@ -5,12 +5,18 @@
  * run the second-draft one.
  */
 
-/** A decision on a clause, by printed number, or 'parties' / 'signature' for the unnumbered blocks. */
-export interface ScriptedDecision {
-  clause: string
-  decision: 'accepted' | 'rejected'
-  note: string
-  redline?: string
+/**
+ * A response to one of their changes, found by where it is ("§2.4") or how its
+ * text starts ("Signed for"). Mirrors what a reviewer does on the document screen.
+ */
+export interface ScriptedChange {
+  at: string
+  action: 'accept' | 'restore' | 'edit' | 'strike' | 'flag'
+  /** Our wording, for 'edit'. */
+  text?: string
+  /** Our margin comment (a reply, when they commented). */
+  comment?: string
+  note?: string
 }
 
 export interface DemoScenario {
@@ -21,7 +27,7 @@ export interface DemoScenario {
   accountId: string
   contractId: string
   /** Earlier drafts reviewed for you before the demo starts. */
-  history: { file: string; decisions: ScriptedDecision[] }[]
+  history: { file: string; changes: ScriptedChange[] }[]
   /** The draft "Simulate upload" opens (none for the playbook demo). */
   upload?: string
   /** Where the guided demo starts. */
@@ -34,26 +40,21 @@ const NON_SOLICIT_FALLBACK =
   'For twelve (12) months after the date of this Agreement neither party shall solicit any employee of the other party with whom it had direct contact in connection with the Purpose, save that general advertisements not targeted at such employees shall not breach this clause.'
 
 /** Our review of Acme's first draft, as the second- and third-draft demos assume it went. */
-const ACME_V1: ScriptedDecision[] = [
-  { clause: 'parties', decision: 'accepted', note: 'Entities checked.' },
-  { clause: '1.3', decision: 'accepted', note: 'Same exclusions, different words.' },
-  { clause: '2.1', decision: 'accepted', note: 'Disclosure to Affiliates is fine; Acme stays responsible for them.' },
-  { clause: '2.4', decision: 'rejected', note: 'We do not accept residuals clauses in any form.', redline: 'Delete clause 2.4 in its entirety.' },
-  { clause: '4.1', decision: 'accepted', note: 'Five years is within our fallback.' },
-  { clause: '5.1', decision: 'rejected', note: 'One-way and too long. We can accept a mutual 12-month restriction.', redline: NON_SOLICIT_FALLBACK },
-  { clause: '6.8', decision: 'rejected', note: 'We contract under English law.', redline: ENGLISH_LAW },
-  { clause: '6.9', decision: 'rejected', note: 'Disputes go to the English courts.', redline: ENGLISH_COURTS },
-  { clause: 'signature', decision: 'accepted', note: 'Signatories checked.' }
+const ACME_V1: ScriptedChange[] = [
+  { at: 'This Agreement is made', action: 'accept', note: 'Entities checked.' },
+  { at: '§1.3', action: 'accept', note: 'Same exclusions, different words.' },
+  { at: '§2.1', action: 'accept', note: 'Disclosure to Affiliates is fine; Acme stays responsible for them.' },
+  { at: '§2.4', action: 'strike', comment: 'We do not accept residuals clauses in any form, so we have struck this.' },
+  { at: '§3.3', action: 'restore', comment: 'Please keep our standard no-warranty clause.' },
+  { at: '§4.1', action: 'accept', note: 'Five years is within our fallback.' },
+  { at: '§5', action: 'edit', text: NON_SOLICIT_FALLBACK, comment: 'We can accept a mutual 12-month restriction, not a one-way 24-month one.' },
+  { at: '§6.8', action: 'edit', text: ENGLISH_LAW, comment: 'We contract under English law.' },
+  { at: '§6.9', action: 'edit', text: ENGLISH_COURTS, comment: 'Disputes go to the English courts.' },
+  { at: 'Signed for', action: 'accept', note: 'Signatories checked.' }
 ]
 
 /** Our review of their reply: everything resolved except the New York courts. */
-const ACME_V2: ScriptedDecision[] = [
-  { clause: 'parties', decision: 'accepted', note: 'Unchanged.' },
-  { clause: '1.3', decision: 'accepted', note: 'Same exclusions, different words.' },
-  { clause: '5.1', decision: 'accepted', note: 'Now our fallback wording.' },
-  { clause: '6.9', decision: 'rejected', note: 'Still New York. Disputes go to the English courts.', redline: ENGLISH_COURTS },
-  { clause: 'signature', decision: 'accepted', note: 'Unchanged.' }
-]
+const ACME_V2: ScriptedChange[] = [{ at: '§6.9', action: 'edit', text: ENGLISH_COURTS, comment: 'This is still New York. As before, disputes go to the English courts.' }]
 
 export const DEMO_SCENARIOS: DemoScenario[] = [
   {
@@ -96,7 +97,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description: 'You’ve reviewed Acme’s NDA and sent your comments. Their reply only needs reading where something changed.',
     accountId: 'ac-acme',
     contractId: 'ct-acme-nda',
-    history: [{ file: 'Acme-Mutual-NDA-redlined.docx', decisions: ACME_V1 }],
+    history: [{ file: 'Acme-Mutual-NDA-redlined.docx', changes: ACME_V1 }],
     upload: 'Acme-Mutual-NDA-v2.docx',
     startAt: 'contract'
   },
@@ -108,8 +109,8 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     accountId: 'ac-acme',
     contractId: 'ct-acme-nda',
     history: [
-      { file: 'Acme-Mutual-NDA-redlined.docx', decisions: ACME_V1 },
-      { file: 'Acme-Mutual-NDA-v2.docx', decisions: ACME_V2 }
+      { file: 'Acme-Mutual-NDA-redlined.docx', changes: ACME_V1 },
+      { file: 'Acme-Mutual-NDA-v2.docx', changes: ACME_V2 }
     ],
     upload: 'Acme-Mutual-NDA-v3.docx',
     startAt: 'contract'

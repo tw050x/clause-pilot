@@ -4,9 +4,10 @@
  *   2. demo/contracts/*            - the three demo contracts as .txt / .docx / .pdf
  *   3. demo/recordings/demo.json   - replayable AI responses
  *
- * Step 3 runs the REAL pipeline over the generated files (so PDF/DOCX parsing and
- * clause splitting are exercised) with a provider that answers from
- * demo/authored/answers.ts and records each answer under the exact input key.
+ * Step 3 builds each demo review the way the app does (reading the generated
+ * PDF / Word / text files, comparing later drafts with what we sent, using the
+ * demos' scripted responses) and records the authored answer in
+ * demo/authored/changes.ts for every change set under its exact AI input key.
  *
  * Run: npm run demo:build
  */
@@ -18,12 +19,15 @@ import PDFDocument from 'pdfkit'
 import { LIBRARY } from './seed-library'
 import { PLAYBOOK, PRECEDENTS } from './seed-playbook'
 import { DEMO_ACCOUNTS, DEMO_CONTRACT_RECORDS, DEMO_CONTRACTS, type DemoContractDef, type Block } from './demo-contracts'
-import { AUTHORED } from '../demo/authored/answers'
+import { AUTHORED_CHANGES } from '../demo/authored/changes'
 import { parseFile } from '../src/main/ingest/parse'
-import { createSession, runPipeline } from '../src/main/pipeline'
-import { recordingKey, type AiProvider } from '../src/main/ai/provider'
-import type { IntentInput, OverridesInput, PositionInput, IntentOut, OverridesOut, PositionOut, TaskName } from '../src/main/ai/tasks'
-import type { DemoContract } from '../src/shared/types'
+import { readBlocks } from '../src/main/ingest/blocks'
+import { applyScriptedChanges, changeInput, createDocSession } from '../src/main/docreview'
+import { changeKey, recordingKey } from '../src/main/ai/provider'
+import type { ChangeOut, TaskName } from '../src/main/ai/tasks'
+import { changeSets, type ChangeSet } from '../src/shared/changes'
+import { DEMO_SCENARIOS } from '../src/shared/demoScenarios'
+import type { DemoContract, ReviewSession } from '../src/shared/types'
 
 const root = process.cwd()
 const seedDir = join(root, 'data/seed')
@@ -138,81 +142,61 @@ async function main() {
 
   const recordings: Recording[] = []
   const missing: string[] = []
+  // Earlier drafts are reviewed with the demos' scripted responses, as the second- and third-draft demos do.
+  const scripted = DEMO_SCENARIOS.find((d) => d.id === 'third-draft')!.history
+  const reviewed = new Map<string, ReviewSession>()
 
   for (const def of DEMO_CONTRACTS) {
-    const authored = AUTHORED[def.file]
-    if (!authored) throw new Error(`No authored answers for ${def.file}`)
-    const doc = await parseFile(join(contractsDir, def.file))
-    const session = createSession(doc, def.file, 'demo')
-    const idOf = new Map(session.clauses.filter((c) => c.number).map((c) => [c.number!, c.id]))
-    const ids = (nums: string[]) =>
-      nums.map((n) => {
-        const id = idOf.get(n)
-        if (!id) missing.push(`${def.file}: authored answer references unknown clause ${n}`)
-        return id ?? 'missing'
-      })
-    const inj = authored.injectionNote
-      ? { injection_suspected: true, injection_notes: authored.injectionNote }
-      : { injection_suspected: false, injection_notes: '' }
-    const record = (task: TaskName, input: unknown, label: string, output: unknown) =>
-      recordings.push({ task, key: recordingKey(task, input), label: `${def.file} :: ${label}`, output, recordedAt: new Date().toISOString(), source: 'authored' })
-
-    const provider: AiProvider = {
-      kind: 'replay',
-      async intent(input: IntentInput): Promise<IntentOut> {
-        const n = input.clause.number ?? '(unnumbered)'
-        const out = authored.intent[n]
-        if (!out) {
-          missing.push(`${def.file}: intent for clause ${n} (candidates: ${input.candidates.map((c) => c.id).join(', ')})`)
-          throw new Error('missing')
-        }
-        record('intent', input, `intent ${n}`, out)
-        return out
-      },
-      async overrides(input: OverridesInput): Promise<OverridesOut> {
-        const out: OverridesOut = {
-          findings: authored.overrides.map(({ overriding, overridden, ...rest }) => ({
-            ...rest,
-            overriding_clause_id: ids([overriding])[0],
-            overridden_clause_ids: ids(overridden)
-          })),
-          ...inj
-        }
-        record('overrides', input, 'overrides', out)
-        return out
-      },
-      async position(input: PositionInput): Promise<PositionOut> {
-        const a = authored.positions[input.position.id]
-        if (!a) {
-          missing.push(`${def.file}: position ${input.position.id}`)
-          throw new Error('missing')
-        }
-        const { clauses, ...rest } = a
-        const out: PositionOut = { ...rest, clause_ids: ids(clauses), ...inj }
-        record('position', input, `position ${input.position.id}`, out)
-        return out
+    const path = join(contractsDir, def.file)
+    const doc = await parseFile(path)
+    const blocks = await readBlocks(path, doc.sourceType)
+    const prev = def.followUpOf ? reviewed.get(def.followUpOf) : undefined
+    if (def.followUpOf && !prev) throw new Error(`${def.file} follows ${def.followUpOf}, which must come first`)
+    const s = createDocSession(doc, blocks, `demo/contracts/${def.file}`, 'demo', { prev, library: LIBRARY })
+    const authored = AUTHORED_CHANGES[def.file] ?? {}
+    const sets = changeSets(s.doc!)
+    const byLabel = new Map(s.doc!.blocks.filter((b) => b.label).map((b) => [b.label!.replace(/\.$/, ''), b.id]))
+    const keyOf = (set: ChangeSet) => Object.keys(authored).find((k) => set.where.split(' ')[0] === k || set.blocks[0].text.startsWith(k))
+    for (const set of sets) {
+      const k = keyOf(set)
+      if (!k) {
+        missing.push(`${def.file}: no authored answer for the change at ${set.where}`)
+        continue
       }
+      const a = authored[k]
+      const first = set.blocks.find((b) => b.kind !== 'heading') ?? set.blocks[0]
+      const related = (a.related ?? []).map((r) => {
+        const id = byLabel.get(r.label)
+        if (!id) missing.push(`${def.file} ${k}: related paragraph ${r.label} not found`)
+        return { block_id: id ?? 'missing', why: r.why }
+      })
+      const out: ChangeOut = {
+        summary: a.summary,
+        effect: a.effect,
+        risk: a.risk,
+        recommendation: a.recommendation,
+        reasoning: a.reasoning,
+        playbook: a.playbook,
+        related,
+        suggested_edits: a.suggest === undefined ? [] : [{ block_id: first.id, text: a.suggest }],
+        comment_to_them: a.comment_to_them,
+        injection_suspected: !!a.injection,
+        injection_notes: a.injection ?? ''
+      }
+      const input = changeInput(s, set, [], [])
+      recordings.push({ task: 'change', key: recordingKey('change', changeKey(input)), label: `${def.file} :: ${set.where}`, output: out, recordedAt: new Date().toISOString(), source: 'authored' })
     }
-
-    await runPipeline(session, {
-      ai: provider,
-      library: LIBRARY,
-      precedents: PRECEDENTS,
-      playbook: PLAYBOOK,
-      emit: () => {},
-      audit: () => {}
-    })
-
-    const kinds = session.clauses.map((c) => `${c.number ?? c.heading ?? c.id}:${session.match[c.id].data?.kind}`)
-    console.log(`\n${def.file} (${session.contractType}, ${session.clauses.length} clauses)\n  ${kinds.join('  ')}`)
-    const local = Object.entries(session.injection)
-    if (local.length) console.log(`  local injection flags: ${local.map(([id, h]) => `${id} ${h.join('/')}`).join('; ')}`)
+    for (const k of Object.keys(authored)) if (!sets.some((x) => keyOf(x) === k)) missing.push(`${def.file}: authored answer for ${k}, but the app finds no change there`)
+    console.log(`${def.file}: ${s.doc!.blocks.length} paragraphs, ${sets.length} changes (${sets.map((x) => x.where.split(' ')[0]).join(', ')})`)
+    const script = scripted.find((h) => h.file === def.file)
+    if (script) applyScriptedChanges(s, script.changes, 'demo-setup')
+    reviewed.set(def.file, s)
   }
 
   writeFileSync(join(recordingsDir, 'demo.json'), JSON.stringify(recordings, null, 2))
   console.log(`\nrecordings: ${recordings.length}`)
   if (missing.length) {
-    console.error(`\nMISSING authored answers (${missing.length}):\n  ${missing.join('\n  ')}`)
+    console.error(`\nMISSING or unused authored answers (${missing.length}):\n  ${missing.join('\n  ')}`)
     process.exit(1)
   }
 }

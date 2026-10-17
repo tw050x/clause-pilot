@@ -70,7 +70,7 @@ export function PlaybookView({ onProposalsChanged }: { onProposalsChanged: () =>
 
       {playbook.length === 0 && draft?.mode !== 'add' && (
         <div className="empty-state">
-          No standard positions yet, so contracts are only checked against the library and for clauses that override others. Use “Propose new position” to add one (for example,
+          No standard positions yet, so when you ask the AI about a change it has nothing of ours to check it against. Use “Propose new position” to add one (for example,
           governing law or a liability cap). Each approved position is checked in every review.
         </div>
       )}

@@ -12,17 +12,20 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseFile } from '../src/main/ingest/parse'
-import { splitClauses } from '../src/main/ingest/clauses'
-import { buildRedline } from '../src/main/redline/docx'
-import type { Clause, Decision, ReviewSession } from '../src/shared/types'
+import { readBlocks } from '../src/main/ingest/blocks'
+import { createDocSession } from '../src/main/docreview'
+import { buildDocRedline } from '../src/main/redline/docx'
+import type { DocBlock } from '../src/shared/types'
 
 const ROOT = join(import.meta.dirname, '..', 'test-contracts')
 
 interface Edit {
-  /** Clause number ("4"), or the start of an unnumbered clause such as a cover-page row ("Governing Law"). */
+  /** Paragraph number ("4"), a sub-paragraph ("5.3/(b)"), or how a key-terms row starts ("Governing Law"). */
   clause: string
   /** The clause as the counterparty wants it (empty with `remove`). */
   to?: string
+  /** Or: words they add at the end of it. */
+  append?: string
   remove?: boolean
   /** Their margin comment explaining the change. Leave out for a silent edit. */
   comment?: string
@@ -79,8 +82,9 @@ const DRAFTS: Draft[] = [
     edits: [
       { clause: 'Governing Law', to: 'Governing Law — The laws of the State of New York', comment: 'All Contoso supplier contracts are under New York law.' },
       {
-        clause: '5.3',
-        to: 'Termination. Either party may terminate the Framework Terms or an Order Form immediately: (a) if the other party fails to cure a material breach of the Framework Terms or an Order Form following 30 days notice; (b) upon notice if the other party (i) materially breaches the Framework Terms or an Order Form in a manner that cannot be cured; (ii) dissolves or stops conducting business without a successor; (iii) makes an assignment for the benefit of creditors; or (iv) becomes the debtor in insolvency, receivership, or bankruptcy proceedings that continue for more than 60 days. Customer may also terminate any Order Form for convenience on 30 days’ notice, and Provider will refund any prepaid Fees for the remainder of the Subscription Period.',
+        // The termination rights are in 5.3(b): termination for convenience is added after them.
+        clause: '5.3/(b)',
+        append: 'Customer may also terminate any Order Form for convenience on 30 days’ notice, and Provider will refund any prepaid Fees for the remainder of the Subscription Period.',
         comment: 'Our policy requires termination for convenience in all SaaS contracts.'
       },
       {
@@ -100,26 +104,32 @@ const DRAFTS: Draft[] = [
   }
 ]
 
-const find = (clauses: Clause[], key: string) =>
-  /^\d+(\.\d+)*$/.test(key) ? clauses.find((c) => c.number === key) : clauses.find((c) => !c.number && c.text.startsWith(key))
+/** A numbered paragraph by its number ("4"), or a key-terms row by its first cell ("Governing Law"). */
+const find = (blocks: DocBlock[], key: string): DocBlock | undefined => {
+  if (key.includes('/')) {
+    const [parent, sub] = key.split('/')
+    const at = blocks.indexOf(find(blocks, parent)!)
+    return blocks.slice(at + 1).find((b) => b.label === sub)
+  }
+  return /^\d+(\.\d+)*$/.test(key) ? blocks.find((b) => b.label?.replace(/\.$/, '') === key && b.kind !== 'heading') ?? blocks.find((b) => b.label?.replace(/\.$/, '') === key) : blocks.find((b) => !b.label && b.text.startsWith(key))
+}
 
 mkdirSync(join(ROOT, 'redlined'), { recursive: true })
 for (const d of DRAFTS) {
   const path = join(ROOT, 'originals', d.from)
   const doc = await parseFile(path)
-  const clauses = splitClauses(doc.lines, doc.lineMeta)
-  const decisions: Record<string, Decision> = {}
+  const s = createDocSession(doc, await readBlocks(path, doc.sourceType), path, 'live', { library: [] })
   const at = new Date('2026-10-14T09:30:00Z').toISOString()
+  const blocks = s.doc!.blocks
   for (const e of d.edits) {
-    const c = find(clauses, e.clause)
-    if (!c) throw new Error(`${d.from}: no clause "${e.clause}"`)
-    decisions[c.id] = { clauseId: c.id, decision: 'rejected', note: e.comment ?? '', redline: e.to ?? '', removal: !!e.remove, nominate: false, by: d.author, at }
+    const b = find(blocks, e.clause)
+    if (!b) throw new Error(`${d.from}: no paragraph "${e.clause}"`)
+    // Our edits are written as wording without the printed number (it's never edited).
+    const to = e.remove ? '' : e.append ? `${b.text} ${e.append}` : (e.to ?? '').replace(/^\d+(\.\d+)*\.?\s+/, '')
+    s.doc!.edits[b.id] = to
+    if (e.comment) s.doc!.comments.push({ id: `c${s.doc!.comments.length}`, blockId: b.id, text: e.comment, by: d.author, at })
   }
-  const session = {
-    id: d.out, docName: d.from, filePath: path, sourceType: doc.sourceType, contractType: 'general', fileSha256: doc.sha256, mode: 'live', createdAt: at,
-    clauses, match: {}, precedents: {}, overrides: { status: 'done' }, playbook: {}, injection: {}, aiInjectionReports: [], decisions
-  } as unknown as ReviewSession
-  const { bytes, stats } = await buildRedline(session, d.author, readFileSync(path), { commentsOnlyWhenGiven: true })
+  const { bytes, stats } = await buildDocRedline(s, d.author, readFileSync(path))
   if (stats.unmatched.length) throw new Error(`${d.from}: couldn't place ${stats.unmatched.join(', ')}`)
   writeFileSync(join(ROOT, 'redlined', d.out), bytes)
   console.log(`${d.out}: ${stats.replaced} edits, ${stats.comments} comments`)

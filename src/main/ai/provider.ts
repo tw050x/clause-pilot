@@ -10,6 +10,9 @@ import {
   OverridesSchema,
   PositionSchema,
   EmailSchema,
+  ChangeSchema,
+  type ChangeInput,
+  type ChangeOut,
   type IntentInput,
   type IntentOut,
   type OverridesInput,
@@ -26,7 +29,9 @@ import {
   contractBlock,
   OVERRIDES_QUESTION,
   positionQuestion,
-  EMAIL_SYSTEM
+  EMAIL_SYSTEM,
+  paragraphsBlock,
+  changeQuestion
 } from './prompts'
 
 export interface AiProvider {
@@ -34,7 +39,11 @@ export interface AiProvider {
   intent(input: IntentInput): Promise<IntentOut>
   overrides(input: OverridesInput): Promise<OverridesOut>
   position(input: PositionInput): Promise<PositionOut>
+  change(input: ChangeInput): Promise<ChangeOut>
 }
+
+/** A change review is replayed by the contract and the change; the playbook and history it was given are context. */
+export const changeKey = (input: ChangeInput) => ({ contract: input.contract, change: input.change })
 
 export class NoRecordingError extends Error {
   constructor(task: TaskName) {
@@ -111,6 +120,18 @@ export class AnthropicProvider implements AiProvider {
 
   position(input: PositionInput): Promise<PositionOut> {
     return this.structured(PositionSchema, DOCUMENT_SYSTEM, this.documentContent(input.clauses, positionQuestion(input)), 'medium')
+  }
+
+  change(input: ChangeInput): Promise<ChangeOut> {
+    return this.structured(
+      ChangeSchema,
+      DOCUMENT_SYSTEM,
+      [
+        { type: 'text', text: paragraphsBlock(input.contract), cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: changeQuestion(input) }
+      ],
+      'medium'
+    )
   }
 
   email(userPrompt: string): Promise<EmailOut> {
@@ -198,6 +219,9 @@ export class ReplayProvider implements AiProvider {
   position(input: PositionInput) {
     return this.replay<PositionOut>('position', input)
   }
+  change(input: ChangeInput) {
+    return this.replay<ChangeOut>('change', changeKey(input))
+  }
 }
 
 /** Live mode with recording on: every successful response becomes replayable later (demo / offline / evals). */
@@ -219,5 +243,8 @@ export class RecordingProvider implements AiProvider {
   }
   position(input: PositionInput) {
     return this.rec('position', input, () => this.inner.position(input))
+  }
+  change(input: ChangeInput) {
+    return this.rec('change', changeKey(input), () => this.inner.change(input))
   }
 }

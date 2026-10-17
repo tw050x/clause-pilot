@@ -41,7 +41,7 @@ export function ReviewsView({ reviews, accountName, onOpen }: { reviews: ReviewS
                   </td>
                   <td className="muted">{r.contractType === 'nda' ? 'NDA' : r.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
                   <td className="muted">
-                    {r.decided} of {r.clauses} decided
+                    {r.decided} of {r.clauses} changes decided
                     {r.rejected > 0 && <span className="pill rejected" style={{ marginLeft: 6 }}>{r.rejected} rejected</span>}
                   </td>
                   <td className="muted">{new Date(r.createdAt).toLocaleString()}</td>

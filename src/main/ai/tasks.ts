@@ -84,4 +84,40 @@ export const EmailSchema = z.object({
 })
 export type EmailOut = z.infer<typeof EmailSchema>
 
-export type TaskName = 'intent' | 'overrides' | 'position'
+/** One change set, reviewed in the context of the whole contract (document review, on request). */
+export interface ChangeInput {
+  /** The contract as received, paragraph by paragraph. */
+  contract: { id: string; label?: string; text: string }[]
+  change: {
+    where: string
+    /** Found by comparison (not tracked in Word). */
+    untracked: boolean
+    blocks: { id: string; label?: string; before: string; after: string; their_comments: string[] }[]
+  }
+  /** Our standard positions that apply. Not part of the record/replay key. */
+  positions: PlaybookPosition[]
+  /** How we answered the same or similar changes before. Not part of the record/replay key. */
+  seen: { counterparty: string; response: string; text: string; ours?: string; notes: string }[]
+}
+
+export const ChangeSchema = z.object({
+  summary: z.string().describe('What the change does, in one or two plain sentences.'),
+  effect: z.enum(['favours_us', 'neutral', 'favours_them']).describe(`Who the change benefits; "us" means ${OUR_COMPANY}.`),
+  risk: z.enum(['high', 'medium', 'low']),
+  recommendation: z.enum(['accept', 'counter', 'restore', 'escalate']).describe('accept their change; counter with different wording; restore the wording before their change; escalate to a senior lawyer.'),
+  reasoning: z.string().describe('Two to four sentences a lawyer can verify quickly, citing paragraph numbers.'),
+  playbook: z
+    .array(z.object({ position_id: z.string(), conflict: z.boolean(), note: z.string() }))
+    .describe('Only the standard positions this change touches.'),
+  related: z
+    .array(z.object({ block_id: z.string(), why: z.string() }))
+    .describe('Other paragraphs this change affects or depends on (definitions, cross-references, clauses it overrides). Empty if none.'),
+  suggested_edits: z
+    .array(z.object({ block_id: z.string(), text: z.string() }))
+    .describe('For counter or restore: the full wording you suggest for each paragraph of the change (without its number). Empty for accept or escalate.'),
+  comment_to_them: z.string().describe('A short, courteous margin comment explaining our position to the counterparty; empty for accept.'),
+  ...injection
+})
+export type ChangeOut = z.infer<typeof ChangeSchema>
+
+export type TaskName = 'intent' | 'overrides' | 'position' | 'change'

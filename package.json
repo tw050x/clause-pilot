@@ -12,7 +12,7 @@
     "demo:build": "tsx --tsconfig tsconfig.node.json scripts/build-demo.ts",
     "release": "electron-vite build && electron-builder",
     "pack": "electron-vite build && electron-builder --dir",
-    "test-contracts": "tsx scripts/build-test-contracts.ts"
+    "test-contracts": "tsx --tsconfig tsconfig.node.json scripts/build-test-contracts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",

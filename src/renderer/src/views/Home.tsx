@@ -108,13 +108,13 @@ export function Home({
             {
               title: 'Review your first contract',
               detail:
-                'Needs your API key. The contract’s text is sent to Anthropic’s API for the AI checks, so only open documents you’re allowed to share outside the company. With an empty library, every clause needs a decision at first; that’s expected.',
+                'Word, PDF or text. Their tracked changes are listed to decide; nothing is sent anywhere unless you ask the AI about a change (that needs an API key, and sends the contract’s text to Anthropic’s API).',
               done: ws.reviews > 0,
               cta: account ? { label: 'Open a contract…', onClick: browse } : { label: 'Choose account first', onClick: onChooseAccount }
             },
             {
-              title: 'Nominate a clause for the library',
-              detail: 'When you accept a clause that is your standard wording, tick “Nominate this wording for the pre-approved library”.',
+              title: 'Nominate wording for the library',
+              detail: 'When you accept a change whose wording is fine every time, choose “Nominate this wording for the library”. Once approved, contracts on our paper are compared with it.',
               done: ws.nominations > 0 || ws.library > 0
             },
             {
@@ -150,7 +150,7 @@ function SetupChecklist({ items }: { items: ChecklistItem[] }) {
           <h3>{complete ? 'You’re set up' : 'Get set up'}</h3>
           <p className="faint">
             {complete
-              ? 'Your workspace has a playbook and pre-approved wording, so routine clauses now clear automatically.'
+              ? 'Your workspace has a playbook and approved wording, so drafts on our paper are compared with it and only the differences need reading.'
               : 'Live mode starts from scratch, as it would for a real team. These steps make reviews useful.'}
           </p>
         </div>

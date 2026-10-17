@@ -112,11 +112,27 @@ export interface Precedent {
   outcome: Outcome
   notes: string
   source: 'seed' | 'review'
+  // Document reviews record the change itself, so the same ask can be recognised next time.
+  /** Where it was ("§2.4"). */
+  where?: string
+  /** The wording before their change (`text` is what they proposed). */
+  before?: string
+  /** The words they added, to recognise the same ask in a differently worded clause. */
+  inserted?: string
+  /** How we answered it. */
+  response?: 'accepted' | 'countered' | 'restored' | 'struck'
+  /** Our wording, per paragraph of the change (null: left as they proposed). */
+  ours?: (string | null)[]
 }
 
 export interface PrecedentHit extends Precedent {
   score: number
   terms: string[]
+}
+
+/** A change seen in earlier negotiations: the identical change, or a similar one. */
+export interface SeenHit extends PrecedentHit {
+  match: 'identical' | 'similar'
 }
 
 // ---- (c) Override detection ---------------------------------------------------
@@ -249,6 +265,17 @@ export interface DocBlock {
   bold?: boolean
   /** List depth, for indenting. */
   level?: number
+  /**
+   * Their change found by comparison rather than tracked in Word: with what we sent last
+   * time ('sent') or with our standard wording ('template'). `segments` then holds that diff.
+   */
+  untracked?: 'sent' | 'template'
+  /** Our pre-approved wording this paragraph was compared with (template comparison). */
+  standard?: string
+  /** The paragraph as received is word for word this pre-approved clause. */
+  approved?: string
+  /** Before their change it was word for word this pre-approved clause. */
+  wasApproved?: string
 }
 
 /** A comment of ours, in the margin. */
@@ -277,6 +304,47 @@ export interface ChangeDecision {
   at: string
 }
 
+/** What we proposed for a paragraph in the previous round. */
+export interface LastRound {
+  /** The wording we sent back. */
+  sent: string
+  /** It was our edit (not their wording, or the original, left alone). */
+  ourEdit: boolean
+  /** Our comments on it. */
+  comments: string[]
+}
+
+/** What a new draft was compared with, to find changes they didn't track. */
+export interface Baseline {
+  kind: 'sent' | 'template'
+  /** Version compared with ('sent'). */
+  version?: number
+  /** Paragraphs where they took our wording (as "§6.8"). */
+  ourEditsAccepted: string[]
+  /** Paragraphs changed, added or removed without Track Changes. */
+  untracked: number
+  /** Paragraphs that are word for word our pre-approved wording ('template'). */
+  approved?: number
+}
+
+/** The AI's review of one change set, in the context of the whole contract. Only run when asked. */
+export interface ChangeReview {
+  summary: string
+  effect: 'favours-us' | 'neutral' | 'favours-them'
+  risk: 'high' | 'medium' | 'low'
+  recommendation: 'accept' | 'counter' | 'restore' | 'escalate'
+  reasoning: string
+  playbook: { positionId: string; title: string; conflict: boolean; note: string }[]
+  /** Other passages this change affects or depends on. */
+  related: { blockId: string; where: string; why: string }[]
+  /** Suggested wording per paragraph, to apply as our edits. */
+  suggested: { blockId: string; text: string }[]
+  /** A suggested comment to them. */
+  comment: string
+  injectionSuspected: boolean
+  at: string
+}
+
 export interface DocReview {
   blocks: DocBlock[]
   /** Our wording per block (without the label). Empty: we strike the paragraph. */
@@ -284,6 +352,13 @@ export interface DocReview {
   comments: OurComment[]
   /** Keyed by change-set id (its first block's id). */
   decisions: Record<string, ChangeDecision>
+  baseline?: Baseline
+  /** Per block: what we proposed for it last round ('sent' baseline). */
+  lastRound?: Record<string, LastRound>
+  /** AI reviews, per change set, made on request. */
+  ai?: Record<string, Step<ChangeReview>>
+  /** Change sets whose accepted wording was nominated for the library. */
+  nominated?: string[]
 }
 
 export interface ReviewSession {

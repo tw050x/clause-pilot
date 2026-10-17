@@ -71,7 +71,7 @@ export function ContractView({
       )}
       {versions.length > 0 && (
         <p className="faint" style={{ marginTop: 0 }}>
-          Each new draft is compared with the version before it: clauses you settled are skipped, and anything you rejected that comes back unchanged is flagged.
+          Each new draft is compared with what we sent back last time, so changes they didn’t track show up too, next to what we proposed.
         </p>
       )}
       {!versions.length ? (

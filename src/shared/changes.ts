@@ -51,7 +51,9 @@ export function changeSets(doc: DocReview): ChangeSet[] {
       current = null
       if (!theyChanged(b)) continue
     }
-    const key: string | null = sectionKey(b.label) ?? (b.kind === 'row' ? b.id : section)
+    // Rows, and unnumbered paragraphs found by comparison (party details, a signature block), stand alone.
+    const alone = b.kind === 'row' || (!b.label && !!b.untracked)
+    const key: string | null = sectionKey(b.label) ?? (alone ? null : section)
     if (sectionKey(b.label)) section = key
     if (!theyChanged(b)) {
       current = null
@@ -59,7 +61,7 @@ export function changeSets(doc: DocReview): ChangeSet[] {
     }
     // Same section; or the section under a heading they changed (an inserted "5. NON-SOLICITATION" and its 5.1).
     const under = current?.set.blocks[0].kind === 'heading' && key?.startsWith(`${current.section}.`)
-    if (current && key !== null && (key === current.section || under) && b.kind !== 'row') {
+    if (current && key !== null && !alone && (key === current.section || under)) {
       current.set.blocks.push(b)
     }
     else {

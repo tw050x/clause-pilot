@@ -1,4 +1,4 @@
-import { OUR_COMPANY, type ClauseRef, type IntentInput, type PositionInput } from './tasks'
+import { OUR_COMPANY, type ChangeInput, type ClauseRef, type IntentInput, type PositionInput } from './tasks'
 
 /**
  * Prompt design notes
@@ -84,6 +84,45 @@ Consider the whole contract, including schedules and special conditions, and any
 - missing: the contract is silent on this and that matters
 - not-applicable: this position does not apply to this kind of contract
 Only assess this one position.`
+}
+
+/** The contract for a document review: paragraph by paragraph, as received. Cached across the change questions. */
+export function paragraphsBlock(contract: ChangeInput['contract']): string {
+  const body = contract.map((p) => `<p id="${p.id}"${p.label ? ` number="${esc(p.label)}"` : ''}>${p.text}</p>`).join('\n')
+  return `<contract>\n${body}\n</contract>`
+}
+
+export function changeQuestion(input: ChangeInput): string {
+  const c = input.change
+  const blocks = c.blocks
+    .map(
+      (b) => `<changed_paragraph id="${b.id}"${b.label ? ` number="${esc(b.label)}"` : ''}>
+<before>${b.before || '(not there before: added by them)'}</before>
+<after>${b.after || '(deleted by them)'}</after>${b.their_comments.map((t) => `\n<their_comment>${t}</their_comment>`).join('')}
+</changed_paragraph>`
+    )
+    .join('\n')
+  const positions = input.positions.length
+    ? input.positions
+        .map((p) => `<standard_position id="${p.id}" title="${esc(p.title)}">\nOur standard: ${p.standard}\nAcceptable fallback: ${p.acceptableFallback}\nRed flags: ${p.redFlags.join('; ')}\n</standard_position>`)
+        .join('\n')
+    : '(no standard positions recorded yet)'
+  const seen = input.seen.length
+    ? input.seen.map((h) => `<earlier_negotiation counterparty="${esc(h.counterparty)}" our_response="${h.response}">\nThey proposed: ${h.text}${h.ours ? `\nWe answered with: ${h.ours}` : ''}\nNotes: ${h.notes}\n</earlier_negotiation>`).join('\n')
+    : '(none found)'
+  return `QUESTION: The counterparty made the change below${c.untracked ? ' (found by comparing drafts: it was NOT shown as a tracked change)' : ''}. It is one change, even if it spans several paragraphs or edits. Review it in the context of the whole contract above.
+
+<change where="${esc(c.where)}">
+${blocks}
+</change>
+
+Our standard positions:
+${positions}
+
+How we answered the same or similar changes before:
+${seen}
+
+Say what the change does and who it favours, whether it conflicts with any of our standard positions, which other paragraphs it affects (cite their ids), and what we should do. If we should counter or restore, give the full wording for each changed paragraph. Prefer what we agreed before when it fits. Never suggest edits to paragraphs outside this change.`
 }
 
 export const EMAIL_SYSTEM = `You draft concise, courteous, firm emails from ${OUR_COMPANY}'s legal team to a counterparty's contract contact.

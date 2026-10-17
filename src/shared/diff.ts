@@ -117,3 +117,23 @@ export function overlay(segments: TrackedSegment[], ours: string | undefined): M
   for (const v of inserts.values()) push({ text: v, ours: 'ins' }) // at the very end
   return out
 }
+
+/** A word-level diff from `old` to `next`, as redline segments (for changes found by comparison). */
+export function diffSegments(old: string, next: string, author?: string): TrackedSegment[] {
+  const out: TrackedSegment[] = []
+  const push = (op: TrackedSegment['op'], text: string) => {
+    if (!text) return
+    const last = out[out.length - 1]
+    if (last && last.op === op) last.text += text
+    else out.push(op === 'same' ? { op, text } : { op, text, author })
+  }
+  let at = 0
+  for (const op of diffWords(old, next)) {
+    push('same', old.slice(at, op.from))
+    push('del', old.slice(op.from, op.to))
+    push('ins', op.insert)
+    at = op.to
+  }
+  push('same', old.slice(at))
+  return out
+}

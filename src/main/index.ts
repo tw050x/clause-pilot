@@ -4,23 +4,21 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
-import type { Account, ContractRecord, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
-import { clauseLabel, flagsFor, isCleared } from '@shared/derive'
+import type { Account, ContractRecord, ChatMessage, DemoContract, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
-import { createSession, runPipeline } from './pipeline'
-import { compareVersions } from './engine/versions'
 import { DEMO_SCENARIOS } from '@shared/demoScenarios'
 import { AnthropicProvider, RecordingProvider, RecordingStore, ReplayProvider, type AiProvider } from './ai/provider'
-import { docEmail, emailBrief, templateEmail } from './email'
-import { buildDocRedline, buildRedline } from './redline/docx'
+import { docEmail } from './email'
+import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { injectionHits } from './engine/injection'
-import { beforeTheirs, changeSets } from '@shared/changes'
+import { beforeTheirs, changeSets, statusOf, type ChangeSet } from '@shared/changes'
 import type { ChangeStatus, OurComment } from '@shared/types'
 import { createHash } from 'node:crypto'
 import { chatSystem, offlineAnswer } from './chat'
+import { applicable, applyScriptedChanges, changeInput, createDocSession, toChangeReview, type ScriptedChange } from './docreview'
+import { precedentFor, seenBefore } from './engine/seen'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_MODEL = 'claude-opus-5-5'
@@ -83,8 +81,8 @@ function apiKey(): string | null {
 }
 
 /** Live mode without a key: deterministic checks still run; every AI check explains what's missing. */
-const noKey = () => Promise.reject(new Error('No Anthropic API key. Add one in Settings to run AI checks.'))
-const noKeyProvider: AiProvider = { kind: 'anthropic', intent: noKey, overrides: noKey, position: noKey }
+const noKey = () => Promise.reject(new Error('No Anthropic API key. Add one in Settings to ask the AI.'))
+const noKeyProvider: AiProvider = { kind: 'anthropic', intent: noKey, overrides: noKey, position: noKey, change: noKey }
 
 function provider(): AiProvider {
   const s = loadSettings()
@@ -208,37 +206,20 @@ ipcMain.handle('demo:prepare', async (_e, scenarioId: string) => {
   rmSync(join(userDir, 'workspaces', 'demo'), { recursive: true, force: true })
   ws = openWorkspace('demo')
   const w = ws
-  const instant = new ReplayProvider(w.recordings, [0, 0])
   for (const step of scenario.history) {
     const demo = demoContracts().find((d) => d.file === step.file)!
-    const s = createSession(await parseFile(resolvePath(demo.path)), demo.path, 'demo')
-    const versions = w.store.versionsOf(scenario.contractId)
-    const prev = versions[versions.length - 1]
-    Object.assign(s, { accountId: scenario.accountId, contractId: scenario.contractId, version: (prev?.version ?? 0) + 1 })
-    if (prev) {
-      const { links, removed } = compareVersions(prev, s.clauses)
-      Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 }, versionLinks: links, removed })
-    }
-    sessions.set(s.id, s)
-    sessionWs.set(s.id, w)
-    await runPipeline(s, {
-      ai: instant,
-      library: w.store.library(),
-      precedents: w.store.precedents(),
-      playbook: w.store.playbook(),
-      emit: () => {},
-      audit: (type, payload) => w.audit.append('system', type, s.id, payload)
-    })
-    for (const d of step.decisions) {
-      const c =
-        d.clause === 'parties' ? s.clauses.find((x) => !x.number && x.heading !== 'EXECUTION') : d.clause === 'signature' ? s.clauses.find((x) => x.heading === 'EXECUTION') : s.clauses.find((x) => x.number === d.clause)
-      if (c) decide(s, { clauseId: c.id, decision: d.decision, note: d.note, redline: d.redline ?? '', nominate: false }, 'demo-setup')
-    }
+    const s = await startReview(w, demo.path, scenario.contractId, 'demo')
+    applyScripted(w, s, step.changes, 'demo-setup')
     w.store.saveSession(s)
   }
   w.audit.append(actor(), 'demo.prepared', null, { scenario: scenario.id, earlierDrafts: scenario.history.length })
   return true
 })
+
+/** Scripted responses to change sets (demo set-up), recorded as history like a reviewer's. */
+function applyScripted(w: Workspace, s: ReviewSession, list: ScriptedChange[], by: string) {
+  for (const set of applyScriptedChanges(s, list, by)) recordPrecedent(w, s, set)
+}
 
 ipcMain.handle('workspace:summary', () => ({
   mode: ws.mode,
@@ -298,36 +279,24 @@ ipcMain.handle('contracts:create', (_e, accountId: string, title: string) => {
 })
 ipcMain.handle('contracts:versions', (_e, contractId: string) => ws.store.listSessions().filter((s) => s.contractId === contractId))
 
-ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => {
-  if (loadSettings().demoMode && !demoContracts().some((d) => d.path === path))
-    throw new Error('Demo mode can only review the demo contracts. Switch demo mode off to review your own.')
+/**
+ * Open a draft for review: the contract as written, with their changes (tracked,
+ * or found by comparing with what we sent / our standard wording). Nothing goes
+ * to the AI until the reviewer asks; only the local security screen runs.
+ */
+async function startReview(w: Workspace, path: string, contractId: string | undefined, mode: 'live' | 'demo'): Promise<ReviewSession> {
   const doc = await parseFile(resolvePath(path))
-  const ai = provider()
-  const s = createSession(doc, path, ai.kind === 'replay' ? 'demo' : 'live')
-  // Live reviews use the document screen: the contract as written, decorated with their changes.
-  // Nothing goes to the AI until the reviewer asks; only the local security screen runs.
-  const documentReview = !loadSettings().demoMode
-  if (documentReview) {
-    const blocks = await readBlocks(resolvePath(path), doc.sourceType)
-    Object.assign(s, { doc: { blocks, edits: {}, comments: [], decisions: {} }, clauses: [], match: {}, trackedDeletions: undefined })
-    for (const b of blocks) {
-      const hits = injectionHits(b.text)
-      if (hits.length) s.injection[b.id] = hits
-    }
-  }
-  const w = ws
+  const blocks = await readBlocks(resolvePath(path), doc.sourceType)
   // A draft of a known contract becomes its next version, compared with the one before.
   const contract = contractId ? w.store.contracts().find((c) => c.id === contractId) : undefined
   if (contractId && !contract) throw new Error('Unknown contract.')
+  const versions = contract ? w.store.versionsOf(contract.id) : []
+  const last = versions[versions.length - 1]
+  const prev = last ? (sessions.get(last.id) ?? last) : undefined
+  const s = createDocSession(doc, blocks, path, mode, { prev: prev?.doc ? prev : undefined, library: w.store.library() })
   if (contract) {
-    const versions = w.store.versionsOf(contract.id)
-    const prev = versions[versions.length - 1]
     Object.assign(s, { accountId: contract.accountId, contractId: contract.id, version: (prev?.version ?? 0) + 1 })
-    if (prev && documentReview) Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 } })
-    else if (prev) {
-      const { links, removed } = compareVersions(sessions.get(prev.id) ?? prev, s.clauses)
-      Object.assign(s, { previous: { sessionId: prev.id, version: prev.version ?? 1 }, versionLinks: links, removed })
-    }
+    if (prev) s.previous = { sessionId: prev.id, version: prev.version ?? 1 }
     if (contract.contractType === 'general' && s.contractType !== 'general') {
       contract.contractType = s.contractType
       w.store.saveContracts(w.store.contracts().map((c) => (c.id === contract.id ? contract : c)))
@@ -335,37 +304,30 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => 
   }
   sessions.set(s.id, s)
   sessionWs.set(s.id, w)
-  w.audit.append(actor(), 'session.created', s.id, {
+  const d = s.doc!
+  w.audit.append(mode === 'demo' && !win ? 'system' : actor(), 'session.created', s.id, {
     docName: s.docName,
     sha256: s.fileSha256,
-    clauses: s.clauses.length,
-    blocks: s.doc?.blocks.length ?? null,
+    blocks: d.blocks.length,
+    changes: changeSets(d).length,
+    comparedWith: d.baseline?.kind ?? null,
+    untracked: d.baseline?.untracked ?? 0,
     mode: s.mode,
     contractId: s.contractId ?? null,
     version: s.version ?? null,
-    comparedWith: s.previous?.sessionId ?? null
+    previous: s.previous?.sessionId ?? null
   })
-  persist(s)
-  if (documentReview) {
-    syncSecurityAlert(w, s)
-    return s
-  }
-  runPipeline(s, {
-    ai,
-    library: w.store.library(),
-    precedents: w.store.precedents(),
-    playbook: w.store.playbook(),
-    emit: emitThrottled,
-    audit: (type, payload) => w.audit.append('system', type, s.id, payload)
-  })
-    .catch((e) => w.audit.append('system', 'pipeline.failed', s.id, { error: String(e) }))
-    .finally(() => {
-      syncSecurityAlert(w, s) // adds anything the model reported once the checks finish
-      persist(s)
-    })
-  // The local screen runs synchronously at the start of the pipeline, so the security team
-  // is alerted before any AI call is made.
+  if (Object.keys(s.injection).length) w.audit.append('system', 'injection.local-flags', s.id, { blocks: s.injection })
+  w.store.saveSession(s)
   syncSecurityAlert(w, s)
+  return s
+}
+
+ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => {
+  if (loadSettings().demoMode && !demoContracts().some((d) => d.path === path))
+    throw new Error('Demo mode can only review the demo contracts. Switch demo mode off to review your own.')
+  const s = await startReview(ws, path, contractId, loadSettings().demoMode ? 'demo' : 'live')
+  persist(s)
   return s
 })
 
@@ -380,8 +342,6 @@ function syncSecurityAlert(w: Workspace, s: ReviewSession) {
   const alerts = w.store.securityAlerts()
   const existing = alerts.find((a) => a.sessionId === s.id)
   const clauses = flagged.map(([id, hits]) => {
-    const c = s.clauses.find((x) => x.id === id)
-    if (c) return { clauseId: id, label: clauseLabel(c), text: c.text, hits }
     const b = s.doc?.blocks.find((x) => x.id === id)
     return { clauseId: id, label: b?.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph', text: b?.text ?? '', hits }
   })
@@ -425,117 +385,38 @@ ipcMain.handle('security:resolve', (_e, id: string, outcome: 'malicious' | 'fals
 ipcMain.handle('review:get', (_e, id: string) => session(id))
 ipcMain.handle('review:list', () => ws.store.listSessions())
 
-// ---- IPC: decisions ------------------------------------------------------------------
-
-function decide(s: ReviewSession, d: Omit<Decision, 'by' | 'at'>, via: string) {
-  const c = s.clauses.find((x) => x.id === d.clauseId)
-  if (!c) throw new Error('Unknown clause')
-  // A flagged clause can't be accepted while security is reviewing it, or once they've confirmed the attempt.
-  const alert = alertFor(s.id)
-  if (d.decision === 'accepted' && s.injection[c.id] && alert && alert.status !== 'false-positive')
-    throw new Error(
-      alert.status === 'open'
-        ? 'This clause is on security hold. It can be accepted only if the security team marks the alert as a false positive.'
-        : 'The security team confirmed this as an injection attempt. The clause has to be rejected.'
-    )
-  const decision: Decision = { ...d, by: actor(), at: new Date().toISOString() }
-  const previous = s.decisions[c.id]
-  s.decisions[c.id] = decision
-  ws.audit.append(decision.by, previous ? 'decision.changed' : 'decision.made', s.id, {
-    clauseId: c.id,
-    clause: clauseLabel(c),
-    decision: decision.decision,
-    note: decision.note,
-    redline: decision.redline,
-    nominate: decision.nominate,
-    via,
-    previous: previous?.decision ?? null,
-    aiMatch: s.match[c.id]?.data?.kind ?? null
-  })
-
-  // Every human decision becomes negotiation history for step (b) next time,
-  // unless it is a word-for-word library clause (nothing new to learn).
-  if (s.match[c.id]?.data?.kind !== 'exact') {
-    ws.store.upsertPrecedent({
-      id: `rv-${s.id.slice(0, 8)}-${c.id}`,
-      contractType: s.contractType,
-      category: c.heading ? c.heading.charAt(0) + c.heading.slice(1).toLowerCase() : 'General',
-      counterparty: counterpartyOf(s),
-      date: decision.at.slice(0, 10),
-      text: c.text,
-      outcome: decision.decision,
-      notes: decision.note || `${decision.decision === 'accepted' ? 'Accepted' : 'Rejected'} in review of ${s.docName}.`,
-      source: 'review'
-    })
-  }
-
-  const nominations = ws.store.nominations().filter((n) => n.id !== `nm-${s.id}-${c.id}` || n.status !== 'pending')
-  if (decision.decision === 'accepted' && decision.nominate) {
-    nominations.push({
-      id: `nm-${s.id}-${c.id}`,
-      text: c.text,
-      category: c.heading ?? 'General',
-      contractType: s.contractType,
-      fromDoc: s.docName,
-      counterparty: counterpartyOf(s),
-      nominatedBy: decision.by,
-      nominatedAt: decision.at,
-      note: decision.note,
-      status: 'pending'
-    })
-  }
-  ws.store.saveNominations(nominations)
-}
-
-ipcMain.handle('review:decide', (_e, sessionId: string, d: Omit<Decision, 'by' | 'at'>) => {
-  const s = session(sessionId)
-  decide(s, d, 'manual')
-  persist(s)
-  return s
-})
-
-ipcMain.handle('review:undo', (_e, sessionId: string, clauseId: string) => {
-  const s = session(sessionId)
-  const prev = s.decisions[clauseId]
-  if (prev) {
-    delete s.decisions[clauseId]
-    ws.store.removePrecedent(`rv-${s.id.slice(0, 8)}-${clauseId}`)
-    ws.store.saveNominations(ws.store.nominations().filter((n) => !(n.id === `nm-${s.id}-${clauseId}` && n.status === 'pending')))
-    ws.audit.append(actor(), 'decision.withdrawn', s.id, { clauseId, previous: prev.decision })
-  }
-  persist(s)
-  return s
-})
-
 // ---- IPC: outputs ----------------------------------------------------------------------
 
 ipcMain.handle('email:draft', async (_e, sessionId: string): Promise<EmailDraft> => {
   const s = session(sessionId)
   if (alertFor(s.id)?.status === 'open') throw new Error('This review is on security hold. Nothing can go back to the counterparty until the security team has reviewed the alert.')
+  if (!s.doc) throw new Error(OLD_REVIEW)
   const reviewer = actor()
-  const key = apiKey()
-  let draft: EmailDraft
-  if (s.doc) draft = docEmail(s, reviewer)
-  else if (loadSettings().demoMode || !key) draft = templateEmail(s, reviewer)
-  else {
-    try {
-      const out = await new AnthropicProvider(key, loadSettings().model).email(emailBrief(s, reviewer).prompt)
-      draft = { ...out, generatedBy: 'ai' }
-    } catch (e) {
-      draft = templateEmail(s, reviewer)
-      ws.audit.append('system', 'email.ai-failed', s.id, { error: String(e) })
-    }
-  }
-  ws.audit.append(reviewer, 'email.drafted', s.id, { generatedBy: draft.generatedBy, rejected: Object.values(s.decisions).filter((d) => d.decision === 'rejected').length })
+  const draft: EmailDraft = docEmail(s, reviewer)
+  ws.audit.append(reviewer, 'email.drafted', s.id, { generatedBy: draft.generatedBy, answered: changeSets(s.doc).filter((x) => statusOf(s.doc!, x) === 'countered').length })
   return draft
 })
 
 // ---- IPC: document review (edits, comments, change-set decisions) ---------------------------
 
+const OLD_REVIEW = 'This review was made with an earlier version of Clause Pilot. Upload the draft again to review it.'
 function docOf(sessionId: string) {
   const s = session(sessionId)
-  if (!s.doc) throw new Error('This review uses the clause screen.')
+  if (!s.doc) throw new Error(OLD_REVIEW)
   return { s, d: s.doc }
+}
+
+const counterpartyName = (s: ReviewSession) => (s.accountId && wsFor(s).store.accounts().find((a) => a.id === s.accountId)?.name) || counterpartyOf(s)
+
+/** Keep negotiation history in step with how a change set now stands (accepted or answered: recorded). */
+function recordPrecedent(w: Workspace, s: ReviewSession, set: ChangeSet) {
+  const { id, precedent } = precedentFor(s, set, counterpartyName(s))
+  if (precedent) w.store.upsertPrecedent(precedent)
+  else if (w.store.precedents().some((p) => p.id === id)) w.store.removePrecedent(id)
+}
+const recordTouching = (s: ReviewSession, blockId: string) => {
+  const set = changeSets(s.doc!).find((x) => x.blocks.some((b) => b.id === blockId))
+  if (set) recordPrecedent(wsFor(s), s, set)
 }
 const blockWhere = (s: ReviewSession, blockId: string) => {
   const b = s.doc?.blocks.find((x) => x.id === blockId)
@@ -553,6 +434,7 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
   if (same) delete d.edits[blockId]
   else d.edits[blockId] = next
   ws.audit.append(actor(), same ? 'doc.edit-cleared' : 'doc.edited', s.id, { block: blockWhere(s, blockId), text: same ? null : next })
+  recordTouching(s, blockId)
   persist(s)
   return s
 })
@@ -565,6 +447,7 @@ ipcMain.handle('doc:revert', (_e, sessionId: string, setId: string) => {
   for (const b of set.blocks) d.edits[b.id] = b.kind === 'deleted' ? tidy(b.text) : beforeTheirs(b)
   delete d.decisions[setId]
   ws.audit.append(actor(), 'doc.reverted', s.id, { change: set.where })
+  recordPrecedent(wsFor(s), s, set)
   persist(s)
   return s
 })
@@ -573,8 +456,9 @@ ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: Chan
   const { s, d } = docOf(sessionId)
   const set = changeSets(d).find((x) => x.id === setId)
   if (!set) throw new Error('Unknown change.')
-  if (status === 'accepted' && alertFor(s.id)?.status === 'open' && set.blocks.some((b) => s.injection[b.id]))
-    throw new Error('On security hold: only the security team can release this text.')
+  const alert = alertFor(s.id)
+  if (status === 'accepted' && alert && alert.status !== 'false-positive' && set.blocks.some((b) => s.injection[b.id]))
+    throw new Error(alert.status === 'open' ? 'On security hold: only the security team can release this text.' : 'The security team confirmed this as an injection attempt, so it can’t be accepted.')
   if (status === null) delete d.decisions[setId]
   else {
     // Accepting their change means not answering it: our edits in it go.
@@ -582,6 +466,8 @@ ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: Chan
     d.decisions[setId] = { status, note: note?.trim() || undefined, by: actor(), at: new Date().toISOString() }
   }
   ws.audit.append(actor(), status ? `doc.change-${status}` : 'doc.change-reopened', s.id, { change: set.where, note: note?.trim() || null })
+  if (status !== 'accepted') d.nominated = d.nominated?.filter((x) => x !== setId)
+  recordPrecedent(wsFor(s), s, set)
   persist(s)
   return s
 })
@@ -592,15 +478,103 @@ ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'block
   const comment: OurComment = { id: `oc-${Date.now().toString(36)}`, blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
   d.comments.push(comment)
   ws.audit.append(actor(), 'doc.commented', s.id, { block: blockWhere(s, c.blockId), text: comment.text, replyTo: c.replyTo ?? null })
+  recordTouching(s, c.blockId)
   persist(s)
   return s
 })
 
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
   const { s, d } = docOf(sessionId)
+  const gone = d.comments.find((c) => c.id === commentId)
   d.comments = d.comments.filter((c) => c.id !== commentId)
   ws.audit.append(actor(), 'doc.comment-deleted', s.id, { commentId })
+  if (gone) recordTouching(s, gone.blockId)
   persist(s)
+  return s
+})
+
+/** Earlier negotiations for each change set: the identical change first, then similar ones. */
+ipcMain.handle('doc:seen', (_e, sessionId: string) => {
+  const { s } = docOf(sessionId)
+  return seenBefore(s, wsFor(s).store.precedents())
+})
+
+/** Accepted wording nominated for the pre-approved library (approved by the library owner). */
+ipcMain.handle('doc:nominate', (_e, sessionId: string, setId: string, note: string) => {
+  const { s, d } = docOf(sessionId)
+  const set = changeSets(d).find((x) => x.id === setId)
+  if (!set) throw new Error('Unknown change.')
+  if (statusOf(d, set) !== 'accepted') throw new Error('Accept the change before nominating its wording.')
+  const w = wsFor(s)
+  const id = `nm-${s.id}-${setId}`
+  const heading = d.blocks
+    .slice(0, d.blocks.indexOf(set.blocks[0]) + 1)
+    .reverse()
+    .find((b) => b.kind === 'heading')
+  w.store.saveNominations([
+    ...w.store.nominations().filter((n) => n.id !== id),
+    {
+      id,
+      text: set.blocks.filter((b) => b.kind !== 'heading' && b.kind !== 'deleted').map((b) => b.text).join('\n'),
+      category: heading ? heading.text.charAt(0) + heading.text.slice(1).toLowerCase() : 'General',
+      contractType: s.contractType,
+      fromDoc: s.docName,
+      counterparty: counterpartyName(s),
+      nominatedBy: actor(),
+      nominatedAt: new Date().toISOString(),
+      note: note.trim(),
+      status: 'pending'
+    }
+  ])
+  d.nominated = [...new Set([...(d.nominated ?? []), setId])]
+  w.audit.append(actor(), 'library.nominated', s.id, { change: set.where, nominationId: id })
+  persist(s)
+  return s
+})
+
+/**
+ * Ask the AI about change sets, on request. Each change set is one request (however many
+ * paragraphs and edits it spans), with the whole contract as a cached prefix, our
+ * playbook and how we answered the same or similar changes before.
+ */
+async function askAi(s: ReviewSession, setIds: string[]) {
+  const w = wsFor(s)
+  const d = s.doc!
+  const ai = provider()
+  const positions = applicable(w.store.playbook(), s.contractType)
+  const seen = seenBefore(s, w.store.precedents())
+  const sets = changeSets(d).filter((x) => setIds.includes(x.id))
+  d.ai ??= {}
+  for (const set of sets) d.ai[set.id] = { status: 'running', reason: 'Reading the whole contract for this change' }
+  persist(s)
+  const one = async (set: ChangeSet) => {
+    try {
+      const out = await ai.change(changeInput(s, set, positions, seen[set.id] ?? []))
+      const review = toChangeReview(s, set, positions, out)
+      d.ai![set.id] = { status: 'done', data: review }
+      if (out.injection_suspected && out.injection_notes.trim()) {
+        s.aiInjectionReports.push(`Change review of ${set.where}: ${out.injection_notes.trim()}`)
+        syncSecurityAlert(w, s)
+      }
+      w.audit.append('system', 'ai.change-review', s.id, { change: set.where, provider: ai.kind, recommendation: review.recommendation, risk: review.risk, suggested: review.suggested.length })
+    } catch (e) {
+      d.ai![set.id] = { status: 'error', error: e instanceof Error ? e.message : String(e) }
+      w.audit.append('system', 'ai.change-review.error', s.id, { change: set.where, error: String(e) })
+    }
+    persist(s)
+  }
+  // The first request writes the contract to the prompt cache; the rest read it.
+  if (sets.length) await one(sets[0])
+  const rest = sets.slice(1)
+  for (let i = 0; i < rest.length; i += 4) await Promise.all(rest.slice(i, i + 4).map(one))
+}
+
+ipcMain.handle('doc:ask', (_e, sessionId: string, setIds: string[]) => {
+  const { s } = docOf(sessionId)
+  if (alertFor(s.id)?.status === 'open')
+    throw new Error('On security hold: text addressed to an AI reviewer was found, so nothing from this contract goes to the AI until the security team has looked at it.')
+  ws.audit.append(actor(), 'ai.requested', s.id, { changes: changeSets(s.doc!).filter((x) => setIds.includes(x.id)).map((x) => x.where) })
+  askAi(s, setIds).catch((e) => ws.audit.append('system', 'ai.change-review.error', s.id, { error: String(e) }))
   return s
 })
 
@@ -609,7 +583,8 @@ async function redline(sessionId: string) {
   const s = session(sessionId)
   if (alertFor(s.id)?.status === 'open') throw new Error('This review is on security hold. Nothing can go back to the counterparty until the security team has reviewed the alert.')
   const original = await readFile(resolvePath(s.filePath))
-  const out = s.doc ? await buildDocRedline(s, actor(), original) : await buildRedline(s, actor(), original)
+  if (!s.doc) throw new Error(OLD_REVIEW)
+  const out = await buildDocRedline(s, actor(), original)
   return { s, ...out, name: `${s.docName.replace(/\.[a-z]+$/i, '')} - PortSwigger comments.docx` }
 }
 const savedRedlines = new Set<string>()
@@ -636,6 +611,7 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
 
 ipcMain.handle('chat:send', async (_e, sessionId: string, history: ChatMessage[], requestId: string) => {
   const s = session(sessionId)
+  if (!s.doc) throw new Error(OLD_REVIEW)
   const key = apiKey()
   const question = history[history.length - 1]?.content ?? ''
   ws.audit.append(actor(), 'chat.question', s.id, { question })
@@ -765,11 +741,15 @@ ipcMain.handle('audit:export', async (_e, sessionId: string) => {
   if (res.canceled || !res.filePath) return null
   const entries = ws.audit.forSession(sessionId)
   const v = ws.audit.verify()
-  const rows = s.clauses.map((c) => {
-    const d = s.decisions[c.id]
-    // Cleared clauses (pre-approved wording, nothing else touching them) are accepted by default.
-    const outcome = d ? d.decision : isCleared(flagsFor(s, c)) ? 'accepted (pre-approved)' : 'undecided'
-    return `| ${clauseLabel(c)} | ${s.match[c.id]?.data?.kind ?? '-'} | ${outcome} | ${d?.by ?? ''} | ${d?.at?.slice(0, 16).replace('T', ' ') ?? ''} | ${(d?.note ?? '').replace(/\|/g, '/')} |`
+  if (!s.doc) throw new Error(OLD_REVIEW)
+  const d = s.doc
+  const rows = changeSets(d).map((set) => {
+    const st = statusOf(d, set)
+    const dec = d.decisions[set.id]
+    const edited = set.blocks.filter((b) => d.edits[b.id] !== undefined)
+    const how = st === 'countered' ? `answered with our edits to ${edited.map((b) => (b.label ? `§${b.label.replace(/\.$/, '')}` : 'a paragraph')).join(', ')}` : st === 'open' ? 'undecided' : st
+    const ai = d.ai?.[set.id]?.data
+    return `| ${set.where}${set.blocks.some((b) => b.untracked) ? ' (untracked)' : ''} | ${how} | ${dec?.by ?? ''} | ${dec?.at?.slice(0, 16).replace('T', ' ') ?? ''} | ${(dec?.note ?? '').replace(/\|/g, '/')} | ${ai ? `asked: ${ai.recommendation}, ${ai.risk} risk` : '-'} |`
   })
   const md = `# Review record: ${s.docName}
 
@@ -784,11 +764,15 @@ ipcMain.handle('audit:export', async (_e, sessionId: string) => {
     return `${a.status === 'malicious' ? 'confirmed injection attempt' : 'false positive, released'} by ${a.resolvedBy} at ${a.resolvedAt}${a.note ? ` (${a.note})` : ''}`
   })()}
 
-## Decisions
+- Compared with: ${d.baseline ? (d.baseline.kind === 'sent' ? `what we sent for version ${d.baseline.version}` : 'our standard wording') : 'nothing (tracked changes only)'}
 
-| Clause | Library match | Decision | By | At (UTC) | Note |
+## Their changes
+
+| Change | Our response | By | At (UTC) | Note | AI |
 |---|---|---|---|---|---|
 ${rows.join('\n')}
+
+Our edits outside their changes: ${d.blocks.filter((b) => d.edits[b.id] !== undefined && !changeSets(d).some((x) => x.blocks.includes(b))).length}. Our comments: ${d.comments.length}.
 
 ## Audit trail
 

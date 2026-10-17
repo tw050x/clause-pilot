@@ -77,7 +77,7 @@ export function OriginalView({ path, sourceType, highlight, label }: { path: str
       {state === 'loading' && <div className="orig-note">Loading the original…</div>}
       {state === 'not-found' && (
         <div className="banner danger" style={{ margin: '0 0 12px' }}>
-          This clause’s text could not be found in the original. It may have been captured incorrectly (for example, merged with a neighbouring clause or split across a page). Check the original manually.
+          This paragraph’s text could not be found in the original. It may have been captured incorrectly (for example, merged with a neighbouring paragraph or split across a page). Check the original manually.
         </div>
       )}
       {state === 'error' && <div className="banner danger">{error}</div>}

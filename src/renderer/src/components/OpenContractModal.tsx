@@ -70,7 +70,7 @@ export function OpenContractModal({
             {contractId === 'new' && <input autoFocus placeholder="e.g. Mutual NDA" value={newContract} onChange={(e) => setNewContract(e.target.value)} />}
             <span className="hint">
               {existing
-                ? 'It will be compared with the latest version of this contract: clauses you settled last time are skipped, and you’ll see what changed.'
+                ? 'It will be compared with what we sent back for the latest version, so you see only what changed, tracked or not.'
                 : 'The first version of a new contract is reviewed in full.'}
             </span>
           </div>

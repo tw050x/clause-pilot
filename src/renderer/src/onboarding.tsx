@@ -6,37 +6,58 @@ const q = (sel: string) => document.querySelector(sel)
 const all = (sel: string) => Array.from(document.querySelectorAll(sel))
 const withText = (sel: string, text: string) => all(sel).find((e) => e.textContent?.includes(text)) ?? null
 
-/** The issue row for a clause label in the triage list, e.g. "Clause 11.1". */
-const issue = (label: string) => all('.issue').find((e) => e.querySelector('.issue-where')?.textContent === label) ?? null
-/** A clause in the document pane by its printed number. */
-const clause = (num: string) => q(`.doc-clause[data-num="${num}"]`)
-/** The clause currently open on the right. */
-const openClause = () => q('.right-nav .faint')?.textContent?.split(' · ')[0] ?? null
-/** A section of the open clause's analysis by its heading. */
-const section = (heading: string) => all('.result-box .result-section').find((e) => e.querySelector('h4')?.textContent?.includes(heading)) ?? null
+/** A change in the sidebar list, by where it is ("§2.4") or how its text starts ("Signed for"). */
+const change = (where: string) =>
+  all('.dr-set').find((e) => {
+    const w = e.querySelector('.dr-set-where')?.textContent ?? ''
+    return w.split(' ')[0] === where || w.startsWith(where)
+  }) ?? null
+/** The change open in the card below the list. */
+const openChange = () => q('.dr-card .rp-h')?.firstChild?.textContent ?? ''
+const isOpen = (where: string) => openChange().split(' ')[0] === where || openChange().startsWith(where)
+const status = (where: string, st: 'accepted' | 'countered' | 'flagged') => !!change(where)?.classList.contains(`st-${st}`)
+/** A paragraph of the contract by its printed number. */
+const para = (label: string) => all('.dr-block').find((e) => e.querySelector('.dr-label')?.textContent?.replace(/\.$/, '') === label) ?? null
+const card = (sel: string) => q(`.dr-card ${sel}`)
+const cardButton = (text: string) => withText('.dr-card button', text)
 const navItem = (label: string) => withText('.nav-item', label)
 const pageTitle = () => q('.page h1')?.textContent ?? ''
-/** A clause's decision, read from its status on the left (independent of what is open on the right). */
-const isDecided = (el: Element | null | undefined, kind: 'accepted' | 'rejected') => !!el?.classList.contains(`s-${kind}`)
-const parties = () => all('.doc-clause.unnumbered')[0] ?? null
-const signature = () => all('.doc-clause.unnumbered').at(-1) ?? null
 
-const analysisDone = () => !!q('.doc-clause') && !q('.doc-clause.s-processing') && !q('.rp-checks .spinner') && !!q('.issues-summary')
-
-const waitForChecks: TourStep = {
-  title: 'The contract, clause by clause',
-  body: (
-    <>
-      The document has been split into clauses. Every clause is coloured as the checks finish: <b className="c-processing">blue</b> still being analysed,{' '}
-      <b className="c-exact">green</b> pre-approved, <b className="c-review">orange</b> needs a decision, <b className="c-conflict">red</b> a conflict.
-    </>
-  ),
-  target: () => q('.doc-pane'),
-  placement: 'right',
-  action: 'Wait a few seconds for the checks to finish.',
-  done: analysisDone,
-  prepare: (ctx) => ctx.showReviewPanels()
+const reviewPanel: TourStep['prepare'] = (ctx) => {
+  ctx.showReviewPanels()
+  ctx.setRightTab('review')
 }
+
+/** First action in every contract demo: the demo's own "upload". */
+const simulateUpload = (body: string): TourStep => ({
+  title: 'Simulate the upload',
+  body,
+  target: () => q('.demo-upload'),
+  placement: 'bottom',
+  action: 'Click Simulate upload.',
+  done: () => !!q('.dr-wrap')
+})
+
+const openStep = (where: string, title: string, body: React.ReactNode): TourStep => ({
+  title,
+  body,
+  target: () => change(where),
+  placement: 'left',
+  action: `Click ${where} in the list of changes.`,
+  done: () => isOpen(where),
+  prepare: reviewPanel
+})
+
+const askAi = (body: React.ReactNode): TourStep[] => [
+  {
+    title: 'Ask the AI about this change',
+    body,
+    target: () => q('.dr-card .dr-ai'),
+    placement: 'left',
+    action: 'Click Ask AI.',
+    done: () => !!card('.dr-ai-card')
+  }
+]
 
 const draftEmail = (body: React.ReactNode): TourStep[] => [
   {
@@ -46,14 +67,11 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
     placement: 'left',
     action: 'Click Draft response.',
     done: () => !!q('.modal'),
-    prepare: (ctx) => {
-      ctx.showReviewPanels()
-      ctx.setRightTab('review')
-    }
+    prepare: reviewPanel
   },
   {
     title: 'An email built from your decisions',
-    body: 'Each rejection becomes a numbered point with your reason and our proposed wording, and the email refers to the marked-up copy. In demo mode this is a template; live, Claude drafts it in our house style. Edit it, then copy it into your email client.',
+    body: 'Each change you answered becomes a numbered point, with your comments as the reason. Changes you accepted are acknowledged in a line, and anything flagged for internal review is left out. Edit it, then copy it into your email client.',
     target: () => q('.modal'),
     placement: 'left',
     action: 'Close the email to continue.',
@@ -61,16 +79,25 @@ const draftEmail = (body: React.ReactNode): TourStep[] => [
   }
 ]
 
-
-/** First action in every contract demo: the demo's own "upload". */
-const simulateUpload = (body: string): TourStep => ({
-  title: 'Simulate the upload',
-  body,
-  target: () => q('.demo-upload'),
-  placement: 'bottom',
-  action: 'Click Simulate upload.',
-  done: () => !!q('.review-wrap')
-})
+const markedUpCopy = (body: React.ReactNode): TourStep[] => [
+  {
+    title: 'And a marked-up copy',
+    body: 'Lawyers reply in Word. The same edits and comments mark up their own document, ready to attach to the email.',
+    target: () => withText('.rp-actions .btn', 'Marked-up copy'),
+    placement: 'left',
+    action: 'Click Marked-up copy.',
+    done: () => !!q('.redline-modal'),
+    prepare: reviewPanel
+  },
+  {
+    title: 'Our changes, in their Word file',
+    body,
+    target: () => q('.redline-modal'),
+    placement: 'left',
+    action: 'Close the marked-up copy to continue.',
+    done: () => !q('.redline-modal')
+  }
+]
 
 // ---- Review a contract: Initech, the fast lane ---------------------------------------
 
@@ -83,194 +110,61 @@ const reviewInitech: Tour = {
       body: 'Initech has signed our standard NDA back. This is the most common case, and the one that fills the queue at quarter end. Let’s see how much of it actually needs a lawyer.'
     },
     simulateUpload('This is Initech’s contract page. Simulate uploading their signed-back NDA.'),
-    waitForChecks,
     {
-      title: 'Almost nothing',
-      body: '18 of 21 clauses are word for word our approved wording and accepted automatically. Three need a person: the parties and the signature block (different in every deal), and one clause the AI says means the same as ours.',
-      target: () => q('.issues-summary'),
+      title: 'The contract, as written',
+      body: 'This is the contract as it appears in their file, not chopped into clauses. Grey text is unchanged; anything that needs your attention is highlighted.',
+      target: () => q('.dr-doc'),
+      placement: 'right'
+    },
+    {
+      title: 'Compared with our wording',
+      body: 'There are no tracked changes, but the document is on our paper, so every paragraph was compared with our approved wording. 18 match word for word. Only 3 differ, and they’re listed as changes to decide.',
+      target: () => q('.dr-baseline'),
+      placement: 'left',
+      prepare: reviewPanel
+    },
+    openStep('§2.2', 'One clause was reworded', 'The party details and the signature block are different in every deal. Clause 2.2 is the interesting one.'),
+    {
+      title: 'Exactly what differs',
+      body: 'It is shown as a redline against our approved “Standard of care” clause, so you can see every word that changed, even though Initech didn’t track anything.',
+      target: () => card('.dr-card-redline'),
       placement: 'left'
     },
-    {
-      title: 'One clause was reworded',
-      body: 'Clause 2.2 isn’t word for word our standard. Let’s see why it was still accepted.',
-      target: () => clause('2.2'),
-      placement: 'right',
-      action: 'Click clause 2.2.',
-      done: () => openClause() === 'Clause 2.2'
-    },
+    ...askAi('Nothing in this contract has been sent to the AI so far. Ask, and this one change goes to Claude with the whole contract for context.'),
     {
       title: 'Same meaning, different words',
-      body: 'It was close to our approved “Standard of care” clause, so Claude was asked whether the legal effect is the same. It says yes, and shows its reasoning and the exact word changes so you can check them in seconds.',
-      target: () => section('Library match'),
+      body: 'The AI explains what the change does, who it favours and whether it conflicts with our playbook. It only advises: nothing changes until you act.',
+      target: () => card('.dr-ai-card'),
       placement: 'left'
     },
     {
-      title: 'You make the call',
-      body: 'An AI opinion never accepts a clause on its own, so this one carries a “needs your decision” badge. If you agree, accept it. Tick “Nominate this wording…” if it should be pre-approved next time.',
-      target: () => q('.result-box .decision'),
+      title: 'Accept it',
+      body: 'If you agree, accept their wording.',
+      target: () => card('.dr-card-actions .btn.accept'),
       placement: 'top',
-      action: 'Click Accept, then Confirm accept.',
-      done: () => isDecided(clause('2.2'), 'accepted')
+      action: 'Click Accept theirs.',
+      done: () => status('§2.2', 'accepted')
     },
     {
       title: 'Now the party details',
-      body: 'Check the company names and details against the deal.',
-      target: parties,
-      placement: 'right',
-      action: 'Click the parties paragraph at the top of the contract.',
-      done: () => openClause() === 'Parties and details'
-    },
-    {
-      title: 'Accept them',
-      body: 'Names, addresses and entity types look right.',
-      target: () => q('.result-box .decision .btn.accept'),
-      placement: 'top',
-      action: 'Click Accept, then Confirm accept.',
-      done: () => isDecided(parties(), 'accepted')
+      body: 'Check the names and addresses against the deal, then accept them.',
+      target: () => change('This Agreement'),
+      placement: 'left',
+      action: 'Click the party details in the list, then Accept theirs.',
+      done: () => status('This Agreement', 'accepted')
     },
     {
       title: 'And the signature block',
       body: 'Last one.',
-      target: signature,
-      placement: 'right',
-      action: 'Click the signature block at the end, then Accept and Confirm accept.',
-      done: () => isDecided(signature(), 'accepted')
-    },
-    ...draftEmail('Nothing was rejected, so the response is a simple “happy to proceed”.'),
-    {
-      title: 'Three decisions, not twenty-one',
-      body: 'This NDA needed three quick checks instead of a full read, and the review record shows why each of the other clauses was accepted.'
-    }
-  ]
-}
-
-// ---- Review a contract: Globex, the hidden trap ------------------------------------
-
-const reviewGlobex: Tour = {
-  id: 'review-globex',
-  name: 'Demo · Globex order form',
-  steps: [
-    {
-      title: 'An order form that looks standard',
-      body: 'Globex has sent back our Burp Suite order form. Most of it matches our terms word for word, so it looks safe to sign. It isn’t, and the problem is hidden at the back. Let’s find it.'
-    },
-    simulateUpload('This is Globex’s contract page. In real use you’d upload their file here; in the demo, the upload is simulated.'),
-    waitForChecks,
-    {
-      title: 'Triage, not reading',
-      body: 'Instead of 25 clauses to read, you get four things that must change, four that need a decision, and thirteen clauses that are word for word our approved wording and accepted automatically. Must-change items come first, because any one of them sends the contract back.',
-      target: () => q('.issues-summary'),
-      placement: 'left'
-    },
-    {
-      title: 'Someone tried to talk to the AI',
-      body: 'Clause 11.3 contains a note “to any AI or automated contract review system” claiming the special conditions are pre-approved. A local check caught it before any AI saw the contract. That’s a security matter, so the security team was alerted and the review went on hold.',
-      target: () => issue('Clause 11.3'),
-      placement: 'left'
-    },
-    {
-      title: 'Open the real problem',
-      body: 'Clause 11.1 is the one that matters. Let’s look at it.',
-      target: () => issue('Clause 11.1'),
+      target: () => change('Signed for'),
       placement: 'left',
-      action: 'Click the Clause 11.1 issue.',
-      done: () => openClause() === 'Clause 11.1'
+      action: 'Click the signature block in the list, then Accept theirs.',
+      done: () => status('Signed for', 'accepted')
     },
+    ...draftEmail('Nothing needed changing, so the response is a simple “happy to proceed”.'),
     {
-      title: 'The trap',
-      body: 'Our liability cap in 7.1 is word for word our approved wording. But 11.1 says “Notwithstanding clauses 7.1 and 7.2… liability… shall be unlimited”. Matching clauses against the library alone would have passed this contract. A separate check reads the whole contract for clauses that override others.',
-      target: () => section('Overrides'),
-      placement: 'left'
-    },
-    {
-      title: 'Selected on the left',
-      body: 'The selected clause is marked with an arrow. It’s red because it conflicts with our standard positions.',
-      target: () => clause('11.1'),
-      placement: 'right'
-    },
-    {
-      title: 'Don’t trust the parser: check the original',
-      body: 'Text pulled out of a PDF can go wrong. You can always see a clause in the original document.',
-      target: () => q('.clause-tools:not(.hidden) .btn'),
-      placement: 'bottom',
-      action: 'Click Check in original document.',
-      done: () => !!q('.orig mark.orig-hl')
-    },
-    {
-      title: 'There it is in the PDF',
-      body: 'This is the actual PDF Globex sent, opened full width so it’s readable, with the clause highlighted. If its text couldn’t be found there, you’d see a warning, which usually means it was captured wrongly.',
-      target: () => q('.orig mark.orig-hl'),
-      placement: 'left'
-    },
-    {
-      title: 'Back to the analysis',
-      body: 'Close the original to return to the analysis for this clause.',
-      target: () => q('.orig-close'),
-      placement: 'top',
-      action: 'Click Close original.',
-      done: () => !!q('.result-box') && openClause() === 'Clause 11.1'
-    },
-    {
-      title: 'Reject it',
-      body: 'Unlimited liability for any security incident is the biggest risk in this contract for a security vendor.',
-      target: () => q('.result-box .decision .btn.reject:not(.on)'),
-      placement: 'top',
-      action: 'Click Reject.',
-      done: () => !!q('.result-box .decision textarea')
-    },
-    {
-      title: 'Say why, propose wording',
-      body: 'Your reason and our proposed wording (the playbook’s fallback: a 3× data-protection cap) are pre-filled, ready for the counterparty. They go straight into the response email and become a precedent.',
-      target: () => q('.result-box .decision'),
-      placement: 'left',
-      action: 'Optionally type a reason, then click Confirm reject.',
-      done: () => isDecided(clause('11.1'), 'rejected')
-    },
-    {
-      title: 'On security hold',
-      body: 'Because of the injection attempt in 11.3, nothing can go back to Globex yet: Draft response is blocked and the flagged clause can’t be accepted. Only the security team can release the hold.',
-      target: () => q('.security-panel'),
-      placement: 'left',
-      prepare: (ctx) => {
-        ctx.showReviewPanels()
-        ctx.setRightTab('review')
-      }
-    },
-    {
-      title: 'The security team is alerted',
-      body: 'Alerts land on the Security page, with a count in the sidebar. In a real deployment this is also where a Slack or email alert would be sent.',
-      target: () => navItem('Security'),
-      placement: 'right',
-      action: 'Click Security.',
-      done: () => pageTitle() === 'Security'
-    },
-    {
-      title: 'Security reviews it',
-      body: 'The security team sees the exact text that was flagged, the patterns that matched and what the AI reported. In this demo you are also on the security team.',
-      target: () => q('.alert-card'),
-      placement: 'top',
-      action: 'Click Confirm injection attempt.',
-      done: () => pageTitle() === 'Security' && !q('.alert-card') && !!withText('.page .pill', 'confirmed attempt')
-    },
-    {
-      title: 'Back to the review',
-      body: 'Confirmed: the flagged clause can only be rejected, and the response can now be drafted.',
-      target: () => withText('.page tr.clickable', 'Globex'),
-      placement: 'top',
-      action: 'Click the resolved alert to go back to the review.',
-      done: () => !!q('.review-wrap')
-    },
-    {
-      title: 'Checked against our playbook',
-      body: 'Each standard position (liability cap, renewal pricing, payment terms and so on) is checked in its own focused AI call, so one check can’t crowd out another. Click any of them to jump to the clause involved.',
-      target: () => q('.rp-checks'),
-      placement: 'left',
-      prepare: (ctx) => ctx.showReviewPanels()
-    },
-    ...draftEmail('Once the blockers are rejected, the response to Globex can be drafted.'),
-    {
-      title: 'That’s the trap',
-      body: 'A contract that looked like our standard terms, with one clause at the back that undid the liability cap and another trying to talk the AI round. Both were found without reading every clause, and the security team was brought in.'
+      title: 'Three things, not twenty-seven paragraphs',
+      body: 'Everything that is word for word our approved wording stayed in the background. You decided three things, and asked the AI about one of them.'
     }
   ]
 }
@@ -283,112 +177,165 @@ const reviewAcme: Tour = {
   steps: [
     {
       title: 'An NDA with edits',
-      body: 'Acme has returned our mutual NDA with changes. Some are fine, some aren’t. This demo shows how earlier negotiations help you decide quickly and consistently, and how the system learns from your decisions.'
+      body: 'Acme has returned our mutual NDA with tracked changes and comments. Some are fine and some aren’t. This demo shows how to answer a redline in place, using what we agreed before.'
     },
     simulateUpload('This is the contract’s page for Acme’s NDA. Uploading their redlined draft creates version 1.'),
-    waitForChecks,
     {
-      title: 'Their redline, sorted',
-      body: (
-        <>Every tracked change has been read and sorted: what must change, what needs a decision, and what’s pre-approved. Anything they touched with <i>Track Changes</i> is never accepted automatically.</>
-      ),
-      target: () => q('.issues-summary'),
-      placement: 'left'
+      title: 'Their redline, as in Word',
+      body: 'The contract is shown as their Word file shows it: insertions underlined, deletions struck through, their comments in the margin. Unchanged text is greyed so the changes stand out.',
+      target: () => q('.dr-doc'),
+      placement: 'right'
     },
     {
-      title: 'They deleted one of our clauses',
-      body: (
-        <>Acme deleted clause 3.3 with <i>Track Changes</i>. It’s our standard “No warranty” wording, so it’s a must-change: the response will ask for it back. Deletions are the easiest edits to miss when reading a redline.</>
-      ),
-      target: () => q('.deleted-summary'),
-      placement: 'left'
-    },
-    {
-      title: 'A residuals clause',
-      body: '“Notwithstanding clause 2.1, either party shall be free to use… Residuals”. It lets Acme’s people reuse anything they remember.',
-      target: () => issue('Clause 2.4'),
+      title: 'Grouped into changes',
+      body: 'Every edit in a paragraph, and the paragraphs of one clause, are a single change to decide, however many edits it has. Their new section 5 (heading and clause) is one change, not two.',
+      target: () => q('.dr-sets'),
       placement: 'left',
-      action: 'Click the Clause 2.4 issue.',
-      done: () => openClause() === 'Clause 2.4'
+      prepare: reviewPanel
     },
+    openStep('§3.3', 'They deleted one of our clauses', 'Deletions are the easiest edits to miss when reading a redline.'),
     {
-      title: 'Their redline and their reason',
-      body: 'Acme inserted the whole clause as a tracked change and left a comment explaining it. Both are shown here, as they appear in their Word file.',
-      target: () => section('Their changes'),
-      placement: 'left'
+      title: 'Our standard wording, deleted',
+      body: 'The card shows it was our approved “No warranty” clause. Put it back with Restore original: that is written into their file as our tracked change.',
+      target: () => card('.dr-card-actions'),
+      placement: 'left',
+      action: 'Click Restore original.',
+      done: () => status('§3.3', 'countered')
     },
+    openStep('§2.4', 'A residuals clause', '“Notwithstanding clause 2.1, either party shall be free to use… Residuals”. Acme inserted it, with a comment explaining why.'),
     {
       title: 'We’ve seen this before',
-      body: 'Precedent search found two earlier negotiations where residuals clauses were rejected, including a note that the General Counsel confirmed “no residuals, in any form”. You don’t need to work this out again.',
-      target: () => section('Precedents'),
+      body: 'Earlier negotiations are searched for the same change. Residuals clauses were rejected with Hooli and Vandelay, with a note that the General Counsel confirmed “no residuals, in any form”. Every decision you make is recorded here for next time.',
+      target: () => card('.dr-seen'),
+      placement: 'left'
+    },
+    ...askAi('The AI gets this change, the whole contract, our playbook and those earlier negotiations, as one request.'),
+    {
+      title: 'What it touches',
+      body: 'It recommends restoring our wording (striking the clause), and points to the paragraphs the change affects: it overrides 2.1 and undermines 3.2. Click either to see it in the contract.',
+      target: () => card('.dr-ai-card'),
       placement: 'left'
     },
     {
-      title: 'Reject it',
-      body: 'Following precedent.',
-      target: () => q('.result-box .decision .btn.reject:not(.on)'),
+      title: 'Apply it',
+      body: 'Its suggestion becomes your edit only when you apply it: the clause is struck as your tracked change.',
+      target: () => cardButton('Apply as my edit'),
+      placement: 'left',
+      action: 'Click Apply as my edit.',
+      done: () => status('§2.4', 'countered')
+    },
+    {
+      title: 'Reply to their comment',
+      body: 'Use the suggested comment as your reply to Acme’s. It is threaded under theirs here, and in the Word file.',
+      target: () => cardButton('Use as my comment'),
+      placement: 'left',
+      action: 'Click Use as my comment, then Comment in the margin.',
+      done: () => !!q('.dr-comment.theirs .dr-comment.ours.reply')
+    },
+    openStep('§4.1', 'A longer confidentiality term', 'Acme wants confidentiality to last five years instead of three.'),
+    {
+      title: 'Within our fallback',
+      body: 'Only “three (3)” became “five (5)”. That is within our 2 to 5 year fallback, and we accepted five years from Stark Industries.',
+      target: () => card('.dr-card-actions .btn.accept'),
       placement: 'top',
-      action: 'Click Reject.',
-      done: () => !!q('.result-box .decision textarea')
+      action: 'Click Accept theirs.',
+      done: () => status('§4.1', 'accepted')
     },
+    ...draftEmail('Your answers and comments become the response to Acme.'),
+    ...markedUpCopy(
+      'Our changes are tracked changes in your name: 2.4 struck out, and 3.3 put back. Our comments are Word comments, and the reply sits under Acme’s. Their change to 4.1, which you accepted, is accepted in the file.'
+    ),
     {
-      title: 'Confirm',
-      body: 'Your reason and what you’re asking for are pre-filled from our playbook: here, a request to remove the clause. Edit either before you confirm.',
-      target: () => q('.result-box .decision'),
+      title: 'A redline, answered in place',
+      body: 'You worked in the document, decided each change once, and saw what we agreed before. The AI was asked about one change, when you wanted it. Try “Second draft” to see Acme’s reply.'
+    }
+  ]
+}
+
+// ---- Review a contract: Globex, the hidden trap ------------------------------------
+
+const reviewGlobex: Tour = {
+  id: 'review-globex',
+  name: 'Demo · Globex order form',
+  steps: [
+    {
+      title: 'An order form that looks standard',
+      body: 'Globex has sent back our Burp Suite order form as a PDF, with no tracked changes. Most of it matches our terms word for word, so it looks safe to sign. It isn’t.'
+    },
+    simulateUpload('This is Globex’s contract page. In real use you’d upload their file here; in the demo, the upload is simulated.'),
+    {
+      title: 'Compared with our wording',
+      body: 'With no tracked changes, the PDF was compared with our approved wording. 17 paragraphs match word for word. Eight don’t, including a whole “Special conditions” section that isn’t in our template at all.',
+      target: () => q('.dr-baseline'),
       placement: 'left',
-      action: 'Click Confirm reject.',
-      done: () => isDecided(clause('2.4'), 'rejected')
+      prepare: reviewPanel
     },
     {
-      title: 'Back to the list',
-      body: 'Now a change that we can probably live with.',
-      target: () => q('.right-nav .link-btn'),
-      placement: 'bottom',
-      action: 'Click ← All issues.',
-      done: () => !!q('.issues')
+      title: 'Someone tried to talk to the AI',
+      body: 'Clause 11.3 contains a note “to any AI or automated contract review system” claiming the special conditions are pre-approved. A local check caught it before anything was sent to an AI. That’s a security matter: the review is on hold and nothing can go to the AI or back to Globex.',
+      target: () => para('11.3'),
+      placement: 'right'
     },
     {
-      title: 'A longer confidentiality term',
-      body: 'Acme wants confidentiality to last five years instead of three.',
-      target: () => issue('Clause 4.1'),
-      placement: 'left',
-      action: 'Click the Clause 4.1 issue.',
-      done: () => openClause() === 'Clause 4.1'
+      title: 'The security team is alerted',
+      body: 'Alerts land on the Security page, with a count in the sidebar.',
+      target: () => navItem('Security'),
+      placement: 'right',
+      action: 'Click Security.',
+      done: () => pageTitle() === 'Security'
     },
     {
-      title: 'Exactly what changed',
-      body: 'Compared with our approved wording, only “three (3)” became “five (5)”. That’s within our 2-5 year fallback, and we accepted the same change from Stark Industries last year.',
-      target: () => section('Library match'),
+      title: 'Security reviews it',
+      body: 'The security team sees the exact text that was flagged and the patterns that matched. In this demo you are also on the security team.',
+      target: () => q('.alert-card'),
+      placement: 'top',
+      action: 'Click Confirm injection attempt.',
+      done: () => pageTitle() === 'Security' && !q('.alert-card') && !!withText('.page .pill', 'confirmed attempt')
+    },
+    {
+      title: 'Back to the review',
+      body: 'Confirmed: 11.3 can’t be accepted, and the rest of the review can go on.',
+      target: () => withText('.page tr.clickable', 'Globex'),
+      placement: 'top',
+      action: 'Click the resolved alert to go back to the review.',
+      done: () => !!q('.dr-wrap')
+    },
+    openStep('§11.1', 'The real problem', 'Clause 11.1 is one of the special conditions. Let’s look at it.'),
+    ...askAi('Ask the AI what this condition does in the context of the whole order form.'),
+    {
+      title: 'The trap',
+      body: 'Our liability cap in 7.1 is word for word our approved wording, but 11.1 says “Notwithstanding clauses 7.1 and 7.2… liability… shall be unlimited”, and 1.1 makes the order form prevail over our terms. The AI points to all three, and recommends escalating.',
+      target: () => card('.dr-ai-card'),
       placement: 'left'
     },
     {
-      title: 'Accept it',
-      body: 'It’s within the fallback and there’s a precedent.',
-      target: () => q('.result-box .decision .btn.accept'),
-      placement: 'top',
-      action: 'Click Accept, then Confirm accept.',
-      done: () => isDecided(clause('4.1'), 'accepted')
-    },
-    ...draftEmail('Your rejections, reasons and proposed wording become the response to Acme.'),
-    {
-      title: 'And a marked-up copy',
-      body: 'Lawyers reply in Word. The same decisions also mark up Acme’s own document, ready to attach to the email.',
-      target: () => withText('.rp-actions .btn', 'Marked-up copy'),
+      title: 'Don’t trust the parser: check the original',
+      body: 'Text pulled out of a PDF can go wrong. You can always see a paragraph in the original document.',
+      target: () => cardButton('Check in the original'),
       placement: 'left',
-      action: 'Click Marked-up copy.',
-      done: () => !!q('.redline-modal')
+      action: 'Click Check in the original.',
+      done: () => !!q('.dr-original mark.orig-hl')
     },
     {
-      title: 'Our changes, in their Word file',
-      body: 'Our changes are tracked changes in your name: 2.4 struck out, and 3.3 put back. Our reasons are Word comments; where Acme left a comment, ours is a reply to it. Their change to 4.1, which you accepted, is accepted in the file. Click a comment to find it in the document.',
-      target: () => q('.redline-modal'),
+      title: 'There it is in the PDF',
+      body: 'This is the actual PDF Globex sent, with the paragraph highlighted. If its text couldn’t be found, you’d see a warning.',
+      target: () => q('.dr-original'),
       placement: 'left',
-      action: 'Close the marked-up copy to continue.',
-      done: () => !q('.redline-modal')
+      action: 'Close it to continue.',
+      done: () => !q('.dr-original')
     },
     {
-      title: 'A redline, decided on precedent',
-      body: 'Each change was shown against our approved wording and against what we agreed before, so you could decide in seconds and consistently. Try “Second draft” to see what happens when Acme replies.'
+      title: 'Strike it',
+      body: 'It isn’t in our template, so answering it means striking it. That goes into the marked-up copy as your tracked change.',
+      target: () => card('.dr-card-actions'),
+      placement: 'left',
+      action: 'Click Strike it.',
+      done: () => status('§11.1', 'countered')
+    },
+    ...draftEmail('With the blockers answered, the response to Globex can be drafted.'),
+    {
+      title: 'That’s the trap',
+      body: 'A contract that looked like our standard terms, with one clause at the back that undid the liability cap and another trying to talk the AI round. Comparing with our wording surfaced both, and the security team was brought in before any AI saw the text.'
     }
   ]
 }
@@ -401,59 +348,45 @@ const secondDraft: Tour = {
   steps: [
     {
       title: 'Acme has replied',
-      body: 'You reviewed Acme’s first draft and sent your comments (we’ve done that part for you). Version 1 is listed here with your decisions. Today, their reply means reading the whole contract again.',
+      body: 'You reviewed Acme’s first draft and sent your marked-up copy (we’ve done that part for you). Their reply is a clean document: no tracked changes. Normally that means reading it all again.',
       target: () => q('.version-row'),
       placement: 'bottom'
     },
-    simulateUpload('Uploading their reply makes it version 2, compared clause by clause with version 1.'),
+    simulateUpload('Uploading their reply makes it version 2.'),
     {
-      ...waitForChecks,
-      title: 'Version 2, checked',
-      body: 'All the usual checks run on the new draft, and every clause is matched to its counterpart in version 1.'
+      title: 'Compared with what we sent',
+      body: 'Version 2 was compared with what we sent back: their text with our edits. They took our wording in 3.3, 5.1 and 6.8. One paragraph was changed without Track Changes.',
+      target: () => q('.dr-baseline'),
+      placement: 'left',
+      prepare: reviewPanel
     },
     {
       title: 'Only what changed',
-      body: 'Clauses you settled in version 1 that came back word for word are skipped: you don’t read them again. That includes the five-year term you accepted. What’s left is what changed, what’s new and anything they ignored.',
-      target: () => q('.version-summary'),
-      placement: 'left'
-    },
-    {
-      title: 'They removed the residuals clause',
-      body: 'You rejected it in version 1, and it’s gone. Removed clauses are listed so nothing disappears silently, including clauses you had accepted.',
-      target: () => q('.removed-list'),
-      placement: 'left'
-    },
-    {
-      title: 'And moved to our fallback',
-      body: 'The non-solicitation clause has changed. You can see exactly what changed since version 1, and it is now within our playbook fallback: mutual, 12 months, with an advertising carve-out.',
-      target: () => issue('Clause 5.1'),
+      body: 'Fold away everything that is as we sent it.',
+      target: () => q('.dr-toggle'),
       placement: 'left',
-      action: 'Click the Clause 5.1 issue.',
-      done: () => openClause() === 'Clause 5.1'
+      action: 'Tick Show only what changed.',
+      done: () => !!q('.dr-fold')
     },
+    openStep('§6.9', 'A change they didn’t track', 'Clause 6.9 isn’t what we sent, and it wasn’t shown as a tracked change.'),
     {
-      title: 'What changed, at a glance',
-      body: 'The comparison with version 1 shows their edit word by word, so you don’t have to work it out.',
-      target: () => q('.version-section'),
+      title: 'They put New York back',
+      body: 'The redline is against what we sent: our English-courts wording replaced by New York again. The card shows what we proposed last round, and our comment.',
+      target: () => card('.dr-last'),
       placement: 'left'
     },
     {
-      title: 'Back to the list',
-      body: 'One more thing to check.',
-      target: () => q('.right-nav .link-btn'),
-      placement: 'bottom',
-      action: 'Click ← All issues.',
-      done: () => !!q('.issues')
+      title: 'Answer it the same way',
+      body: 'This exact change was seen before (in version 1), and we restored our wording. One click answers it the same way again.',
+      target: () => card('.dr-seen'),
+      placement: 'left',
+      action: 'Click Answer the same way.',
+      done: () => status('§6.9', 'countered')
     },
-    {
-      title: 'They ignored one',
-      body: 'You rejected the exclusive New York courts clause in version 1 and they sent it back word for word. That’s flagged as must-change, with your original note, so it can’t slip through.',
-      target: () => issue('Clause 6.9'),
-      placement: 'left'
-    },
+    ...draftEmail('The email also tells Acme that 6.9 was changed without being tracked.'),
     {
       title: 'A second draft in minutes',
-      body: 'Instead of re-reading 22 clauses, you check what changed, what was removed and what they ignored. Try “Third draft” to see the next round.'
+      body: 'Instead of re-reading the contract, you checked one paragraph: the one that wasn’t as we sent it. Try “Third draft” to see the next round.'
     }
   ]
 }
@@ -470,57 +403,33 @@ const thirdDraft: Tour = {
       target: () => q('.page .card'),
       placement: 'bottom'
     },
-    simulateUpload('Upload version 3. It’s compared with version 2.'),
-    {
-      ...waitForChecks,
-      title: 'Version 3, checked',
-      body: 'The checks run again, and every clause is matched to version 2.'
-    },
-    {
-      title: 'Almost everything is settled',
-      body: 'Nearly every clause was settled in an earlier round and came back unchanged, so it’s skipped. Two things need a look: one changed clause, and one new one.',
-      target: () => q('.version-summary'),
-      placement: 'left'
-    },
+    simulateUpload('Upload version 3. It’s compared with what we sent for version 2.'),
     {
       title: 'The last fix landed',
-      body: 'Clause 6.9 changed. Open it to see how.',
-      target: () => clause('6.9'),
-      placement: 'right',
-      action: 'Click clause 6.9 in the contract.',
-      done: () => openClause() === 'Clause 6.9'
+      body: 'They took our English-courts wording in 6.9. But one paragraph was added without Track Changes.',
+      target: () => q('.dr-baseline'),
+      placement: 'left',
+      prepare: reviewPanel
     },
-    {
-      title: 'Exactly the wording you proposed',
-      body: 'The new 6.9 is the English-courts wording you proposed in version 2, word for word, so it is accepted automatically.',
-      target: () => q('.version-section'),
-      placement: 'left'
-    },
-    {
-      title: 'But something new appeared',
-      body: 'A clause that wasn’t in version 2. New clauses always get a full review.',
-      target: () => clause('6.10'),
-      placement: 'right',
-      action: 'Click clause 6.10 in the contract.',
-      done: () => openClause() === 'Clause 6.10'
-    },
+    openStep('§6.10', 'Something new appeared', 'A clause that wasn’t in what we sent. Easy to miss in a late round, when everyone assumes the contract is done.'),
+    ...askAi('Ask the AI what the new clause does.'),
     {
       title: 'One-sided publicity',
-      body: 'Acme could name PortSwigger in investor materials without consent, with no equivalent right for us. Easy to miss in a late round, when everyone assumes the contract is done.',
-      target: () => section('Standard positions'),
+      body: 'Acme could name PortSwigger in investor materials and customer communications without consent, with no equivalent right for us.',
+      target: () => card('.dr-ai-card'),
       placement: 'left'
     },
     {
-      title: 'Reject it',
-      body: 'The reason and our wording (no publicity without consent, both ways) are pre-filled.',
-      target: () => q('.result-box .decision .btn.reject:not(.on)'),
-      placement: 'top',
-      action: 'Click Reject, then Confirm reject.',
-      done: () => isDecided(clause('6.10'), 'rejected')
+      title: 'Strike it',
+      body: 'Apply the AI’s suggestion: the clause is struck as your tracked change.',
+      target: () => cardButton('Apply as my edit'),
+      placement: 'left',
+      action: 'Click Apply as my edit.',
+      done: () => status('§6.10', 'countered')
     },
     {
-      title: 'One clause to read in round three',
-      body: 'In the third round you read one new clause, not the whole contract, and nothing settled earlier could quietly come back.'
+      title: 'One paragraph to read in round three',
+      body: 'In the third round you read one new clause, not the whole contract, and nothing could change quietly: anything different from what we sent shows up, tracked or not.'
     }
   ]
 }
@@ -533,31 +442,25 @@ const libraryDemo: Tour = {
   steps: [
     {
       title: 'Teach it your wording',
-      body: 'The library is the wording we’ve already approved: a clause that matches it word for word is accepted without anyone reading it. This demo adds a clause to it.'
+      body: 'The library is the wording we’ve already approved. Paragraphs that match it word for word stay in the background: nobody needs to read them. This demo adds wording to it.'
     },
     simulateUpload('Upload Initech’s NDA. It’s almost all our standard wording.'),
-    waitForChecks,
+    openStep('§2.2', 'One clause was reworded', 'Clause 2.2 differs from our approved “Standard of care” wording, but says the same thing.'),
     {
-      title: 'One clause was reworded',
-      body: 'Clause 2.2 isn’t word for word our standard. Let’s see why it was still accepted.',
-      target: () => clause('2.2'),
-      placement: 'right',
-      action: 'Click clause 2.2.',
-      done: () => openClause() === 'Clause 2.2'
-    },
-    {
-      title: 'Same meaning, different words',
-      body: 'It was close to our approved “Standard of care” clause, so Claude was asked whether the legal effect is the same. It says yes, and shows its reasoning and the exact word changes so you can check them in seconds.',
-      target: () => section('Library match'),
-      placement: 'left'
-    },
-    {
-      title: 'Accept it, and nominate it',
-      body: 'If this wording is fine every time, nominate it. A reviewer accepting it in one deal isn’t the same as approving it for every deal, so it goes to the owner for approval.',
-      target: () => q('.result-box .decision'),
+      title: 'Accept it',
+      body: 'Their wording is fine.',
+      target: () => card('.dr-card-actions .btn.accept'),
       placement: 'top',
-      action: 'Click Accept, tick “Nominate this wording…”, then Confirm accept.',
-      done: () => isDecided(clause('2.2'), 'accepted') && !!withText('.result-box .decision .who', 'nominated for library')
+      action: 'Click Accept theirs.',
+      done: () => status('§2.2', 'accepted')
+    },
+    {
+      title: 'Nominate it',
+      body: 'If this wording is fine every time, nominate it. Accepting it in one deal isn’t the same as approving it for every deal, so it goes to the library owner.',
+      target: () => card('.dr-nominate'),
+      placement: 'left',
+      action: 'Click Nominate this wording for the library, then Nominate.',
+      done: () => !!withText('.dr-card .dr-nominate', 'Nominated')
     },
     {
       title: 'Approvals',
@@ -577,7 +480,7 @@ const libraryDemo: Tour = {
     },
     {
       title: 'Now part of the library',
-      body: 'The five-year term is now pre-approved. The next NDA that contains it will be accepted automatically, without needing an AI check.',
+      body: 'Open the library to see it.',
       target: () => navItem('Library'),
       placement: 'right',
       action: 'Click Library.',
@@ -590,8 +493,8 @@ const libraryDemo: Tour = {
       placement: 'top'
     },
     {
-      title: 'Accepted automatically from now on',
-      body: 'Any future contract with this exact wording clears without an AI check or a reader. The library grows from real decisions, one approval at a time.'
+      title: 'Matched automatically from now on',
+      body: 'The next contract with this exact wording won’t show it as a change at all. The library grows from real decisions, one approval at a time.'
     }
   ]
 }
@@ -604,7 +507,7 @@ const playbookDemo: Tour = {
   steps: [
     {
       title: 'Our standard positions',
-      body: 'The playbook is what we accept on each topic, the fallback, and the red flags. Every contract is checked against each position in its own AI check. Let’s add one.',
+      body: 'The playbook is what we accept on each topic, the fallback, and the red flags. When you ask the AI about a change, it checks the change against these positions. Let’s add one.',
       target: () => q('.page h1'),
       placement: 'bottom'
     },
@@ -654,8 +557,8 @@ const playbookDemo: Tour = {
       done: () => pageTitle().startsWith('Playbook')
     },
     {
-      title: 'Checked in every review',
-      body: 'From the next contract on, this position gets its own AI check. Every change to the playbook is approved and recorded in the audit log.'
+      title: 'Used whenever you ask',
+      body: 'From now on, every change you ask the AI about is checked against this position too. Every change to the playbook is approved and recorded in the audit log.'
     }
   ]
 }
@@ -676,11 +579,11 @@ export const WELCOME_TOUR: Tour = {
   steps: [
     {
       title: 'Welcome to Clause Pilot',
-      body: 'Clause Pilot reads routine contracts so the legal team doesn’t have to read every clause. It accepts what we’ve already approved, finds what needs changing, and shows how we handled the same issue before.'
+      body: 'Clause Pilot shows a contract as written and highlights only what changed: their tracked changes, and anything that differs from what we sent or from our approved wording. You answer in place, and it writes the marked-up Word copy and the email. The AI is there when you ask for it.'
     },
     {
       title: 'Your reviews and the knowledge behind them',
-      body: 'The sidebar lists the active client’s contracts; each has a page with every draft you’ve reviewed. Below that is the knowledge the checks use (the library of pre-approved wording, our playbook and precedents), Approvals for changes waiting to be signed off, Security and the audit log. During a review, a second panel on the right holds the review controls and Ask AI.',
+      body: 'The sidebar lists the active client’s contracts; each has a page with every draft you’ve reviewed. Below that is the knowledge the review uses (the library of approved wording, our playbook and earlier negotiations), Approvals for changes waiting to be signed off, Security and the audit log. During a review, a second panel on the right holds the list of changes and Ask AI.',
       target: () => q('.nav'),
       placement: 'right'
     },
@@ -692,7 +595,7 @@ export const WELCOME_TOUR: Tour = {
     },
     {
       title: 'Demo mode or live mode',
-      body: 'This pill shows which mode you’re in, and clicking it switches. Demo mode uses three sample contracts with recorded AI responses, so nothing leaves this computer. Live mode lets you review your own contracts with Claude.',
+      body: 'This pill shows which mode you’re in, and clicking it switches. Demo mode uses sample contracts with recorded AI responses, so nothing leaves this computer. Live mode lets you review your own contracts.',
       target: () => q('.titlebar .mode-pill:not(.offline)'),
       placement: 'bottom'
     },
@@ -700,9 +603,8 @@ export const WELCOME_TOUR: Tour = {
       title: 'Reviewing your own contracts',
       body: (
         <>
-          In live mode, choose a client, then <b>Open a contract…</b> on this page (in the setup checklist until your first review), or upload a new draft from a contract’s page. Two things to know first: it needs an <b>Anthropic API key</b> (added in Settings), and the
-          contract’s text is <b>sent to Anthropic’s API</b> for the AI checks. Only use documents you’re allowed to share outside the company. The library, precedent search
-          and your decisions stay on this computer.
+          In live mode, choose a client, then <b>Open a contract…</b> on this page (in the setup checklist until your first review), or upload a new draft from a contract’s page. Reviewing needs nothing else. To ask the AI about a change you need an{' '}
+          <b>Anthropic API key</b> (added in Settings), and when you ask, the <b>contract’s text is sent to Anthropic’s API</b>. Only do that with documents you’re allowed to share outside the company. Everything else stays on this computer.
         </>
       ),
       target: () => q('.home-upload-block') ?? q('.checklist') ?? q('.titlebar .mode-pill:not(.offline)'),

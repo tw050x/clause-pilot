@@ -36,14 +36,14 @@ export function LibraryView() {
   return (
     <KnowledgePage
       title="Library"
-      lede="Wording we have already approved. A clause that matches one of these, word for word or with the same legal effect, is accepted automatically."
+      lede="Wording we have already approved. A draft on our paper is compared with it: paragraphs that match word for word stay in the background, and the rest show as changes."
       count={library.length}
       q={q}
       setQ={setQ}
     >
       {library.length === 0 && (
         <div className="empty-state">
-          No pre-approved clauses yet. When you accept a clause during a review, tick “Nominate this wording for the pre-approved library”, then approve it on the Approvals page. From then on, matching clauses are accepted automatically.
+          No approved wording yet. When you accept a change during a review, choose “Nominate this wording for the library”, then approve it on the Approvals page. From then on, drafts are compared with it.
         </div>
       )}
       <div className="card" style={{ overflow: 'hidden' }}>
@@ -87,13 +87,13 @@ export function HistoryView() {
   return (
     <KnowledgePage
       title="Precedents"
-      lede="How similar clauses were handled in past negotiations, accepted or rejected and why. Every decision made in a review is added here."
+      lede="How changes were handled in past negotiations: what they proposed, how we answered and why. Every change you accept or answer in a review is added here, and shown as “seen before” the next time it comes up."
       count={history.length}
       q={q}
       setQ={setQ}
     >
       {history.length === 0 && (
-        <div className="empty-state">No precedents yet. Every clause you accept or reject in a review is added here, so the next reviewer can see how it was handled.</div>
+        <div className="empty-state">No precedents yet. Every change you accept or answer in a review is added here, so the next reviewer can see how it was handled.</div>
       )}
       <div className="card" style={{ overflow: 'hidden' }}>
         <table className="t">
@@ -114,12 +114,20 @@ export function HistoryView() {
                     <strong>{p.counterparty}</strong>
                     <div className="faint">
                       {p.date} · {p.category}
+                    {p.where ? ` · ${p.where}` : ''}
                     </div>
                     {p.source === 'review' && <span className="pill intent">from a review</span>}
                   </td>
-                  <td style={{ fontFamily: 'var(--doc-font)', fontSize: 14 }}>{p.text}</td>
+                  <td style={{ fontFamily: 'var(--doc-font)', fontSize: 14 }}>
+                    {p.text}
+                    {p.ours?.some((t) => t) && (
+                      <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
+                        <strong>We answered:</strong> {p.ours.filter((t) => t).join(' ')}
+                      </div>
+                    )}
+                  </td>
                   <td>
-                    <span className={`pill ${p.outcome}`}>{p.outcome}</span>
+                    <span className={`pill ${p.outcome}`}>{p.response ? { accepted: 'accepted', countered: 'countered', restored: 'restored ours', struck: 'struck' }[p.response] : p.outcome}</span>
                     <div className="muted" style={{ marginTop: 4 }}>
                       {p.notes}
                     </div>

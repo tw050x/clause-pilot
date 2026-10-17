@@ -1,6 +1,6 @@
 import type {
   Account, ContractRecord,
-  AuditEntry, ChatMessage, Decision, DemoContract, EmailDraft, LibraryClause, Nomination,
+  AuditEntry, ChatMessage, DemoContract, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
 
@@ -33,8 +33,6 @@ export interface Api {
     start(path: string, contractId?: string): Promise<ReviewSession>
     get(id: string): Promise<ReviewSession>
     list(): Promise<ReviewSummary[]>
-    decide(id: string, d: Omit<Decision, 'by' | 'at'>): Promise<ReviewSession>
-    undo(id: string, clauseId: string): Promise<ReviewSession>
     onUpdate(cb: (s: ReviewSession) => void): Unsub
   }
   email: { draft(id: string): Promise<EmailDraft> }
@@ -46,6 +44,12 @@ export interface Api {
     decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
     comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
     uncomment(id: string, commentId: string): Promise<ReviewSession>
+    /** Earlier negotiations per change set (identical first, then similar). */
+    seen(id: string): Promise<Record<string, SeenHit[]>>
+    /** Ask the AI about these change sets (one request each). Results arrive as session updates. */
+    ask(id: string, setIds: string[]): Promise<ReviewSession>
+    /** Nominate an accepted change's wording for the pre-approved library. */
+    nominate(id: string, setId: string, note: string): Promise<ReviewSession>
   }
   redline: {
     /** Build the marked-up .docx without saving it (for the in-app preview). */

@@ -59,7 +59,12 @@ export class PrecedentIndex {
   private byId: Map<string, Precedent>
 
   search(clause: Clause, limit = 4): PrecedentHit[] {
-    const query = [clause.heading ?? '', clause.text].join(' ')
+    return this.searchText([clause.heading ?? '', clause.text].join(' '), limit)
+  }
+
+  /** Search by free text (the words a change added and removed). */
+  searchText(query: string, limit = 4): PrecedentHit[] {
+    if (!query.trim()) return []
     const results = this.ms.search(query)
     if (!results.length) return []
     const top = results[0].score

@@ -1,8 +1,7 @@
 import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
-import type { Clause, DocBlock, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
+import type { DocBlock, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
 import { changeSets, statusOf } from '../../shared/changes'
-import { clauseLabel } from '../../shared/derive'
 import { readNumbering } from '../ingest/docxTracked'
 import { diffWords } from '../../shared/diff'
 
@@ -13,17 +12,7 @@ import { diffWords } from '../../shared/diff'
  *
  * Word uploads are edited in place, so their formatting, numbering and their
  * own redline survive. PDF and text uploads have no Word original, so a plain
- * .docx is built from the clauses first and marked up the same way.
- *
- * Per clause:
- * - rejected with our wording: a word-level redline from their text to ours;
- * - rejected as a removal: the clause struck through;
- * - rejected without wording: a comment only;
- * - accepted: their tracked changes in it are accepted (the marks go);
- * - undecided: left exactly as they sent it.
- * Our standard clauses they deleted with Track Changes are reinstated (their
- * deletion rejected). Each rejection carries its reason as a comment, threaded
- * as a reply when they had commented on that clause.
+ * .docx is built from the paragraphs first and marked up the same way.
  */
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -37,70 +26,6 @@ const REL_COMMENTS_EX = 'http://schemas.microsoft.com/office/2011/relationships/
 const NUMBER_PREFIX = /^\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+/
 
 
-export async function buildRedline(
-  s: ReviewSession,
-  reviewer: string,
-  original: Buffer,
-  /** Test drafts: comment only where a reason was written (a counterparty doesn't explain every edit). */
-  opts: { commentsOnlyWhenGiven?: boolean } = {}
-): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[] }> {
-  const source = s.sourceType === 'docx' ? 'original' : 'generated'
-  const zip = await JSZip.loadAsync(source === 'original' ? original : await baseDocx(s))
-  const doc = await xml(zip, 'word/document.xml')
-  if (!doc) throw new Error('Not a Word document (word/document.xml missing).')
-  await numberParagraphs(zip, doc)
-  const m = new Markup(zip, doc, reviewer)
-  await m.loadComments()
-
-  const stats: RedlineStats = { source, replaced: 0, removed: 0, commentedOnly: 0, reinstated: 0, acceptedChanges: 0, comments: 0, unmatched: [] }
-  const groups = locateClauses(doc, s.clauses)
-
-  for (const c of s.clauses) {
-    const d = s.decisions[c.id]
-    if (!d) continue
-    const paras = groups.get(c.id)
-    if (!paras) {
-      stats.unmatched.push(c.number ?? c.id)
-      continue
-    }
-    const theirComment = m.firstCommentIn(paras)
-    if (d.decision === 'accepted') {
-      if (resolveTheirChanges(paras, 'accept')) stats.acceptedChanges++
-      if (theirComment) m.comment(paras, 'Agreed.', clauseLabel(c), theirComment, c.text)
-      continue
-    }
-    const wording = d.removal ? '' : d.redline.trim()
-    if (d.removal || wording) {
-      m.redlineTo(paras, wording)
-      d.removal ? stats.removed++ : stats.replaced++
-    } else stats.commentedOnly++
-    // The reviewer's note was written for the app ("the wording below"); in Word the wording is in the clause itself.
-    const note = d.note.trim().replace(/\s*We propose the wording below instead\.?$/i, wording && !d.removal ? ' Our proposed wording is marked up in the clause.' : '')
-    const reason = note || (d.removal ? 'We ask for this clause to be removed.' : 'We can’t accept this clause as drafted.')
-    if (note || !opts.commentsOnlyWhenGiven) m.comment(paras, reason, clauseLabel(c), theirComment, c.text)
-  }
-
-  // Our standard clauses they deleted outright: put them back.
-  for (const del of s.trackedDeletions ?? []) {
-    if (!del.libraryTitle) continue
-    const p = findDeletedParagraph(doc, del.text)
-    if (!p) continue
-    resolveTheirChanges([p], 'reject')
-    m.comment([p], `This is part of our standard terms (${del.libraryTitle.toLowerCase()}), so we have reinstated it.`, del.number ? `Clause ${del.number}` : del.libraryTitle, null, del.text)
-    stats.reinstated++
-  }
-
-  stats.comments = m.added
-  if (m.added) await m.saveComments()
-  await trackFurtherChanges(zip)
-  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc))
-  const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
-  // In reading order (reinstated clauses are handled last but belong where they were).
-  const order = (w: string) => (w.match(/\d+(?:\.\d+)*/)?.[0] ?? '999').split('.').map((n) => n.padStart(3, '0')).join('.')
-  const comments = [...m.log].sort((a, b) => order(a.where).localeCompare(order(b.where)))
-  return { bytes, stats, comments }
-}
-
 /**
  * The marked-up copy for a document review: each paragraph we edited becomes
  * a word-level redline in the reviewer's name; change sets we accepted have
@@ -111,13 +36,16 @@ export async function buildRedline(
 export async function buildDocRedline(s: ReviewSession, reviewer: string, original: Buffer): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[] }> {
   const d = s.doc!
   const source = s.sourceType === 'docx' && d.blocks.some((b) => b.paras?.length) ? 'original' : 'generated'
-  const zip = await JSZip.loadAsync(source === 'original' ? original : await docxFromBlocks(d.blocks))
+  // Paragraphs they removed without tracking aren't in the file; restoring one inserts it again.
+  const received = d.blocks.filter((b) => !(b.untracked && b.kind === 'deleted'))
+  const zip = await JSZip.loadAsync(source === 'original' ? original : await docxFromBlocks(received))
   const doc = await xml(zip, 'word/document.xml')
   if (!doc) throw new Error('Not a Word document (word/document.xml missing).')
   await numberParagraphs(zip, doc)
   const all = bodyParagraphs(doc) // indexes are taken before anything changes
-  const index = new Map(d.blocks.map((b, i) => [b.id, i]))
-  const parasOf = (b: DocBlock) => (source === 'original' ? (b.paras ?? []).map((n) => all[n]).filter(Boolean) : [all[index.get(b.id)!]].filter(Boolean))
+  const index = new Map(received.map((b, i) => [b.id, i]))
+  const parasOf = (b: DocBlock) =>
+    source === 'original' ? (b.paras ?? []).map((n) => all[n]).filter(Boolean) : index.has(b.id) ? [all[index.get(b.id)!]].filter(Boolean) : []
   const where = (b: DocBlock) => (b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : 'Paragraph')
   const m = new Markup(zip, doc, reviewer)
   await m.loadComments()
@@ -132,6 +60,16 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
     const edit = d.edits[b.id]
     if (edit === undefined) continue
     const paras = parasOf(b)
+    if (!paras.length && b.untracked && b.kind === 'deleted') {
+      // Put it back where it was: after the nearest paragraph before it that's in the file.
+      if (!edit) continue
+      const at = d.blocks.indexOf(b)
+      const prev = d.blocks.slice(0, at).reverse().map(parasOf).find((p) => p.length)
+      const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
+      m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + edit)
+      stats.reinstated++
+      continue
+    }
     if (!paras.length) {
       stats.unmatched.push(where(b))
       continue
@@ -199,62 +137,6 @@ function visibleText(p: Element): string {
   return visiblePieces([p]).map((x) => x.text).join('')
 }
 
-/**
- * Each clause is one or more consecutive paragraphs. Walk the document in
- * order, matching each clause's text (ignoring case, spacing, punctuation and
- * the printed clause number) to the paragraphs that make it up.
- */
-function locateClauses(doc: Document, clauses: Clause[]): Map<string, Element[]> {
-  const paras = bodyParagraphs(doc).map((p) => ({ p, text: visibleText(p) }))
-  const out = new Map<string, Element[]>()
-  let cursor = 0
-  for (const c of clauses) {
-    const target = norm(c.text)
-    if (!target) continue
-    for (let i = cursor; i < paras.length; i++) {
-      const first = norm(paras[i].text.replace(NUMBER_PREFIX, ''))
-      if (!first || !target.startsWith(first)) continue
-      const group = [paras[i].p]
-      let acc = first
-      let j = i + 1
-      while (acc.length < target.length && j < paras.length) {
-        const next = norm(paras[j].text)
-        if (next) {
-          // Allow for a list label ("a", "ii", "12") that Word numbers automatically and the text doesn't contain.
-          const k = [0, 1, 2, 3, 4].find((n) => target.startsWith(next, acc.length + n))
-          if (k === undefined) break
-          acc = target.slice(0, acc.length + k) + next
-          group.push(paras[j].p)
-        }
-        j++
-      }
-      if (acc === target) {
-        out.set(c.id, group)
-        cursor = j
-        break
-      }
-    }
-  }
-  return out
-}
-
-function findDeletedParagraph(doc: Document, text: string): Element | null {
-  const target = norm(text)
-  for (const p of bodyParagraphs(doc)) {
-    if (visibleText(p).trim()) continue
-    const deleted = norm(Array.from(p.getElementsByTagNameNS(W, 'delText')).map((t) => t.textContent ?? '').join('').replace(NUMBER_PREFIX, ''))
-    if (deleted && deleted === target) return p
-  }
-  return null
-}
-
-// ---- their tracked changes ---------------------------------------------------------------
-
-/**
- * Accept or reject every tracked change in these paragraphs. Accepting keeps
- * insertions and drops deletions; rejecting does the opposite. Returns whether
- * there was anything to resolve.
- */
 function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject'): boolean {
   let changed = false
   for (const p of paras) {
@@ -464,6 +346,31 @@ class Markup {
     }
   }
 
+  /** A whole new paragraph as our tracked insertion, after `after` (or before `before`), styled like its neighbour. */
+  insertParagraph(after: Element | null, before: Element | null, text: string) {
+    const near = after ?? before
+    if (!near) return
+    const p = this.el('p')
+    const pPr = near.getElementsByTagNameNS(W, 'pPr')[0]
+    const ppr = pPr && pPr.parentNode === near ? (pPr.cloneNode(true) as Element) : this.el('pPr')
+    for (const n of ['rPr', 'numPr', 'sectPr', 'pPrChange']) for (const x of Array.from(ppr.getElementsByTagNameNS(W, n))) if (x.parentNode === ppr) ppr.removeChild(x)
+    // The paragraph mark itself is inserted too, so rejecting the change removes the whole paragraph.
+    const rPr = this.el('rPr')
+    rPr.appendChild(this.track('ins'))
+    ppr.appendChild(rPr)
+    p.appendChild(ppr)
+    const run = this.el('r')
+    const t = this.el('t')
+    t.setAttribute('xml:space', 'preserve')
+    t.appendChild(this.doc.createTextNode(text))
+    run.appendChild(t)
+    const ins = this.track('ins')
+    ins.appendChild(run)
+    p.appendChild(ins)
+    if (after) after.parentNode!.insertBefore(p, after.nextSibling)
+    else before!.parentNode!.insertBefore(p, before)
+  }
+
   // ---- comments ----
 
   async loadComments() {
@@ -474,15 +381,6 @@ class Markup {
       for (const el of Array.from(this.comments?.getElementsByTagNameNS(W, tag) ?? [])) max = Math.max(max, Number(el.getAttributeNS(W, 'id')) || 0)
     }
     this.nextComment = max + 1
-  }
-
-  /** Their comment anchored in these paragraphs, if any (the first). */
-  firstCommentIn(paras: Element[]): Comment | null {
-    for (const p of paras) {
-      const ref = p.getElementsByTagNameNS(W, 'commentRangeStart')[0] ?? p.getElementsByTagNameNS(W, 'commentReference')[0]
-      if (ref) return { id: Number(ref.getAttributeNS(W, 'id')) }
-    }
-    return null
   }
 
   /** Add our comment on these paragraphs, or as a reply to `parent` (anchored on the same text). */
@@ -721,18 +619,6 @@ const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 const para = (runs: string, opts = '') => `<w:p><w:pPr>${opts}<w:spacing w:after="120"/></w:pPr>${runs}</w:p>`
 const run = (t: string, bold = false) => `<w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`
-
-/** A plain .docx of the contract as we read it: headings, then each clause with its number. */
-async function baseDocx(s: ReviewSession): Promise<Buffer> {
-  const body: string[] = []
-  let heading: string | null = null
-  for (const c of s.clauses) {
-    if (c.heading && c.heading !== heading) body.push(para(run(c.heading, true), '<w:keepNext/>'))
-    heading = c.heading
-    body.push(para((c.number ? run(`${c.number} `, true) : '') + run(c.text)))
-  }
-  return packageDocx(body)
-}
 
 async function packageDocx(body: string[]): Promise<Buffer> {
   const zip = new JSZip()
