@@ -750,3 +750,10 @@ del.us-del ins.th-ins { color: inherit; }
 /* Comment on a selection: a button in the right-hand gutter, level with it. */
 .ed-gutter-btn { position: absolute; right: 22px; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; z-index: 5; }
 .ed-gutter-btn:hover { color: var(--text); border-color: var(--text-3); }
+
+.sel-preview { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.sel-line { font: 12.5px/1.5 Georgia, serif; word-break: break-word; }
+.sel-line.st-accepted, .sel-line.st-rejected { opacity: 0.55; }
+.sel-done { color: var(--text-2); font-weight: 600; }
+.sel-done.accepted { color: var(--exact); }
+.sel-done.rejected { color: var(--rejected); }

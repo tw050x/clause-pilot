@@ -198,12 +198,16 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
 
 const snippet = (t: string) => (t.length > 140 ? `${t.slice(0, 140).trimEnd()}…` : t)
 
-/** Only the redlines you selected: accept or reject each of theirs, undo any of yours. */
+/**
+ * The redlines in a selection, decided together: one Accept or Reject for all of theirs,
+ * and one Revert for any of yours. To decide one change on its own, select just that.
+ */
 function SelectionPanel({ session, picked, act, group }: { session: ReviewSession; picked: SelectedChange[]; act: (p: Promise<ReviewSession>) => Promise<boolean>; group: string }) {
   const d = session.doc!
   const blocks = new Map(d.blocks.map((b) => [b.id, b]))
   const items = picked.filter((x) => blocks.has(x.blockId))
   const theirs = items.filter((x): x is Extract<SelectedChange, { kind: 'theirs' }> => x.kind === 'theirs')
+  const ours = items.filter((x): x is Extract<SelectedChange, { kind: 'ours' }> => x.kind === 'ours')
   const statusOf = (x: Extract<SelectedChange, { kind: 'theirs' }>) => {
     const r = d.resolved?.[changeKey(x.blockId, x.seg)]
     if (r) return r
@@ -214,85 +218,93 @@ function SelectionPanel({ session, picked, act, group }: { session: ReviewSessio
     return 'open'
   }
   const open = theirs.filter((x) => statusOf(x) === 'open')
-  const all = async (outcome: 'accepted' | 'rejected') => {
-    for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome, group)))) return
+  const accepted = theirs.filter((x) => statusOf(x) === 'accepted').length
+  const rejected = theirs.filter((x) => statusOf(x) === 'rejected').length
+  const oursLeft = ours.filter((x) => marksFor(d, blocks.get(x.blockId)!).some((m) => m.ours === x.op && m.text === x.text))
+  const [busy, setBusy] = useState(false)
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } finally {
+      setBusy(false)
+    }
   }
+  const decide = (outcome: 'accepted' | 'rejected') =>
+    run(async () => {
+      for (const x of open) if (!(await act(window.api.doc.resolve(session.id, x.blockId, x.seg, outcome, group)))) return
+    })
+  // Each revert shifts the rest, so each is looked up again in the paragraph as it then is.
+  const revert = () =>
+    run(async () => {
+      let s = session
+      for (const x of oursLeft) {
+        const at = marksFor(s.doc!, s.doc!.blocks.find((b) => b.id === x.blockId)!).findIndex((m) => m.ours === x.op && m.text === x.text)
+        if (at >= 0) s = await window.api.doc.undoOurs(session.id, x.blockId, at, group)
+      }
+      await act(Promise.resolve(s))
+    })
   // What's been done with this selection is one action, undone together.
   const action = d.history?.find((a) => a.group === group && !a.undone)
+  const preview = items.slice(0, 4)
+  const counts = [
+    theirs.length && `${theirs.length} of theirs`,
+    ours.length && `${ours.length} of yours`
+  ].filter(Boolean)
+
   return (
     <section className="rc-section">
       <h4 className="rp-h">
-        {items.length} change{items.length === 1 ? '' : 's'} selected
+        {items.length === 1 ? '1 change selected' : `${items.length} changes selected`}
         {action && (
           <button className="btn sm" title={describe(d, action)} onClick={() => act(window.api.doc.undo(session.id, action.id))}>
             Undo
           </button>
         )}
       </h4>
-      {open.length > 1 && (
-        <div className="dr-card-actions">
-          <button className="btn sm accept" onClick={() => all('accepted')}>
-            <Icon name="check" size={13} /> Accept all {open.length}
-          </button>
-          <button className="btn sm reject" onClick={() => all('rejected')}>
-            Reject all {open.length}
-          </button>
-        </div>
-      )}
-      <div className="sel-list">
-        {items.map((x) => {
+      {items.length > 1 && <p className="faint dr-small">{counts.join(', ')}</p>}
+      <div className="sel-preview">
+        {preview.map((x, i) => {
           const b = blocks.get(x.blockId)!
           if (x.kind === 'theirs') {
             const seg = segmentsOf(b)[x.seg]
-            const st = statusOf(x)
             return (
-              <div key={`t${x.blockId}:${x.seg}`} className={`sel-item st-${st}`}>
-                <div className="sel-head">
-                  <strong>{whereOf(d, b)}</strong>
-                  <span className="faint">
-                    {seg.op === 'ins' ? 'Inserted' : 'Deleted'} by {seg.author ?? 'them'}
-                    {b.untracked ? ' (not tracked)' : ''}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  {st !== 'open' && <span className={`sel-st ${st}`}>{st === 'accepted' ? 'Accepted' : 'Rejected'}</span>}
-                </div>
-                <div className="sel-text">{seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}</div>
-                <div className="row-gap">
-                  {st === 'open' ? (
-                    <>
-                      <button className="btn sm accept" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'accepted', group))}>
-                        <Icon name="check" size={13} /> Accept
-                      </button>
-                      <button className="btn sm reject" onClick={() => act(window.api.doc.resolve(session.id, x.blockId, x.seg, 'rejected', group))}>
-                        Reject
-                      </button>
-                    </>
-                  ) : null}
-                </div>
+              <div key={i} className={`sel-line st-${statusOf(x)}`}>
+                <span className="hist-where">{whereOf(d, b)}</span>
+                {seg.op === 'ins' ? <ins className="th-ins">{snippet(seg.text)}</ins> : <del className="th-del">{snippet(seg.text)}</del>}
               </div>
             )
           }
-          const at = marksFor(d, b).findIndex((m) => m.ours === x.op && m.text === x.text)
           return (
-            <div key={`o${x.blockId}:${x.op}:${x.text}`} className={`sel-item ours ${at < 0 ? 'st-undone' : ''}`}>
-              <div className="sel-head">
-                <strong>{whereOf(d, b)}</strong>
-                <span className="faint">{x.op === 'ins' ? 'Inserted' : 'Deleted'} by you</span>
-                <span style={{ flex: 1 }} />
-                {at < 0 && <span className="sel-st">Reverted</span>}
-              </div>
-              <div className="sel-text">{x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}</div>
-              {at >= 0 && (
-                <div className="row-gap">
-                  <button className="btn sm ghost" onClick={() => act(window.api.doc.undoOurs(session.id, x.blockId, at, group))}>
-                    Revert
-                  </button>
-                </div>
-              )}
+            <div key={i} className="sel-line">
+              <span className="hist-where">{whereOf(d, b)}</span>
+              {x.op === 'ins' ? <ins className="us-ins">{snippet(x.text)}</ins> : <del className="us-del">{snippet(x.text)}</del>}
             </div>
           )
         })}
+        {items.length > preview.length && <div className="faint hist-more">+ {items.length - preview.length} more in the selection</div>}
       </div>
+      {theirs.length > 0 &&
+        (open.length ? (
+          <div className="dr-card-actions">
+            <button className="btn sm accept" disabled={busy} onClick={() => decide('accepted')}>
+              <Icon name="check" size={13} /> Accept{open.length > 1 ? ` all ${open.length}` : ''}
+            </button>
+            <button className="btn sm reject" disabled={busy} onClick={() => decide('rejected')}>
+              Reject{open.length > 1 ? ` all ${open.length}` : ''}
+            </button>
+          </div>
+        ) : (
+          <p className={`dr-small sel-done ${rejected && !accepted ? 'rejected' : accepted && !rejected ? 'accepted' : ''}`}>
+            {accepted && rejected ? `${accepted} accepted, ${rejected} rejected` : accepted ? (accepted === 1 ? 'Accepted' : `All ${accepted} accepted`) : rejected === 1 ? 'Rejected' : `All ${rejected} rejected`}
+          </p>
+        ))}
+      {oursLeft.length > 0 && (
+        <button className="btn sm ghost" disabled={busy} onClick={revert}>
+          Revert your {oursLeft.length === 1 ? 'change' : `${oursLeft.length} changes`}
+        </button>
+      )}
+      {open.length > 0 && open.length < theirs.length && <p className="faint dr-small">The rest of their changes here are already decided.</p>}
     </section>
   )
 }
