@@ -188,7 +188,9 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             const st = statusOf(d, s)
             return (
               <button key={s.id} className={`dr-set st-${st} ${selected === s.id ? 'on' : ''}`} onClick={() => select(s)}>
-                <i />
+                <span className="dr-set-st">
+                  <i /> {STATUS_LABEL[st]}
+                </span>
                 <span className="dr-set-where">{s.where}</span>
                 <span className="dr-set-what">
                   {describe(s)}
@@ -196,7 +198,6 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
                   {d.ai?.[s.id]?.status === 'running' && <span className="spinner sm" />}
                   {d.ai?.[s.id]?.status === 'done' && <span className={`dr-tag ai rec-${d.ai[s.id].data!.recommendation}`} title="The AI's suggestion">AI: {d.ai[s.id].data!.recommendation}</span>}
                 </span>
-                <span className="dr-set-st">{STATUS_LABEL[st]}</span>
               </button>
             )
           })}
@@ -238,7 +239,9 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           <div className="dr-sets">
             {others.map((b) => (
               <button key={b.id} className="dr-set st-countered" onClick={() => scrollTo(b.id)}>
-                <i />
+                <span className="dr-set-st">
+                  <i /> Our edit
+                </span>
                 <span className="dr-set-where">{b.label ? `§${b.label.replace(/\.$/, '')}` : b.text.slice(0, 30)}</span>
                 <span className="dr-set-what">{d.edits[b.id] === '' ? 'Struck' : 'Reworded'}</span>
               </button>

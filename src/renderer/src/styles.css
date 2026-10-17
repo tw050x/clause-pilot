@@ -584,12 +584,12 @@ del.us-del ins.th-ins { color: inherit; }
 .st-flagged { --s: var(--processing); --s-tint: var(--processing-tint); }
 .dr-toggle { font-size: 12.5px; margin-bottom: 8px; }
 .dr-sets { display: flex; flex-direction: column; gap: 2px; }
-.dr-set { display: grid; grid-template-columns: 10px auto 1fr auto; gap: 8px; align-items: center; border: 1px solid transparent; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text); }
+.dr-set { display: flex; flex-direction: column; align-items: stretch; gap: 2px; border: 1px solid transparent; background: none; padding: 7px 10px; border-radius: 6px; text-align: left; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text); min-width: 0; }
 .dr-set:hover { background: var(--surface-2); }
 .dr-set.on { border-color: var(--s); background: var(--s-tint); }
-.dr-set-where { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
-.dr-set-what { color: var(--text-2); }
-.dr-set-st { color: var(--s); font-size: 11.5px; font-weight: 600; }
+.dr-set-st { display: flex; align-items: center; gap: 6px; color: var(--s); font-size: 11.5px; font-weight: 600; }
+.dr-set-where { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-set-what { color: var(--text-2); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
 .dr-pill { font-size: 11px; font-weight: 600; color: var(--s); background: var(--s-tint); border-radius: 99px; padding: 1px 8px; text-transform: none; letter-spacing: 0; }
 .dr-card { display: flex; flex-direction: column; gap: 8px; }
 .dr-card-redline { font: 13px/1.5 Georgia, serif; max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; }
