@@ -1,67 +1,68 @@
 import type { DocBlock, EmailDraft, ReviewSession } from '@shared/types'
-import { beforeTheirs, changeSets, statusOf, type ChangeSet } from '@shared/changes'
+import { changeKey, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { labelOf } from '@shared/numbering'
 
 /**
- * The cover email for a document review: one numbered point per change of
- * theirs we answered, and per edit or comment of ours elsewhere, each with our
- * comments as the reason. Their changes we accepted are acknowledged in a
- * line; changes flagged for internal review are left out.
+ * The cover email for a document review, built from what was done in the document: one
+ * numbered point per paragraph where we rejected changes of theirs, edited, added or
+ * commented, in document order, with our comments as the reasons. Their changes we
+ * accepted are acknowledged in a line.
  */
 export function docEmail(s: ReviewSession, reviewer: string): EmailDraft {
   const d = s.doc!
   const name = s.docName.replace(/\.[a-z]+$/i, '').replace(/[-_]+/g, ' ')
-  const sets = changeSets(d)
-  const inSet = new Map(sets.flatMap((set) => set.blocks.map((b) => [b.id, set] as const)))
-  const notesFor = (ids: string[]) => d.comments.filter((c) => ids.includes(c.blockId)).map((c) => c.text)
-  const whereOf = (b: DocBlock) => (labelOf(d, b) ? `Clause ${labelOf(d, b)!.replace(/\.$/, '')}` : b.ours ? 'A new paragraph' : b.label ? `Clause ${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : `"${b.text.slice(0, 40)}…"`)
+  const whereOf = (b: DocBlock) => {
+    const l = labelOf(d, b)
+    if (l) return /^\d/.test(l) ? `Clause ${l.replace(/\.$/, '')}` : `Item ${l}`
+    if (b.ours) return 'A new paragraph'
+    return b.kind === 'row' ? b.text.split(' — ')[0] : `The paragraph beginning "${b.text.split(/\s+/).slice(0, 6).join(' ')}…"`
+  }
+  const quote = (t: string) => {
+    const x = t.replace(/\s+/g, ' ').trim()
+    return `"${x.length > 120 ? `${x.slice(0, 120).trimEnd()}…` : x}"`
+  }
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
 
   const points: string[] = []
-  const covered = new Set<string>()
-  for (const set of sets) {
-    const status = statusOf(d, set)
-    if (status !== 'countered') continue
-    const ids = set.blocks.map((b) => b.id)
-    ids.forEach((id) => covered.add(id))
-    const edited = set.blocks.filter((b) => d.edits[b.id] !== undefined)
-    const removal = edited.length > 0 && edited.every((b) => d.edits[b.id] === '')
-    const restored = edited.length > 0 && edited.every((b) => d.edits[b.id] === (b.kind === 'deleted' ? b.text : beforeTheirs(b)))
-    const added = set.blocks.every((b) => !beforeTheirs(b))
-    const ask = removal && added
-      ? 'We can’t accept this addition and have struck it.'
-      : restored
-        ? 'We can’t accept this change and have restored the original wording.'
-        : removal
-          ? 'We ask for this to be removed.'
-        : `We propose instead: "${edited.map((b) => d.edits[b.id]).join(' ')}"`
-    points.push([`${whereOfSet(set)}`, ...notesFor(ids).map((n) => `   ${n}`), `   ${ask}`].join('\n'))
-  }
-  // Our own edits and comments outside their changes.
+  const acceptedIn: string[] = []
   for (const b of d.blocks) {
-    if (covered.has(b.id)) continue
-    const set = inSet.get(b.id)
-    if (set && statusOf(d, set) === 'accepted') continue
+    const segs = segmentsOf(b)
+    const decided = (outcome: 'accepted' | 'rejected') =>
+      segs.map((x, i) => ({ x, r: d.resolved?.[changeKey(b.id, i)] })).filter((y) => y.r === outcome && y.x.op !== 'same').map((y) => y.x)
+    const rejected = decided('rejected')
+    const accepted = decided('accepted')
+    const notes = d.comments.filter((c) => c.blockId === b.id).map((c) => c.text)
     const edit = d.edits[b.id]
-    const notes = notesFor([b.id])
-    if (edit === undefined && !notes.length) continue
-    const ask = edit === undefined ? '' : !edit.trim() ? (b.ours ? '' : 'We ask for this to be removed.') : b.ours ? `We propose adding a new ${labelOf(d, b) ? 'clause' : 'paragraph'}: "${edit.trim()}"` : `We propose: "${edit.trim()}"`
-    if (b.ours && !edit?.trim() && !notes.length) continue
-    points.push([whereOf(b), ...notes.map((n) => `   ${n}`), ask && `   ${ask}`].filter(Boolean).join('\n'))
+    // Wording of ours beyond what rejecting their changes already says.
+    const plain = shownText(marksFor({ ...d, edits: {} }, b))
+    const ourWording = edit !== undefined && edit.replace(/\s+/g, ' ').trim() !== plain.replace(/\s+/g, ' ').trim() ? edit : undefined
+
+    const lines: string[] = []
+    if (rejected.length) {
+      const what = rejected.map((x) => `your ${x.op === 'ins' ? 'insertion of' : 'deletion of'} ${quote(x.text)}`)
+      lines.push(`We can't accept ${list(what)}, so ${rejected.length === 1 ? 'it has' : 'they have'} been rejected.`)
+    }
+    if (rejected.length && accepted.length) lines.push(`We accept your other ${accepted.length === 1 ? 'change' : 'changes'} here.`)
+    if (b.ours && ourWording?.trim()) lines.push(`We propose adding a new ${labelOf(d, b) ? 'clause' : 'paragraph'}: ${quote(ourWording)}`)
+    else if (ourWording !== undefined && !ourWording.trim()) lines.push(b.kind === 'deleted' ? '' : 'We ask for this to be removed.')
+    else if (ourWording !== undefined && b.kind === 'deleted') lines.push('We have reinstated this paragraph.')
+    else if (ourWording !== undefined) lines.push(`We propose: ${quote(ourWording)}`)
+    lines.push(...notes)
+    const body = lines.filter(Boolean)
+    if (body.length) points.push([whereOf(b), ...body.map((l) => `   ${l}`)].join('\n'))
+    else if (accepted.length) acceptedIn.push(whereOf(b).replace(/^Clause /, ''))
   }
-  const accepted = sets.filter((set) => statusOf(d, set) === 'accepted').length
+
   // Changes they made without Track Changes since our last draft: worth saying, politely.
-  const silent = sets.filter((set) => set.blocks.some((b) => b.untracked === 'sent')).map(whereOfSet)
+  const silent = d.blocks.filter((b) => b.untracked === 'sent').map(whereOf)
   const note = silent.length
-    ? `\n\nOne more thing: ${silent.join(', ')} ${silent.length === 1 ? 'was' : 'were'} changed without being shown as tracked changes. Please make sure every change is tracked in the next draft so nothing is missed on either side.`
+    ? `\n\nOne more thing: ${list(silent)} ${silent.length === 1 ? 'was' : 'were'} changed without being shown as tracked changes. Please make sure every change is tracked in the next draft so nothing is missed on either side.`
     : ''
+  const acceptedLine = acceptedIn.length ? `We have accepted your changes to ${acceptedIn.length === 1 ? 'clause' : 'clauses'} ${list(acceptedIn)}.` : ''
   const numbered = points.map((p, i) => `${i + 1}. ${p}`).join('\n\n')
   const subject = points.length ? `${name}: PortSwigger comments` : `${name}: approved`
   const body = points.length
-    ? `Hello,\n\nThank you for sending this through. We have reviewed the draft${accepted ? ' and accepted most of your changes' : ''}. Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}${note}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
-    : `Hello,\n\nThank you for sending this through. We have reviewed the draft and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
+    ? `Hello,\n\nThank you for sending this through. We have reviewed the draft. ${acceptedLine ? `${acceptedLine} ` : ''}Our changes are marked up as tracked changes in the attached copy, with comments explaining them. In summary:\n\n${numbered}${note}\n\nEverything else is agreed. If it would help, we are happy to have a quick call to close these out.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
+    : `Hello,\n\nThank you for sending this through. We have reviewed the draft${acceptedLine ? ` and accepted your changes` : ''} and are happy to proceed on it as it stands. Please send it for signature when ready.\n\nKind regards,\n${reviewer}\nLegal, PortSwigger`
   return { subject, body, generatedBy: 'template' }
-
-  function whereOfSet(set: ChangeSet) {
-    return set.where.startsWith('§') ? `Clause ${set.where.slice(1)}` : set.where
-  }
 }

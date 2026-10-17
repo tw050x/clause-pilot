@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { EmailDraft, ReviewSession } from '@shared/types'
-import { changeSets, statusOf } from '@shared/changes'
+import { hasOpenChanges } from '@shared/changes'
 import { Icon } from '../lib/icons'
 
 export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSession; onClose: () => void; onMarkup: () => void }) {
@@ -16,10 +16,9 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
   useEffect(generate, [session.id])
 
   const doc = session.doc
-  const sets = doc ? changeSets(doc) : []
-  const undecided = doc ? sets.filter((x) => statusOf(doc, x) === 'open').length : 0
-  const flagged = doc ? sets.filter((x) => statusOf(doc, x) === 'flagged').length : 0
-  const answered = !!doc && (sets.some((x) => statusOf(doc, x) === 'countered') || Object.keys(doc.edits).length > 0 || doc.comments.length > 0)
+  // Paragraphs where some of their changes are neither accepted nor rejected yet.
+  const undecided = doc ? doc.blocks.filter((b) => hasOpenChanges(doc, b)).length : 0
+  const answered = !!doc && (Object.values(doc.resolved ?? {}).includes('rejected') || Object.keys(doc.edits).length > 0 || doc.comments.length > 0)
 
   return (
     <div className="modal-back" onClick={onClose}>
@@ -37,12 +36,7 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
           {undecided > 0 && (
             <div className="banner info" style={{ marginBottom: 12 }}>
               <Icon name="alert" />{' '}
-              {`${undecided} of their change${undecided === 1 ? '' : 's'} still to decide. The email covers what you've answered so far.`}
-            </div>
-          )}
-          {flagged > 0 && (
-            <div className="banner info" style={{ marginBottom: 12 }}>
-              <Icon name="alert" /> {flagged} change{flagged === 1 ? ' is' : 's are'} flagged for internal review and left out of the email.
+              {`${undecided} paragraph${undecided === 1 ? '' : 's'} still ${undecided === 1 ? 'has' : 'have'} changes of theirs you haven't accepted or rejected. The email covers what you've done so far.`}
             </div>
           )}
           {error && <div className="banner danger">{error}</div>}
