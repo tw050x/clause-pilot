@@ -14,7 +14,13 @@ export interface ClauseRef {
   text: string
 }
 
-export interface IntentInput {
+/** What a question adds to a task: its instructions (the default when absent) and the extra context it asks for. */
+interface Asked {
+  prompt?: string
+  extra?: string
+}
+
+export interface IntentInput extends Asked {
   clause: Omit<ClauseRef, 'id'>
   candidates: { id: string; title: string; text: string }[]
 }
@@ -23,7 +29,7 @@ export interface OverridesInput {
   clauses: ClauseRef[]
 }
 
-export interface PositionInput {
+export interface PositionInput extends Asked {
   clauses: ClauseRef[]
   position: PlaybookPosition
 }
@@ -86,7 +92,7 @@ export const EmailSchema = z.object({
 export type EmailOut = z.infer<typeof EmailSchema>
 
 /** One change set, reviewed in the context of the whole contract (document review, on request). */
-export interface ChangeInput {
+export interface ChangeInput extends Asked {
   /** The contract as received, paragraph by paragraph. */
   contract: { id: string; label?: string; text: string }[]
   change: {
@@ -95,10 +101,10 @@ export interface ChangeInput {
     untracked: boolean
     blocks: { id: string; label?: string; before: string; after: string; their_comments: string[] }[]
   }
-  /** Our standard positions that apply. Not part of the record/replay key. */
-  positions: PlaybookPosition[]
-  /** How we answered the same or similar changes before. Not part of the record/replay key. */
-  seen: { counterparty: string; response: string; text: string; ours?: string; notes: string }[]
+  /** Our standard positions that apply (none: not sent). Not part of the record/replay key. */
+  positions?: PlaybookPosition[]
+  /** How we answered the same or similar changes before (none: not sent). Not part of the record/replay key. */
+  seen?: { counterparty: string; response: string; text: string; ours?: string; notes: string }[]
 }
 
 export const ChangeSchema = z.object({
@@ -121,4 +127,29 @@ export const ChangeSchema = z.object({
 })
 export type ChangeOut = z.infer<typeof ChangeSchema>
 
-export type TaskName = 'intent' | 'overrides' | 'position' | 'change'
+/** A question asked once of the highlighted text, answered as findings. */
+export interface FindingsInput {
+  /** The contract, or the highlighted paragraphs (cached first). */
+  contract: string
+  /** The context the question asks for, the highlight, and the question. */
+  question: string
+}
+
+export const FindingsSchema = z.object({
+  summary: z.string().describe('One or two sentences answering the question.'),
+  findings: z.array(
+    z.object({
+      title: z.string().describe('A few words: what this point is about.'),
+      verdict: z.string().describe('A few words, e.g. "Acceptable", "Against us", "Unclear".'),
+      tone: z.enum(['good', 'warn', 'bad', 'neutral']).describe('good: fine for us; warn: worth a look; bad: against us.'),
+      clause_ids: z.array(z.string()).describe('Ids of the paragraphs this point is about.'),
+      explanation: z.string().describe('Two to four sentences a lawyer can verify quickly, naming paragraphs by their number.'),
+      suggested_wording: z.string().describe('Complete wording for the first paragraph in clause_ids, ready to drop in (without its number). Empty if no wording change.'),
+      comment_to_them: z.string().describe('A short, courteous comment to the counterparty. Empty if none.')
+    })
+  ),
+  ...injection
+})
+export type FindingsOut = z.infer<typeof FindingsSchema>
+
+export type TaskName = 'intent' | 'overrides' | 'position' | 'change' | 'findings'

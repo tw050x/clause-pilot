@@ -8,6 +8,7 @@ import { Home } from './views/Home'
 import { Review } from './views/Review'
 import { HistoryView, LibraryView } from './views/KnowledgeView'
 import { PlaybookView } from './views/PlaybookView'
+import { QuestionsView } from './views/QuestionsView'
 import { ApprovalsView } from './views/QueueView'
 import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
@@ -26,8 +27,6 @@ export function App() {
   const [session, setSession] = useState<ReviewSession | null>(null)
   const [navOpen, setNavOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
-  // A question posted to Ask AI from an AI card in the review column.
-  // Text to highlight again in the review (a link in Ask AI).
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
@@ -186,7 +185,7 @@ export function App() {
             {aiLabel(settings)}
             <span className="tip" role="tooltip">
               {aiReady(settings)
-                ? `AI steps (intent check, change review, Ask AI) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : 'Claude'}, and only when you ask. Click to change.`
+                ? `AI steps (questions on highlighted text, change review, the Agent) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : 'Claude'}, and only when you ask. Click to change.`
                 : 'No AI set up: reviewing, editing, the marked-up copy and the email all work, but the AI steps will say what’s missing. Click to set it up in Settings.'}
             </span>
           </button>
@@ -277,6 +276,7 @@ export function App() {
             />
           )}
           {view === 'library' && <LibraryView />}
+          {view === 'questions' && <QuestionsView />}
           {view === 'playbook' && <PlaybookView onProposalsChanged={() => window.api.kb.playbookProposals().then(setProposals)} />}
           {view === 'history' && <HistoryView />}
           {view === 'queue' && <ApprovalsView nominations={nominations} proposals={proposals} onNominations={setNominations} onProposals={setProposals} />}
@@ -303,7 +303,7 @@ export function App() {
                 Review
               </button>
               <button className={rightTab === 'chat' ? 'on' : ''} onClick={() => setRightTab('chat')}>
-                Ask AI
+                Agent
               </button>
             </div>
           </div>

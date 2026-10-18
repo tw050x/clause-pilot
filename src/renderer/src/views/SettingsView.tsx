@@ -55,7 +55,7 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
 
       <h2 className="settings-h">AI</h2>
       <p className="faint" style={{ marginTop: -4 }}>
-        Used for the intent check, the change review and Ask AI, and only when you ask. Reviewing, editing, the marked-up copy and the email work without it.
+        Used for the questions on highlighted text, the change review and the Agent, and only when you ask. Reviewing, editing, the marked-up copy and the email work without it.
       </p>
 
       <div className="field">

@@ -2,9 +2,10 @@ import type { AiTaskRun, DocReview, ReviewSession } from '@shared/types'
 import { whereOf } from '@shared/numbering'
 import { changeSets, statusOf } from '@shared/changes'
 import { paragraphsBlock } from './ai/prompts'
+import { questionIdOf } from '@shared/questions'
 
 /**
- * System prompt for Ask AI: the instructions and the contract, and nothing that changes during
+ * System prompt for the Agent (the contract's conversation): the instructions and the contract, and nothing that changes during
  * the review, so it stays the same on every request (and the providers' prompt caches reuse it).
  * Where the review stands goes with each question instead (`reviewState`).
  */
@@ -31,23 +32,22 @@ export function reviewState(s: ReviewSession): string {
   })
   if (edits.length) parts.push(`Our edits:\n${edits.join('\n')}`)
   const findings = latestFindings(d)
-  if (findings.length) parts.push(`AI check results (latest of each):\n${findings.join('\n')}`)
+  if (findings.length) parts.push(`What the questions on highlighted text found (latest of each):\n${findings.join('\n')}`)
   return parts.join('\n\n')
 }
 
 const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n).trimEnd()}…` : t)
-const KIND = { intent: 'Intent check', playbook: 'Playbook check', changes: 'Change review', explain: 'Explanation' } as const
-
-/** The latest answer of each AI card per highlight, as one line per finding. */
-function latestFindings(d: DocReview): string[] {
+/** The latest answer of each question per highlight, as one line per finding. */
+export function latestFindings(d: DocReview): string[] {
   const latest = new Map<string, AiTaskRun>()
-  for (const r of d.aiRuns ?? []) if (r.status === 'done') latest.set(`${r.kind}:${[...r.blockIds].sort().join(',')}`, r)
+  for (const r of d.aiRuns ?? []) if (r.status === 'done') latest.set(`${questionIdOf(r)}:${[...r.blockIds].sort().join(',')}`, r)
   return [...latest.values()].slice(-15).flatMap((r) => {
-    if (!r.parts) return [`- ${KIND[r.kind]}: ${clip((r.answer ?? '').replace(/\s+/g, ' '), 300)}`]
+    const asked = r.title ?? r.question.split('\n')[0]
+    if (!r.parts) return [`- ${asked}: ${clip((r.answer ?? '').replace(/\s+/g, ' '), 300)}`]
     return r.parts.flatMap((p) => {
       if (p.type === 'text') return []
       const wording = p.actions.find((a) => a.type === 'apply-wording')
-      return [`- ${KIND[r.kind]}, ${p.title}${p.where && p.where.label !== p.title ? ` (${p.where.label})` : ''}: ${p.verdict}${wording ? `; suggested wording for ${wording.where}: "${clip(wording.text, 200)}"` : ''}`]
+      return [`- ${asked}, ${p.title}${p.where && p.where.label !== p.title ? ` (${p.where.label})` : ''}: ${p.verdict}${wording ? `; suggested wording for ${wording.where}: "${clip(wording.text, 200)}"` : ''}`]
     })
   })
 }

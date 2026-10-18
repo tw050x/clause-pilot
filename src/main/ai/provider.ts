@@ -11,6 +11,9 @@ import {
   PositionSchema,
   EmailSchema,
   ChangeSchema,
+  FindingsSchema,
+  type FindingsInput,
+  type FindingsOut,
   type ChangeInput,
   type ChangeOut,
   type IntentInput,
@@ -31,7 +34,8 @@ import {
   positionQuestion,
   EMAIL_SYSTEM,
   paragraphsBlock,
-  changeQuestion
+  changeQuestion,
+  FINDINGS_SYSTEM
 } from './prompts'
 
 export interface AiProvider {
@@ -40,6 +44,7 @@ export interface AiProvider {
   overrides(input: OverridesInput): Promise<OverridesOut>
   position(input: PositionInput): Promise<PositionOut>
   change(input: ChangeInput): Promise<ChangeOut>
+  findings(input: FindingsInput): Promise<FindingsOut>
 }
 
 /** A change review is replayed by the contract and the change; the playbook and history it was given are context. */
@@ -123,6 +128,18 @@ export class AnthropicProvider implements AiProvider {
       [
         { type: 'text', text: paragraphsBlock(input.contract), cache_control: { type: 'ephemeral' } },
         { type: 'text', text: changeQuestion(input) }
+      ],
+      'medium'
+    )
+  }
+
+  findings(input: FindingsInput): Promise<FindingsOut> {
+    return this.structured(
+      FindingsSchema,
+      FINDINGS_SYSTEM,
+      [
+        { type: 'text', text: input.contract, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: input.question }
       ],
       'medium'
     )
@@ -264,6 +281,9 @@ export class VllmProvider implements AiProvider {
   change(input: ChangeInput): Promise<ChangeOut> {
     return this.structured('change_review', ChangeSchema, DOCUMENT_SYSTEM, `${paragraphsBlock(input.contract)}\n\n${changeQuestion(input)}`)
   }
+  findings(input: FindingsInput): Promise<FindingsOut> {
+    return this.structured('findings', FindingsSchema, FINDINGS_SYSTEM, `${input.contract}\n\n${input.question}`)
+  }
 
   /**
    * A chat reply, streamed as it's written (server-sent events). The request starts with the
@@ -350,7 +370,7 @@ export interface ChatUsage {
 /** No AI configured: every AI step says what's missing; everything else still works. */
 export const noAiProvider = (why: string): AiProvider => {
   const fail = () => Promise.reject(new Error(why))
-  return { kind: 'none', intent: fail, overrides: fail, position: fail, change: fail }
+  return { kind: 'none', intent: fail, overrides: fail, position: fail, change: fail, findings: fail }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,5 +437,8 @@ export class RecordingProvider implements AiProvider {
   }
   change(input: ChangeInput) {
     return this.rec('change', changeKey(input), () => this.inner.change(input))
+  }
+  findings(input: FindingsInput) {
+    return this.rec('findings', input, () => this.inner.findings(input))
   }
 }

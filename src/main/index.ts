@@ -13,14 +13,17 @@ import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
-import type { AiAnswerPart, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
+import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
-import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise, withState } from './conversation'
-import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
+import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
+import { answerMarkdown, changesAnswer, findingsAnswer, intentAnswer, playbookAnswer } from './ai/answers'
+import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
+import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf } from './questions'
+import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem, reviewState } from './chat'
-import { libraryFile, mergeLibrary, mergePlaybook, parseImport, playbookFile } from './transfer'
+import { libraryFile, mergeLibrary, mergePlaybook, mergeQuestions, parseImport, playbookFile, questionsFile, type KnowledgeKind } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
@@ -808,19 +811,22 @@ ipcMain.handle('doc:nominate', (_e, sessionId: string, setId: string, note: stri
  * paragraphs and edits it spans), with the whole contract as a cached prefix, our
  * playbook and how we answered the same or similar changes before.
  */
-async function askAi(s: ReviewSession, setIds: string[], raws?: Record<string, unknown>) {
+async function askAi(s: ReviewSession, setIds: string[], raws?: Record<string, unknown>, asked?: Asked) {
   const w = wsFor(s)
   const d = s.doc!
   const ai = provider()
-  const positions = applicable(w.store.playbook(), s.contractType)
-  const seen = seenBefore(s, w.store.precedents())
+  const positions = !asked || asked.data.includes('playbook') ? applicable(w.store.playbook(), s.contractType) : []
+  const seen = !asked || asked.data.includes('precedents') ? seenBefore(s, w.store.precedents()) : null
   const sets = changeSets(d).filter((x) => setIds.includes(x.id))
   d.ai ??= {}
   for (const set of sets) d.ai[set.id] = { status: 'running', reason: 'Reading the whole contract for this change' }
   persist(s)
   const one = async (set: ChangeSet) => {
     try {
-      const out = await ai.change(changeInput(s, set, positions, seen[set.id] ?? []))
+      const input = changeInput(s, set, positions, seen?.[set.id] ?? [])
+      if (asked && !asked.data.includes('playbook')) delete input.positions
+      if (!seen) delete input.seen
+      const out = await ai.change({ ...input, ...(asked ? { prompt: asked.prompt, extra: asked.extra } : {}) })
       if (raws) raws[set.id] = out
       const review = toChangeReview(s, set, positions, out)
       d.ai![set.id] = { status: 'done', data: review }
@@ -848,11 +854,14 @@ const HOLD = 'On security hold: text addressed to an AI reviewer was found, so n
  * from (or, on their paper, one of our closest)? One request per paragraph; each answer is
  * checked in code before it can show as the same (dashed green bar). Nothing is decided by it.
  */
-async function runIntent(s: ReviewSession, blocks: DocBlock[]) {
+async function runIntent(s: ReviewSession, blocks: DocBlock[], asked?: Asked) {
   const w = wsFor(s)
   const d = s.doc!
   const library = w.store.library()
-  const jobs = blocks.map((b) => ({ b, input: intentInput(d, b, library) })).filter((j): j is { b: DocBlock; input: IntentInput } => !!j.input)
+  const jobs = blocks
+    .map((b) => ({ b, input: intentInput(d, b, library) }))
+    .filter((j): j is { b: DocBlock; input: IntentInput } => !!j.input)
+    .map((j) => (asked ? { ...j, input: { ...j.input, prompt: asked.prompt, extra: asked.extra } } : j))
   d.intent ??= {}
   const at = new Date().toISOString()
   for (const j of jobs) d.intent[j.b.id] = { status: 'running', text: j.input.clause.text, at }
@@ -890,44 +899,48 @@ const prose = (d: DocReview) => (t: string) =>
     return b ? whereOf(d, b) : m
   })
 
-/** What each task asks: the question the card records and sends. */
-function questionFor(kind: AiTaskKind, places: string, quote: string): string {
+/** What a question adds to a built-in method: its instructions, the data it asks for, and that data written out (beyond what the method sends itself). */
+interface Asked {
+  prompt: string
+  data: QuestionData[]
+  extra: string
+}
+
+/** The question as recorded on its run: its title, where, and the highlighted text. */
+function askedText(title: string, places: string, quote: string): string {
   const q = quote.length > 400 ? `${quote.slice(0, 400).trimEnd()}…` : quote
-  const quoted = `\n\n> ${q.replace(/\n+/g, ' ')}`
-  if (kind === 'intent') return `Does the intent match our approved wording? (${places})${quoted}`
-  if (kind === 'playbook') return `Does this meet our playbook? (${places})${quoted}`
-  if (kind === 'changes') return `What do their changes here do, who do they favour, and what should we do? (${places})${quoted}`
-  return `What does this mean for us, in plain English? (${places})${quoted}`
+  return `${title} (${places})\n\n> ${q.replace(/\n+/g, ' ')}`
 }
 
 /**
- * Run an AI task on highlighted text (a card in the review column). The question is recorded
- * as asked; the answer is written from the server's response, as Markdown, with the response
- * itself kept as returned. Results arrive as session updates (and, for Explain, as streamed
- * text with the run's id).
+ * Ask a question of highlighted text (a card in the review column). The question is recorded
+ * as asked; the answer is written from the server's response, with the response itself kept
+ * as returned. Results arrive as session updates (and, for a written answer, as streamed text
+ * with the run's id). Questions run independently: several can be asked at once.
  */
-ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; blockIds: string[]; quote: string }) => {
+ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blockIds: string[]; quote: string }) => {
   const { s, d } = docOf(sessionId)
   if (alertFor(s.id)?.status === 'open') throw new Error(HOLD)
   const w = wsFor(s)
+  const q = w.store.questions().find((x) => x.id === task.questionId)
+  if (!q) throw new Error('That question no longer exists. It may have been removed on the Questions page.')
   const blocks = d.blocks.filter((b) => task.blockIds.includes(b.id) && b.kind !== 'deleted')
   if (!blocks.length) throw new Error('Select some text in the document first.')
-  // Where it is, for the question: the numbered paragraphs, or a range when there are many.
-  const named = [...new Set(blocks.filter((b) => b.kind !== 'heading').map((b) => whereOf(d, b)))]
-  const places = named.length <= 5 ? named.join(', ') : `${named[0]} to ${named[named.length - 1]}, ${named.length} paragraphs`
+  const places = placesOf(s, blocks)
   const run: AiTaskRun = {
     id: uid('ai'),
-    kind: task.kind,
+    questionId: q.id,
+    title: q.title,
     // As highlighted (so the card for this highlight finds it), deleted paragraphs included.
     blockIds: task.blockIds,
     quote: task.quote,
-    question: questionFor(task.kind, places, task.quote),
+    question: askedText(q.title, places, task.quote),
     status: 'running',
     by: actor(),
     at: new Date().toISOString()
   }
   d.aiRuns = [...(d.aiRuns ?? []), run]
-  w.audit.append(actor(), 'ai.task-requested', s.id, { kind: task.kind, paragraphs: places })
+  w.audit.append(actor(), 'ai.task-requested', s.id, { question: q.id, title: q.title, method: q.method, paragraphs: places })
   persist(s)
   inFlight.add(run.id)
   const finish = (patch: Partial<AiTaskRun>) => {
@@ -936,7 +949,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     if (r.status !== 'running') return
     inFlight.delete(run.id)
     Object.assign(r, patch, { at: new Date().toISOString() })
-    w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
+    w.audit.append('system', `ai.task.${patch.status}`, s.id, { question: q.id, paragraphs: places, error: patch.error })
     persist(s)
   }
   const done = (parts: AiAnswerPart[], raw: unknown) => finish({ status: 'done', parts, answer: answerMarkdown(parts), raw })
@@ -944,44 +957,52 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     () => finish({ status: 'error', error: `No answer after ${AI_TASK_LIMIT_MS / 60_000} minutes. The AI server may be busy; ask again.` }),
     AI_TASK_LIMIT_MS
   )
+  const knowledge = { library: w.store.library(), playbook: w.store.playbook(), precedents: w.store.precedents() }
+  const method = methodOf(q.method)
+  // What the method sends itself is left out of the extra context.
+  const skip: QuestionData[] = q.method === 'once' ? [] : q.method === 'positions' ? ['paragraphs', 'playbook', 'contract'] : q.method === 'changes' ? ['contract', 'changes', 'playbook', 'precedents'] : method.fixed
+  const data = [...new Set([...method.fixed, ...q.data])]
+  const asked: Asked = { prompt: q.prompt, data, extra: [contextFor(s, blocks, data, knowledge, skip), q.method === 'once' ? '' : highlightBlock(s, blocks, task.quote)].filter(Boolean).join('\n\n') }
+  // The clauses it names, in the highlight, as a link to them.
+  const placeIn = (allowed: Set<string>) => (xs: string[]) => {
+    const blockIds = [...new Set(xs.filter((x) => allowed.has(x)))]
+    return blockIds.length ? { label: [...new Set(blockIds.map((x) => whereOf(d, d.blocks.find((b) => b.id === x)!)))].join(', '), blockIds } : undefined
+  }
+  const injection = (what: string, out: { injection_suspected: boolean; injection_notes: string }) => {
+    if (!out.injection_suspected || !out.injection_notes.trim()) return
+    s.aiInjectionReports.push(`${what}: ${out.injection_notes.trim()}`)
+    syncSecurityAlert(w, s)
+  }
   ;(async () => {
-    if (task.kind === 'intent') {
-      const results = await runIntent(s, blocks.filter((b) => intentCandidate(d, b)))
-      const library = w.store.library()
-      const approved = (id?: string) => library.find((c) => c.id === id)
+    if (q.method === 'paragraphs') {
+      const results = await runIntent(s, blocks.filter((b) => intentCandidate(d, b)), asked)
+      const approved = (id?: string) => knowledge.library.find((c) => c.id === id)
       done(
         intentAnswer(results.map((r) => ({ where: whereOf(d, r.b), blockId: r.b.id, ...r, approved: approved(r.check?.same ? undefined : r.out?.best_match_id) }))),
         results.map((r) => ({ paragraph: whereOf(d, r.b), response: r.out ?? null, error: r.error }))
       )
-    } else if (task.kind === 'playbook') {
+    } else if (q.method === 'positions') {
       const ai = provider()
-      const clauses: ClauseRef[] = blocks.map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) })).filter((c) => c.text.trim())
-      const ids = new Set(clauses.map((c) => c.id))
-      // The clauses it names, in the highlight, as a link to them.
-      const place = (xs: string[]) => {
-        const blockIds = [...new Set(xs.filter((x) => ids.has(x)))]
-        return blockIds.length ? { label: [...new Set(blockIds.map((x) => whereOf(d, d.blocks.find((b) => b.id === x)!)))].join(', '), blockIds } : undefined
-      }
+      const scope = data.includes('contract') ? d.blocks.filter((b) => b.kind !== 'deleted') : blocks
+      const clauses: ClauseRef[] = scope.map((b) => ({ id: b.id, number: b.label ?? null, heading: null, text: shownText(marksFor(d, b)) })).filter((c) => c.text.trim())
+      const place = placeIn(new Set(clauses.map((c) => c.id)))
       const results = await Promise.all(
-        applicable(w.store.playbook(), s.contractType).map(async (position) => {
+        applicable(knowledge.playbook, s.contractType).map(async (position) => {
           try {
-            const out = await ai.position({ clauses, position })
-            if (out.injection_suspected && out.injection_notes.trim()) {
-              s.aiInjectionReports.push(`Playbook check (${position.title}): ${out.injection_notes.trim()}`)
-              syncSecurityAlert(w, s)
-            }
-            return { position, out: { ...out, clause_ids: out.clause_ids.filter((x) => ids.has(x)) }, raw: out }
+            const out = await ai.position({ clauses, position, prompt: asked.prompt, extra: asked.extra })
+            injection(`${q.title} (${position.title})`, out)
+            return { position, out: { ...out, clause_ids: out.clause_ids.filter((x) => clauses.some((c) => c.id === x)) }, raw: out }
           } catch (e) {
             return { position, error: e instanceof Error ? e.message : String(e) }
           }
         })
       )
       done(playbookAnswer(results, place, prose(d)), results.map((r) => ({ position: r.position.id, response: 'raw' in r ? r.raw : null, error: 'error' in r ? r.error : undefined })))
-    } else if (task.kind === 'changes') {
+    } else if (q.method === 'changes') {
       // Their changes in the highlight, deleted paragraphs included.
       const sets = changeSets(d).filter((x) => x.blocks.some((b) => task.blockIds.includes(b.id)) && x.blocks.some((b) => hasOpenChanges(d, b)))
       const raws: Record<string, unknown> = {}
-      await askAi(s, sets.map((x) => x.id), raws)
+      await askAi(s, sets.map((x) => x.id), raws, asked)
       const results = sets.map((x) => {
         const r = d.ai?.[x.id]
         return { where: x.where, blockIds: x.blocks.map((b) => b.id), review: r?.status === 'done' ? r.data : undefined, error: r?.status === 'error' ? r.error : undefined }
@@ -990,18 +1011,79 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
         changesAnswer(results, (id) => whereOf(d, d.blocks.find((b) => b.id === id)!)),
         sets.map((x) => ({ change: x.where, response: raws[x.id] ?? null }))
       )
+    } else if (q.answer === 'findings') {
+      // Once, as findings: the contract (or the highlighted paragraphs) first, so it can be cached.
+      const whole = data.includes('contract')
+      const contract = whole ? contractOf(s) : paragraphsOf(s, blocks)
+      const extra = contextFor(s, blocks, data, knowledge, whole ? ['contract'] : ['contract', 'paragraphs'])
+      const out = await provider().findings({ contract, question: [extra, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n') })
+      injection(q.title, out)
+      const allowed = new Set((whole ? d.blocks : blocks).map((b) => b.id))
+      done(findingsAnswer(out, placeIn(allowed), prose(d)), out)
     } else {
+      // Once, in writing: streamed, like the Agent.
       const model = chatModel()
       if (!model) throw new Error(NO_MODEL())
-      // A one-off, like the other cards: the contract and the review as it stands, not the conversation.
-      const text = await model.chat(chatSystem(s), [{ role: 'user', content: withState(reviewState(s), run.question) }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'chat.usage', s.id, { task: 'explain', ...u }), () => send('chat:thinking', { requestId: run.id }))
-      finish({ status: 'done', answer: text, raw: text })
+      const whole = data.includes('contract')
+      const system = whole ? `${TEXT_SYSTEM}\n\n${contractOf(s)}` : TEXT_SYSTEM
+      const user = [contextFor(s, blocks, data, knowledge, ['contract']), highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n')
+      const text = await model.chat(system, [{ role: 'user', content: user }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'ai.usage', s.id, { question: q.id, ...u }), () => send('chat:thinking', { requestId: run.id }))
+      finish({ status: 'done', answer: prose(d)(text), raw: text })
     }
   })()
     .catch((e) => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) }))
     .finally(() => clearTimeout(limit))
   return { session: s, runId: run.id }
 })
+
+// ---- Questions asked of highlighted text ---------------------------------------------------------
+
+const questionsChanged = () => send('questions:changed', null)
+
+ipcMain.handle('questions:list', () => ws.store.questions())
+
+/** Add or change a question (a new one goes at the end). Audited with the question before and after. */
+ipcMain.handle('questions:save', (_e, q: AiQuestion) => {
+  const all = ws.store.questions()
+  const i = q.id ? all.findIndex((x) => x.id === q.id) : -1
+  const before = i < 0 ? null : all[i]
+  const next: AiQuestion = { ...q, id: q.id || uid('q'), title: q.title.trim().replace(/^ask:\s*/i, ''), detail: q.detail.trim(), prompt: q.prompt.trim(), updatedBy: actor(), updatedAt: new Date().toISOString() }
+  if (!next.title || !next.prompt) throw new Error('A question needs a title and a prompt.')
+  if (i < 0) all.push(next)
+  else all[i] = next
+  ws.store.saveQuestions(all)
+  ws.audit.append(actor(), before ? 'question.changed' : 'question.added', null, { id: next.id, title: next.title, before, after: next })
+  questionsChanged()
+  return all
+})
+
+ipcMain.handle('questions:remove', (_e, id: string) => {
+  const all = ws.store.questions()
+  const gone = all.find((x) => x.id === id)
+  if (!gone) return all
+  const next = all.filter((x) => x.id !== id)
+  ws.store.saveQuestions(next)
+  ws.audit.append(actor(), 'question.removed', null, { id, title: gone.title, before: gone })
+  questionsChanged()
+  return next
+})
+
+/** Move a question up or down the list (the order the review offers them in). */
+ipcMain.handle('questions:move', (_e, id: string, by: -1 | 1) => {
+  const all = ws.store.questions()
+  const i = all.findIndex((x) => x.id === id)
+  const j = i + by
+  if (i < 0 || j < 0 || j >= all.length) return all
+  ;[all[i], all[j]] = [all[j], all[i]]
+  ws.store.saveQuestions(all)
+  ws.audit.append(actor(), 'question.moved', null, { id, title: all[j].title, order: all.map((x) => x.id) })
+  questionsChanged()
+  return all
+})
+
+/** A question the app started with, as it was then (to reset one that was changed). */
+ipcMain.handle('questions:default', (_e, origin: AiTaskKind) => defaultQuestions(DEFAULT_PROMPTS).find((x) => x.origin === origin) ?? null)
+
 
 ipcMain.handle('doc:ask', (_e, sessionId: string, setIds: string[]) => {
   const { s } = docOf(sessionId)
@@ -1043,7 +1125,7 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
   if (err) throw new Error(err)
 })
 
-// ---- Ask AI: one conversation per contract ------------------------------------------------------
+// ---- The Agent: one conversation per contract---------------------------------------------------
 
 const chatKey = (s: ReviewSession) => s.contractId ?? s.id
 const NO_MODEL = () => (loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
@@ -1091,7 +1173,7 @@ ipcMain.handle('chat:get', (_e, sessionId: string) => {
   return wsFor(s).store.chat(chatKey(s))
 })
 
-/** A question typed into Ask AI: kept in the conversation, answered with it as context. */
+/** A question typed into the Agent: kept in the conversation, answered with it as context. */
 ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
@@ -1126,9 +1208,9 @@ ipcMain.handle('kb:library', () => ws.store.library())
 // ---- import / export of the library and the playbook -------------------------------------
 
 /** Save the library or the playbook as a JSON file anyone can import. */
-ipcMain.handle('kb:export', async (_e, kind: 'library' | 'playbook') => {
-  const data = kind === 'library' ? libraryFile(ws.store.library(), actor()) : playbookFile(ws.store.playbook(), actor())
-  const entries = 'clauses' in data ? data.clauses.length : data.positions.length
+ipcMain.handle('kb:export', async (_e, kind: KnowledgeKind) => {
+  const data = kind === 'library' ? libraryFile(ws.store.library(), actor()) : kind === 'playbook' ? playbookFile(ws.store.playbook(), actor()) : questionsFile(ws.store.questions(), actor())
+  const entries = 'clauses' in data ? data.clauses.length : 'positions' in data ? data.positions.length : data.questions.length
   const res = await dialog.showSaveDialog(win!, {
     title: `Export the ${kind}`,
     defaultPath: `clause-pilot-${kind}-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1140,8 +1222,8 @@ ipcMain.handle('kb:export', async (_e, kind: 'library' | 'playbook') => {
   return res.filePath
 })
 
-/** Import a library or playbook file, merged by id (nothing is removed). */
-ipcMain.handle('kb:import', async (_e, kind: 'library' | 'playbook') => {
+/** Import a library, playbook or questions file, merged by id (nothing is removed). */
+ipcMain.handle('kb:import', async (_e, kind: KnowledgeKind) => {
   const res = await dialog.showOpenDialog(win!, { title: `Import a ${kind} file`, properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
   if (res.canceled || !res.filePaths[0]) return null
   const raw = await readFile(res.filePaths[0], 'utf8')
@@ -1149,6 +1231,13 @@ ipcMain.handle('kb:import', async (_e, kind: 'library' | 'playbook') => {
     const { next, result } = mergeLibrary(ws.store.library(), parseImport<LibraryClause>('library', raw))
     ws.store.saveLibrary(next)
     ws.audit.append(actor(), 'library.imported', null, { file: res.filePaths[0], ...result })
+    return result
+  }
+  if (kind === 'questions') {
+    const { next, result } = mergeQuestions(ws.store.questions(), parseImport<AiQuestion>('questions', raw), actor())
+    ws.store.saveQuestions(next)
+    ws.audit.append(actor(), 'questions.imported', null, { file: res.filePaths[0], ...result })
+    questionsChanged()
     return result
   }
   const { next, result } = mergePlaybook(ws.store.playbook(), parseImport<PlaybookPosition>('playbook', raw), actor())

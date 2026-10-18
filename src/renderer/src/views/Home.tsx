@@ -82,7 +82,7 @@ export function Home({
             },
             {
               title: 'Set up the AI',
-              detail: 'Claude (with an Anthropic API key) or your own vLLM server. Needed for the intent check, change review and Ask AI; everything else works without it.',
+              detail: 'Claude (with an Anthropic API key) or your own vLLM server. Needed for the questions on highlighted text, the change review and the Agent; everything else works without it.',
               done: aiReady,
               cta: { label: 'Open Settings', onClick: () => onNavigate('settings') }
             },

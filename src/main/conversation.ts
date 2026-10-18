@@ -1,7 +1,7 @@
 import type { ChatConversation, ChatEntry, ChatMessage } from '@shared/types'
 
 /**
- * What goes to the AI from a contract's Ask AI. Neither provider keeps a conversation for us
+ * What goes to the AI from a contract's Agent (its conversation). Neither provider keeps a conversation for us
  * (each request carries what the AI needs), so every request is built the same way, most
  * stable first so the providers' prompt caches can reuse it:
  *

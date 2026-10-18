@@ -1,11 +1,11 @@
 import type { AiAction, AiAnswerPart, ChangeReview, IntentCheck, PlaybookPosition } from '@shared/types'
-import type { IntentOut, PositionOut } from './tasks'
+import type { FindingsOut, IntentOut, PositionOut } from './tasks'
 
 /**
  * The answers to the AI tasks on highlighted text, built from what the server returned: a line
  * of text, then a card per finding with what can be done about it (apply the suggested wording,
- * add the suggested comment). The same parts show on the card in the review column and in Ask
- * AI; `answerMarkdown` writes them as Markdown for the chat's context.
+ * add the suggested comment), shown on the question's card in the review column; `answerMarkdown`
+ * writes them as Markdown.
  */
 
 type Part = AiAnswerPart
@@ -103,6 +103,21 @@ export function changesAnswer(results: { where: string; blockIds: string[]; revi
     if (!nothing(review.comment)) actions.push({ type: 'comment', blockId: review.suggested[0]?.blockId ?? blockIds[0], where, text: review.comment.trim() })
     return { type: 'finding', title: where, verdict: RECOMMEND[review.recommendation], tone: review.recommendation === 'accept' ? 'good' : RISK_TONE[review.risk], where: at, body: lines.join('\n'), actions }
   })
+}
+
+/** A question asked once and answered as findings: its summary, then a card per point, worst first. */
+export function findingsAnswer(out: FindingsOut, place: (ids: string[]) => { label: string; blockIds: string[] } | undefined, prose: (t: string) => string): Part[] {
+  const rank = { bad: 0, warn: 1, neutral: 2, good: 3 } as const
+  const parts: Part[] = [text(nothing(out.summary) ? 'No summary.' : prose(out.summary.trim()))]
+  for (const f of [...out.findings].sort((a, b) => rank[a.tone] - rank[b.tone])) {
+    const at = place(f.clause_ids)
+    const target = at?.blockIds[0]
+    const actions: AiAction[] = []
+    if (target && !nothing(f.suggested_wording)) actions.push({ type: 'apply-wording', blockId: target, where: place([target])!.label, text: f.suggested_wording.trim() })
+    if (target && !nothing(f.comment_to_them)) actions.push({ type: 'comment', blockId: target, where: place([target])!.label, text: f.comment_to_them.trim() })
+    parts.push({ type: 'finding', title: f.title, verdict: f.verdict, tone: f.tone, where: at, body: nothing(f.explanation) ? undefined : prose(f.explanation.trim()), actions })
+  }
+  return parts
 }
 
 /** The parts as Markdown: the answer as text (kept on the run), and the fallback for display. */

@@ -398,7 +398,7 @@ export interface DocReview {
   commentsDone?: Record<string, CommentDone>
   /** Paragraphs with nothing to accept or reject that the reviewer has read and marked as checked. */
   checked?: Record<string, CheckedMark>
-  /** AI tasks run on highlighted text (the cards in the review column, and Ask AI), newest last. */
+  /** AI tasks run on highlighted text (the question cards in the review column), newest last. */
   aiRuns?: AiTaskRun[]
 }
 
@@ -427,25 +427,65 @@ export type AiAction =
   /** Add this comment to them on the paragraph. */
   | { type: 'comment'; blockId: string; where: string; text: string }
 
-/** The AI tasks offered for highlighted text. */
+/** The questions the app starts with (and their ids). Runs saved before questions were editable carry one of these as their kind. */
 export type AiTaskKind = 'intent' | 'playbook' | 'changes' | 'explain'
 
 /**
- * One AI task on highlighted text: what was asked (posted to Ask AI as the user's question),
- * and what the server answered, as Markdown and as returned.
+ * How a question is asked of the highlighted text:
+ * - once: one request, about the highlight
+ * - paragraphs: one request per highlighted paragraph we have approved wording for, compared with it
+ *   (a paragraph found to mean the same is marked so in the review)
+ * - positions: one request per playbook position that applies to the contract
+ * - changes: one request per change of theirs in the highlight, read against the whole contract
+ *   (the answer is kept on the change too)
+ */
+export type QuestionMethod = 'once' | 'paragraphs' | 'positions' | 'changes'
+
+/** What can be sent with a question, besides the highlighted text (always sent). */
+export type QuestionData = 'contract' | 'paragraphs' | 'changes' | 'edits' | 'library' | 'playbook' | 'precedents' | 'findings'
+
+/** A question that can be asked of highlighted text in a review: a card in the review's AI section. */
+export interface AiQuestion {
+  id: string
+  /** Shown after "Ask:" on the card, e.g. "Does it meet our playbook?". */
+  title: string
+  /** The card's second line. */
+  detail: string
+  /** The instructions: what to do with the data, and how to answer. */
+  prompt: string
+  method: QuestionMethod
+  data: QuestionData[]
+  /** For questions asked once: a written answer, or findings (a verdict per point, with suggested wording to apply). The other methods always answer with findings. */
+  answer: 'text' | 'findings'
+  /** Offered in the review's AI section. */
+  shown: boolean
+  /** The question the app started with that this was (it can be reset to that). */
+  origin?: AiTaskKind
+  updatedBy?: string
+  updatedAt?: string
+}
+
+/**
+ * One question asked of highlighted text: what was asked, and what the server answered, as
+ * Markdown and as returned.
  */
 export interface AiTaskRun {
   id: string
-  kind: AiTaskKind
+  /** The question asked (runs from before questions were editable: see `kind`). */
+  questionId?: string
+  /** Its title when asked. */
+  title?: string
+  /** Runs from before questions were editable: the built-in question asked (its id now). */
+  kind?: AiTaskKind
   /** The paragraphs the highlight covered, and its text. */
   blockIds: string[]
   quote: string
-  /** The question, as posted to Ask AI. */
+  /** The question, as asked: its title, where, and the highlighted text. */
   question: string
   status: 'running' | 'done' | 'error'
   by: string
   at: string
-  /** The answer, in Markdown, written from the server's response (what Ask AI keeps as the chat's context). */
+  /** The answer, in Markdown, written from the server's response. */
   answer?: string
   /** The same answer, structured for display: text, and a card per finding with what can be done about it. */
   parts?: AiAnswerPart[]
@@ -643,7 +683,7 @@ export interface ChatMessage {
   content: string
 }
 
-/** One message in a contract's Ask AI conversation, as kept. */
+/** One message in a contract's Agent conversation, as kept. */
 export interface ChatEntry {
   id: string
   role: 'user' | 'assistant'
@@ -663,7 +703,7 @@ export interface ChatEntry {
 }
 
 /**
- * Ask AI for one contract: a single conversation across its versions. Everything is kept and
+ * The Agent for one contract: a single conversation across its versions. Everything is kept and
  * shown; what goes to the AI is the summary of older messages plus the newer ones verbatim.
  */
 export interface ChatConversation {

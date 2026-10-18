@@ -1,7 +1,9 @@
 import { rejectedCount, stillOpen, theyChanged } from '@shared/changes'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Account, ChatConversation, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
+import { defaultQuestions } from '@shared/questions'
+import { DEFAULT_PROMPTS } from './ai/prompts'
+import type { AiQuestion, Account, ChatConversation, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
 
 const SEEDED = ['library.json', 'precedents.json', 'playbook.json', 'accounts.json', 'contracts.json']
 
@@ -38,6 +40,15 @@ export class Store {
   accounts = () => this.read<Account[]>('accounts.json')
   contracts = () => this.read<ContractRecord[]>('contracts.json')
 
+  /** The questions asked of highlighted text, in the order offered (the app's own until any are changed). */
+  questions(): AiQuestion[] {
+    return existsSync(join(this.dir, 'questions.json')) ? this.read<AiQuestion[]>('questions.json') : defaultQuestions(DEFAULT_PROMPTS)
+  }
+
+  saveQuestions(q: AiQuestion[]): void {
+    this.write('questions.json', q)
+  }
+
   saveAccounts(a: Account[]): void {
     this.write('accounts.json', a)
   }
@@ -55,7 +66,7 @@ export class Store {
       .sort((a, b) => (a.version ?? 0) - (b.version ?? 0))
   }
 
-  /** A contract's Ask AI conversation (empty until the first question). */
+  /** A contract's Agent conversation (empty until the first question). */
   chat(key: string): ChatConversation {
     const f = join(this.dir, 'chats', `${key.replace(/[^\w.-]/g, '_')}.json`)
     return existsSync(f) ? (JSON.parse(readFileSync(f, 'utf8')) as ChatConversation) : { key, entries: [] }

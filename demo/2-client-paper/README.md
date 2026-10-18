@@ -71,7 +71,7 @@ There is no second round.
    - **Non-solicitation of staff:** Section 4.04.
    - **Governing law and jurisdiction:** Section 4.06, Delaware.
 
-   Try **Ask: What does this mean?** on a paragraph too, and ask your own questions in **Ask AI**.
+   Try **Ask: What does this mean?** on a paragraph too, and ask your own questions in the **Agent** tab. To add a card of your own, open **Questions** (under Knowledge) and press **New question**.
 
 10. Now read the agreement. The AI only advises; a person clears each paragraph:
     - **If a paragraph is fine as it is** (for example the dashed-green ones, once you've read them), click into it and press **Mark as checked** in the right-hand column. The bar turns solid green.

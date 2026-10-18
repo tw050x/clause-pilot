@@ -5,9 +5,9 @@ import { Icon } from '../lib/icons'
  * Import… and Export… for the library or the playbook. Files are JSON in the app's own format;
  * an import is merged by id (new entries added, changed ones updated, nothing removed).
  */
-export function useTransfer(kind: 'library' | 'playbook', onImported: () => void) {
+export function useTransfer(kind: 'library' | 'playbook' | 'questions', onImported: () => void) {
   const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
-  const noun = kind === 'library' ? ['clause', 'clauses'] : ['position', 'positions']
+  const noun = kind === 'library' ? ['clause', 'clauses'] : kind === 'playbook' ? ['position', 'positions'] : ['question', 'questions']
   const n = (k: number) => `${k} ${noun[k === 1 ? 0 : 1]}`
 
   const doImport = async () => {

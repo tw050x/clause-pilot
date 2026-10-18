@@ -1,12 +1,14 @@
 import { z } from 'zod'
-import type { LibraryClause, PlaybookPosition } from '@shared/types'
+import type { AiQuestion, LibraryClause, PlaybookPosition } from '@shared/types'
 
 /**
- * Import and export of the knowledge base: the library of approved clauses and the playbook
- * of standard positions, as JSON files another team (or another machine) can import.
+ * Import and export of the knowledge base: the library of approved clauses, the playbook of
+ * standard positions and the questions asked of highlighted text, as JSON files another team
+ * (or another machine) can import.
  *
- *   { "format": "clause-pilot/library",  "version": 1, "exportedAt": …, "exportedBy": …, "clauses":   [ … ] }
- *   { "format": "clause-pilot/playbook", "version": 1, "exportedAt": …, "exportedBy": …, "positions": [ … ] }
+ *   { "format": "clause-pilot/library",   "version": 1, "exportedAt": …, "exportedBy": …, "clauses":   [ … ] }
+ *   { "format": "clause-pilot/playbook",  "version": 1, "exportedAt": …, "exportedBy": …, "positions": [ … ] }
+ *   { "format": "clause-pilot/questions", "version": 1, "exportedAt": …, "exportedBy": …, "questions": [ … ] }
  *
  * Imports are validated against these schemas and merged by id: new entries are added,
  * entries with the same id are updated (playbook positions get a new version), identical
@@ -37,6 +39,28 @@ export const PlaybookPositionSchema = z.object({
   updatedAt: z.string().optional()
 })
 
+export const QuestionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  detail: z.string().default(''),
+  prompt: z.string().min(1),
+  method: z.enum(['once', 'paragraphs', 'positions', 'changes']).default('once'),
+  data: z.array(z.enum(['contract', 'paragraphs', 'changes', 'edits', 'library', 'playbook', 'precedents', 'findings'])).default([]),
+  answer: z.enum(['text', 'findings']).default('text'),
+  shown: z.boolean().default(true),
+  origin: z.enum(['intent', 'playbook', 'changes', 'explain']).optional(),
+  updatedBy: z.string().optional(),
+  updatedAt: z.string().optional()
+})
+
+export const QuestionsFileSchema = z.object({
+  format: z.literal('clause-pilot/questions'),
+  version: z.literal(1),
+  exportedAt: z.string().optional(),
+  exportedBy: z.string().optional(),
+  questions: z.array(QuestionSchema)
+})
+
 export const LibraryFileSchema = z.object({
   format: z.literal('clause-pilot/library'),
   version: z.literal(1),
@@ -54,6 +78,7 @@ export const PlaybookFileSchema = z.object({
 })
 
 export const libraryFile = (clauses: LibraryClause[], by: string) => ({ format: 'clause-pilot/library' as const, version: 1 as const, exportedAt: new Date().toISOString(), exportedBy: by, clauses })
+export const questionsFile = (questions: AiQuestion[], by: string) => ({ format: 'clause-pilot/questions' as const, version: 1 as const, exportedAt: new Date().toISOString(), exportedBy: by, questions })
 export const playbookFile = (positions: PlaybookPosition[], by: string) => ({ format: 'clause-pilot/playbook' as const, version: 1 as const, exportedAt: new Date().toISOString(), exportedBy: by, positions })
 
 const problems = (e: z.ZodError) =>
@@ -63,24 +88,23 @@ const problems = (e: z.ZodError) =>
     .join('; ')
 
 /** Read an import file (or a bare array of entries) into validated entries. */
-export function parseImport<T>(kind: 'library' | 'playbook', raw: string): T[] {
+export type KnowledgeKind = 'library' | 'playbook' | 'questions'
+const LIST = { library: 'clauses', playbook: 'positions', questions: 'questions' } as const
+const FILE = { library: LibraryFileSchema, playbook: PlaybookFileSchema, questions: QuestionsFileSchema }
+
+export function parseImport<T>(kind: KnowledgeKind, raw: string): T[] {
   let json: unknown
   try {
     json = JSON.parse(raw)
   } catch {
     throw new Error('That file isn’t valid JSON.')
   }
-  if (Array.isArray(json)) json = kind === 'library' ? { format: 'clause-pilot/library', version: 1, clauses: json } : { format: 'clause-pilot/playbook', version: 1, positions: json }
+  if (Array.isArray(json)) json = { format: `clause-pilot/${kind}`, version: 1, [LIST[kind]]: json }
   const fmt = (json as { format?: unknown })?.format
   if (fmt && fmt !== `clause-pilot/${kind}`) throw new Error(`That's a ${String(fmt).replace('clause-pilot/', '')} file, not a ${kind} file.`)
-  if (kind === 'library') {
-    const r = LibraryFileSchema.safeParse(json)
-    if (!r.success) throw new Error(`That isn't a valid library file: ${problems(r.error)}`)
-    return r.data.clauses as T[]
-  }
-  const r = PlaybookFileSchema.safeParse(json)
-  if (!r.success) throw new Error(`That isn't a valid playbook file: ${problems(r.error)}`)
-  return r.data.positions as T[]
+  const r = FILE[kind].safeParse(json)
+  if (!r.success) throw new Error(`That isn't a valid ${kind} file: ${problems(r.error)}`)
+  return (r.data as Record<string, unknown>)[LIST[kind]] as T[]
 }
 
 export interface ImportResult {
@@ -89,7 +113,10 @@ export interface ImportResult {
   unchanged: number
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+/** JSON with keys in order, so the same entry written in a different key order compares equal. */
+const canon = (v: unknown): string =>
+  Array.isArray(v) ? `[${v.map(canon).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canon((v as Record<string, unknown>)[k])}`).join(',')}}` : JSON.stringify(v)
+const same = (a: unknown, b: unknown) => canon(a) === canon(b)
 
 /** Merge imported clauses into the library by id. */
 export function mergeLibrary(current: LibraryClause[], incoming: LibraryClause[]): { next: LibraryClause[]; result: ImportResult } {
@@ -123,6 +150,26 @@ export function mergePlaybook(current: PlaybookPosition[], incoming: PlaybookPos
     } else if (same(content(next[i]), content(p))) result.unchanged++
     else {
       next[i] = { ...p, version: (next[i].version ?? 1) + 1, updatedBy: by, updatedAt: at }
+      result.updated++
+    }
+  }
+  return { next, result }
+}
+
+/** Merge imported questions by id (new ones go at the end); a changed question is marked as updated now. */
+export function mergeQuestions(current: AiQuestion[], incoming: AiQuestion[], by: string): { next: AiQuestion[]; result: ImportResult } {
+  const next = [...current]
+  const result: ImportResult = { added: 0, updated: 0, unchanged: 0 }
+  const at = new Date().toISOString()
+  const content = ({ updatedBy: _b, updatedAt: _a, ...q }: AiQuestion) => q
+  for (const q of incoming) {
+    const i = next.findIndex((x) => x.id === q.id)
+    if (i < 0) {
+      next.push({ ...q, updatedBy: by, updatedAt: at })
+      result.added++
+    } else if (same(content(next[i]), content(q))) result.unchanged++
+    else {
+      next[i] = { ...q, updatedBy: by, updatedAt: at }
       result.updated++
     }
   }

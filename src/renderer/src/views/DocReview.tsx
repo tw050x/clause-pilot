@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { AiTaskKind, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
+import type { AiQuestion, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
 import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
 import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
@@ -10,6 +10,7 @@ import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from 
 import { AiAnswer } from '../components/AiAnswer'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
+import { questionIdOf } from '@shared/questions'
 import { diffSegments } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
 import { Redline } from '../components/Redline'
@@ -248,10 +249,10 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           highlight={highlight}
           onHold={onHold}
           onChange={onChange}
-          run={async (kind) => {
+          run={async (questionId) => {
             if (!highlight) return
-            // The task starts; its answer arrives on the card as session updates. Several can run at once.
-            await act(window.api.ai.run(session.id, { kind, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
+            // The question is asked; its answer arrives on the card as session updates. Several can run at once.
+            await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
           }}
         />
       )}
@@ -904,20 +905,25 @@ function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (te
 
 // ---- AI tasks on highlighted text ------------------------------------------------------------------
 
-const AI_TASKS: { kind: AiTaskKind; title: string; detail: string }[] = [
-  { kind: 'intent', title: 'Ask: Does the intent match?', detail: 'Compares it with our approved wording' },
-  { kind: 'playbook', title: 'Ask: Does it meet our playbook?', detail: 'Each standard position that applies' },
-  { kind: 'changes', title: 'Ask: What do their changes do?', detail: 'Who they favour, and what to do' },
-  { kind: 'explain', title: 'Ask: What does this mean?', detail: 'In plain English: what it means for us' }
-]
-
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
 
+/** The questions offered for highlighted text, as set on the Questions page (kept up to date). */
+function useQuestions(): AiQuestion[] {
+  const [questions, setQuestions] = useState<AiQuestion[]>([])
+  useEffect(() => {
+    const load = () => void window.api.questions.list().then(setQuestions)
+    load()
+    return window.api.questions.onChanged(load)
+  }, [])
+  return questions
+}
+
 /**
- * The AI section: a card for each task that fits the highlighted text. Using a card asks the AI,
- * and the answer, written from the server's response, comes back onto the card, with the
- * response as returned. The cards run independently, so several can be asked at once; their
- * answers stay here (Ask AI sees their findings as part of the review, not as messages).
+ * The AI section: a card for each question (set on the Questions page) that fits the highlighted
+ * text. Using a card asks the AI, and the answer, written from the server's response, comes
+ * back onto the card, with the response as returned. The cards run independently, so several
+ * can be asked at once; their answers stay here (the Agent sees their findings as part of the
+ * review, not as messages).
  */
 function AiSection({
   session,
@@ -929,11 +935,12 @@ function AiSection({
   session: ReviewSession
   highlight: Highlight | null
   onHold: boolean
-  run: (kind: AiTaskKind) => Promise<unknown>
+  run: (questionId: string) => Promise<unknown>
   onChange: (s: ReviewSession) => void
 }) {
   const d = session.doc!
   const lib = useLibrary()
+  const questions = useQuestions().filter((q) => q.shown)
   if (!highlight?.quote)
     return (
       <section className="rc-section ai-section">
@@ -944,21 +951,25 @@ function AiSection({
   const blocks = d.blocks.filter((b) => highlight.blockIds.includes(b.id) && b.kind !== 'deleted')
   const candidates = blocks.filter((b) => intentCandidate(d, b))
   const against = [...new Set(candidates.flatMap((b) => (b.standard ?? b.wasApproved ? [b.standard ?? b.wasApproved!] : (b.matches ?? []).map((id) => lib.get(id)?.title ?? id))))]
-  const fits = (kind: AiTaskKind) => (kind === 'intent' ? candidates.length > 0 : kind === 'changes' ? d.blocks.some((b) => highlight.blockIds.includes(b.id) && hasOpenChanges(d, b)) : true)
-  const detail = (kind: AiTaskKind, base: string) =>
-    kind === 'intent' && against.length ? `Compares it with our ${against.slice(0, 3).map((t) => `“${t}”`).join(', ')}${against.length > 3 ? ` and ${against.length - 3} more` : ''}` : base
-  // The last time this was asked of these paragraphs. Only Explain is about the exact words; the
-  // others work on whole paragraphs, so a run still fits after the wording or selection within them changed.
-  const latest = (kind: AiTaskKind) => {
-    const runs = [...(d.aiRuns ?? [])].reverse().filter((r) => r.kind === kind && sameIds(r.blockIds, highlight.blockIds))
-    return runs.find((r) => r.quote === highlight.quote) ?? (kind === 'explain' ? undefined : runs[0])
+  const fits = (q: AiQuestion) => (q.method === 'paragraphs' ? candidates.length > 0 : q.method === 'changes' ? d.blocks.some((b) => highlight.blockIds.includes(b.id) && hasOpenChanges(d, b)) : true)
+  // Compared with approved wording: name what it's compared with.
+  const detail = (q: AiQuestion) =>
+    q.method === 'paragraphs' && against.length ? `Compares it with our ${against.slice(0, 3).map((t) => `“${t}”`).join(', ')}${against.length > 3 ? ` and ${against.length - 3} more` : ''}` : q.detail
+  // The last time this was asked of these paragraphs. A question asked once is about the exact
+  // words; the others work on whole paragraphs, so a run still fits after the wording or
+  // selection within them changed.
+  const latest = (q: AiQuestion) => {
+    const runs = [...(d.aiRuns ?? [])].reverse().filter((r) => questionIdOf(r) === q.id && sameIds(r.blockIds, highlight.blockIds))
+    return runs.find((r) => r.quote === highlight.quote) ?? (q.method === 'once' ? undefined : runs[0])
   }
+  const offered = questions.filter(fits)
   return (
     <section className="rc-section ai-section">
       <div className="dr-mini-h">AI</div>
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
-      {AI_TASKS.filter((t) => fits(t.kind)).map((t) => (
-        <AiCard key={t.kind} title={t.title} detail={detail(t.kind, t.detail)} result={latest(t.kind)} disabled={onHold} onRun={() => run(t.kind)} session={session} onChange={onChange} />
+      {!offered.length && <p className="faint dr-small">No questions fit this text. Add questions on the Questions page.</p>}
+      {offered.map((q) => (
+        <AiCard key={q.id} title={`Ask: ${q.title}`} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} />
       ))}
     </section>
   )

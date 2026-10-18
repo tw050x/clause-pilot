@@ -1,5 +1,5 @@
 import type {
-  Account, ContractRecord, AiTaskKind,
+  Account, ContractRecord, AiTaskKind, AiQuestion,
   AuditEntry, ChatConversation, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
 } from '../shared/types'
@@ -16,7 +16,7 @@ export interface Api {
   ai: {
     vllmModels(url: string): Promise<string[]>
     /** Run an AI task on highlighted text; the answer arrives as session updates (Explain also streams, as chat deltas with the run's id). */
-    run(id: string, task: { kind: AiTaskKind; blockIds: string[]; quote: string }): Promise<{ session: ReviewSession; runId: string }>
+    run(id: string, task: { questionId: string; blockIds: string[]; quote: string }): Promise<{ session: ReviewSession; runId: string }>
   }
   workspace: {
     summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }>
@@ -88,7 +88,7 @@ export interface Api {
     save(id: string): Promise<string | null>
     open(path: string): Promise<void>
   }
-  /** Ask AI: one conversation per contract, kept in the main process. */
+  /** The Agent: one conversation per contract, kept in the main process. */
   chat: {
     get(id: string): Promise<ChatConversation>
     /** Ask a question (following up an AI card's answer: its run id); the question and the answer are added to the conversation (the answer streams as deltas). */
@@ -100,6 +100,17 @@ export interface Api {
     /** The conversation for this contract (`key`) changed. */
     onChanged(cb: (d: { key: string }) => void): Unsub
   }
+  /** The questions asked of highlighted text (the Questions page). */
+  questions: {
+    list(): Promise<AiQuestion[]>
+    /** Add (no id) or change a question. */
+    save(q: AiQuestion): Promise<AiQuestion[]>
+    remove(id: string): Promise<AiQuestion[]>
+    move(id: string, by: -1 | 1): Promise<AiQuestion[]>
+    /** A question the app started with, as it was then. */
+    defaultFor(origin: AiTaskKind): Promise<AiQuestion | null>
+    onChanged(cb: () => void): Unsub
+  }
   kb: {
     library(): Promise<LibraryClause[]>
     playbook(): Promise<PlaybookPosition[]>
@@ -110,10 +121,10 @@ export interface Api {
     playbookProposals(): Promise<PlaybookProposal[]>
     proposePlaybook(p: { kind: PlaybookProposal['kind']; positionId: string | null; after: PlaybookPosition | null; reason: string }): Promise<PlaybookProposal[]>
     decidePlaybook(id: string, approve: boolean, note: string): Promise<{ proposals: PlaybookProposal[]; playbook: PlaybookPosition[] }>
-    /** Save the library or the playbook as a JSON file; returns the path (null if cancelled). */
-    export(kind: 'library' | 'playbook'): Promise<string | null>
-    /** Import a library or playbook file, merged by id; null if cancelled. */
-    import(kind: 'library' | 'playbook'): Promise<{ added: number; updated: number; unchanged: number } | null>
+    /** Save the library, the playbook or the questions as a JSON file; returns the path (null if cancelled). */
+    export(kind: 'library' | 'playbook' | 'questions'): Promise<string | null>
+    /** Import a library, playbook or questions file, merged by id; null if cancelled. */
+    import(kind: 'library' | 'playbook' | 'questions'): Promise<{ added: number; updated: number; unchanged: number } | null>
   }
   audit: {
     list(sessionId?: string): Promise<AuditEntry[]>

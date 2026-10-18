@@ -5,7 +5,7 @@ import { Markdown } from './Markdown'
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
 /**
- * Ask AI: one conversation per contract, across its versions, kept by the main process (so it
+ * The Agent: one conversation per contract, across its versions, kept by the main process (so it
  * survives restarts). The AI cards in the review column are separate: their answers stay on the
  * cards, and reach the conversation only as part of the review state the AI is sent. What the AI
  * is sent is managed in the main process: older messages are summarised once the conversation grows long.

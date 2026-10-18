@@ -77,6 +77,14 @@ const api: Api = {
     onThinking: on('chat:thinking'),
     onChanged: on('chat:changed')
   },
+  questions: {
+    list: () => invoke('questions:list'),
+    save: (q) => invoke('questions:save', q),
+    remove: (id) => invoke('questions:remove', id),
+    move: (id, by) => invoke('questions:move', id, by),
+    defaultFor: (origin) => invoke('questions:default', origin),
+    onChanged: on('questions:changed')
+  },
   kb: {
     library: () => invoke('kb:library'),
     playbook: () => invoke('kb:playbook'),
