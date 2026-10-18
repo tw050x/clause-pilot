@@ -78,7 +78,8 @@ function loadSettings(): StoredSettings {
     vllmUrl: '',
     vllmModel: '',
     recordLiveResponses: true,
-    securityReviewer: false
+    securityReviewer: false,
+    debug: false
   }
   return existsSync(settingsFile) ? { ...defaults, ...JSON.parse(readFileSync(settingsFile, 'utf8')) } : defaults
 }

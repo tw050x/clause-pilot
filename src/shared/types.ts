@@ -677,6 +677,8 @@ export interface Settings {
   vllmModel: string
   hasVllmKey: boolean
   recordLiveResponses: boolean
+  /** Debug mode: shows what is normally hidden, such as each AI answer as the server returned it. */
+  debug: boolean
 }
 
 

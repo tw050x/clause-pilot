@@ -26,6 +26,8 @@ interface Props {
   contractTitle?: string
   onOpenReview: (id: string) => void
   onNominationsChanged: () => void
+  /** Debug mode (Settings): show raw AI responses. */
+  debug: boolean
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
@@ -46,7 +48,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
+export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -249,6 +251,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           highlight={highlight}
           onHold={onHold}
           onChange={onChange}
+          debug={debug}
           run={async (questionId) => {
             if (!highlight) return
             // The question is asked; its answer arrives on the card as session updates. Several can run at once.
@@ -931,13 +934,15 @@ function AiSection({
   highlight,
   onHold,
   run,
-  onChange
+  onChange,
+  debug
 }: {
   session: ReviewSession
   highlight: Highlight | null
   onHold: boolean
   run: (questionId: string) => Promise<unknown>
   onChange: (s: ReviewSession) => void
+  debug: boolean
 }) {
   const d = session.doc!
   const lib = useLibrary()
@@ -973,7 +978,7 @@ function AiSection({
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
       {!offered.length && <p className="faint dr-small">No questions fit this text. Add questions on the Questions page.</p>}
       {cards.map((q) => (
-        <AiCard key={q.id} title={`Ask: ${q.title}`} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} />
+        <AiCard key={q.id} title={`Ask: ${q.title}`} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} debug={debug} />
       ))}
       {more.length > 0 && <MoreQuestions questions={more} detail={detail} disabled={onHold} onPick={(q) => run(q.id)} />}
     </section>
@@ -1034,7 +1039,8 @@ function AiCard({
   disabled,
   onRun,
   session,
-  onChange
+  onChange,
+  debug
 }: {
   title: string
   detail: string
@@ -1043,7 +1049,9 @@ function AiCard({
   onRun: () => void
   session: ReviewSession
   onChange: (s: ReviewSession) => void
+  debug: boolean
 }) {
+  const [raw, setRaw] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const running = result?.status === 'running'
   const stream = useStream(running ? result!.id : undefined)
@@ -1077,7 +1085,13 @@ function AiCard({
             <span className="faint">
               {result.by} · {new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
+            {debug && (
+              <button className="link-btn" onClick={() => setRaw((v) => !v)}>
+                {raw ? 'Hide' : 'Raw'} response
+              </button>
+            )}
           </div>
+          {debug && raw && <pre className="ai-raw">{typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw, null, 2)}</pre>}
         </div>
       )}
       {running && (stream.text || stream.thinking) && (

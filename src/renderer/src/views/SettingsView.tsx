@@ -178,6 +178,14 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
         <span className="hint">Only the security team can resolve prompt-injection alerts and release a review from security hold.</span>
       </div>
 
+      <h2 className="settings-h">Debugging</h2>
+      <div className="field">
+        <label>
+          <input type="checkbox" checked={settings.debug} onChange={(e) => save({ debug: e.target.checked })} /> Debug mode
+        </label>
+        <span className="hint">Shows what is normally hidden: on each question’s card, the AI’s answer exactly as the server returned it (Raw response).</span>
+      </div>
+
       <h2 className="settings-h">Data</h2>
       <ClearData />
     </div>

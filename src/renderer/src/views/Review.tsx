@@ -7,6 +7,8 @@ interface Props {
   panel: HTMLElement | null
   onChange: (s: ReviewSession) => void
   onNominationsChanged: () => void
+  /** Debug mode (Settings): show raw AI responses. */
+  debug: boolean
   /** The security alert for this review, if text addressed to an AI reviewer was found. */
   alert: SecurityAlert | null
   onOpenSecurity: () => void
