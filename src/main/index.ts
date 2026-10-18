@@ -141,6 +141,12 @@ function createWindow() {
       sandbox: true
     }
   })
+  // macOS (title bar hidden) took the window buttons away when the window lost focus: keep them.
+  if (process.platform === 'darwin') {
+    const keepButtons = () => win?.setWindowButtonVisibility(true)
+    win.on('blur', keepButtons)
+    win.on('focus', keepButtons)
+  }
   // No navigation away from the app and no new windows: links open in the OS browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) shell.openExternal(url)

@@ -26,18 +26,6 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [session, setSession] = useState<ReviewSession | null>(null)
   const [navOpen, setNavOpen] = useState(true)
-  // Whether the window has focus (macOS draws no window buttons while it hasn't).
-  const [focused, setFocused] = useState(() => document.hasFocus())
-  useEffect(() => {
-    const on = () => setFocused(true)
-    const off = () => setFocused(false)
-    window.addEventListener('focus', on)
-    window.addEventListener('blur', off)
-    return () => {
-      window.removeEventListener('focus', on)
-      window.removeEventListener('blur', off)
-    }
-  }, [])
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
@@ -177,16 +165,8 @@ export function App() {
   const reviewing = view === 'review' && !!session
 
   return (
-    <div className={`app ${isMac ? 'mac' : 'win'}${focused ? '' : ' blurred'}`}>
+    <div className={`app ${isMac ? 'mac' : 'win'}`}>
       <header className="titlebar">
-        {/* macOS hides the window's own buttons when it isn't focused (with the title bar hidden): grey stand-ins in their place. */}
-        {isMac && !focused && (
-          <span className="mac-lights" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
         <button className="icon-btn" onClick={() => setNavOpen((o) => !o)} title={navOpen ? 'Hide menu' : 'Show menu'}>
           <SidebarIcon side="left" open={navOpen} />
         </button>

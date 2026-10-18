@@ -81,10 +81,6 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .titlebar > * { -webkit-app-region: no-drag; }
 .titlebar .spacer { flex: 1; -webkit-app-region: drag; }
 .app.mac .titlebar { padding-left: 84px; } /* room for the traffic lights */
-/* While the window isn't focused: grey circles where the window buttons are (at the position set in the main process). */
-.titlebar { position: relative; }
-.mac-lights { position: absolute; left: 16px; top: 15px; display: flex; gap: 8px; pointer-events: none; -webkit-app-region: drag; }
-.mac-lights i { width: 12px; height: 12px; border-radius: 50%; background: #d6d6d6; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18); }
 .app.win .titlebar { padding-right: 150px; } /* room for the native window buttons */
 .titlebar .icon-btn { color: var(--text-2); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
