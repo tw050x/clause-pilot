@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
-import type { Account, ContractRecord, ChatMessage, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, ChatMessage, DraftOrigin, DraftProbe, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
@@ -27,6 +27,7 @@ import { chatSystem, reviewState } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, mergeQuestions, parseImport, playbookFile, questionsFile, type KnowledgeKind } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
+import { paperCheck } from './engine/baseline'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -340,16 +341,30 @@ ipcMain.handle('contracts:versions', (_e, contractId: string) => ws.store.listSe
  * or found by comparing with what we sent / our standard wording). Nothing goes
  * to the AI until the reviewer asks; only the local security screen runs.
  */
-async function startReview(w: Workspace, path: string, contractId: string | undefined): Promise<ReviewSession> {
+async function startReview(w: Workspace, path: string, contractId: string | undefined, origin?: DraftOrigin): Promise<ReviewSession> {
   const doc = await parseFile(resolvePath(path))
   const blocks = await readBlocks(resolvePath(path), doc.sourceType)
   // A draft of a known contract becomes its next version, compared with the one before.
   const contract = contractId ? w.store.contracts().find((c) => c.id === contractId) : undefined
   if (contractId && !contract) throw new Error('Unknown contract.')
   const versions = contract ? w.store.versionsOf(contract.id) : []
-  const last = versions[versions.length - 1]
+  let last: ReviewSession | undefined = versions[versions.length - 1]
+  // A first draft on our paper, with the original we sent: the original is kept as version 0 and
+  // the draft is compared with it exactly, as a later draft is with what we sent back.
+  if (contract && !last && origin?.kind === 'original') {
+    const odoc = await parseFile(resolvePath(origin.path))
+    if (odoc.sha256 === doc.sha256) throw new Error('That’s the draft itself. Choose the original we sent them.')
+    const oblocks = await readBlocks(resolvePath(origin.path), odoc.sourceType)
+    const o = createDocSession(odoc, oblocks, origin.path, 'live', { library: [], paper: 'theirs' })
+    Object.assign(o, { accountId: contract.accountId, contractId: contract.id, version: 0, original: true })
+    w.store.saveSession(o)
+    w.audit.append(actor(), 'session.original-added', o.id, { docName: o.docName, sha256: o.fileSha256, contractId: contract.id })
+    last = o
+  }
   const prev = last ? (sessions.get(last.id) ?? last) : undefined
-  const s = createDocSession(doc, blocks, path, 'live', { prev: prev?.doc ? prev : undefined, library: w.store.library() })
+  // Whose paper a first draft is: as the reviewer said (with an original, it's compared with that).
+  const paper = origin?.kind === 'ours' ? 'ours' : origin?.kind === 'theirs' ? 'theirs' : undefined
+  const s = createDocSession(doc, blocks, path, 'live', { prev: prev?.doc ? prev : undefined, library: w.store.library(), paper })
   if (contract) {
     Object.assign(s, { accountId: contract.accountId, contractId: contract.id, version: (prev?.version ?? 0) + 1 })
     if (prev) s.previous = { sessionId: prev.id, version: prev.version ?? 1 }
@@ -371,7 +386,8 @@ async function startReview(w: Workspace, path: string, contractId: string | unde
     mode: s.mode,
     contractId: s.contractId ?? null,
     version: s.version ?? null,
-    previous: s.previous?.sessionId ?? null
+    previous: s.previous?.sessionId ?? null,
+    origin: origin?.kind ?? null
   })
   if (Object.keys(s.injection).length) w.audit.append('system', 'injection.local-flags', s.id, { blocks: s.injection })
   w.store.saveSession(s)
@@ -379,8 +395,14 @@ async function startReview(w: Workspace, path: string, contractId: string | unde
   return s
 }
 
-ipcMain.handle('review:start', async (_e, path: string, contractId?: string) => {
-  const s = await startReview(ws, path, contractId)
+/** Before a first draft is opened: how much of it is our approved wording, to suggest whose paper it is. */
+ipcMain.handle('review:probe', async (_e, path: string): Promise<DraftProbe> => {
+  const doc = await parseFile(resolvePath(path))
+  return paperCheck(await readBlocks(resolvePath(path), doc.sourceType), ws.store.library())
+})
+
+ipcMain.handle('review:start', async (_e, path: string, contractId?: string, origin?: DraftOrigin) => {
+  const s = await startReview(ws, path, contractId, origin)
   persist(s)
   return s
 })
@@ -1449,7 +1471,7 @@ ipcMain.handle('audit:export', async (_e, sessionId: string) => {
     return `${a.status === 'malicious' ? 'confirmed injection attempt' : 'false positive, released'} by ${a.resolvedBy} at ${a.resolvedAt}${a.note ? ` (${a.note})` : ''}`
   })()}
 
-- Compared with: ${d.baseline ? (d.baseline.kind === 'sent' ? `what we sent for version ${d.baseline.version}` : 'our standard wording') : 'nothing (tracked changes only)'}
+- Compared with: ${d.baseline ? (d.baseline.kind === 'sent' ? (d.baseline.version === 0 ? 'the original we sent' : `what we sent for version ${d.baseline.version}`) : 'our standard wording') : 'nothing (tracked changes only)'}
 
 ## Their changes
 

@@ -19,7 +19,13 @@ export function createDocSession(
   blocks: DocBlock[],
   filePath: string,
   mode: 'live' | 'demo',
-  opts: { prev?: ReviewSession; library: LibraryClause[] }
+  /**
+   * prev: the version this draft is compared with (the one we sent back, or the original we sent).
+   * paper: for a first draft, whose paper the reviewer says it is. Only 'ours' compares it with
+   * our approved clauses as if they were what we sent; 'theirs' only notes paragraphs that are word
+   * for word ours. Unsaid (the demos), it's judged from how much of it is our wording.
+   */
+  opts: { prev?: ReviewSession; library: LibraryClause[]; paper?: 'ours' | 'theirs' }
 ): ReviewSession {
   const s: ReviewSession = {
     id: randomUUID(),
@@ -46,6 +52,15 @@ export function createDocSession(
     const r = compareWithSent(opts.prev, blocks)
     Object.assign(d, { blocks: r.blocks, lastRound: r.lastRound, baseline: r.baseline })
     d.blocks = compareWithTemplate(d.blocks, opts.library).blocks.map((b, i) => ({ ...d.blocks[i], approved: b.approved, wasApproved: b.wasApproved }))
+  } else if (opts.paper === 'theirs') {
+    // Their paper: nothing is assumed to be ours. Paragraphs that are word for word ours are noted.
+    const r = compareWithTemplate(blocks, opts.library)
+    d.blocks = blocks.map((b, i) => ({ ...b, approved: r.blocks[i].approved, wasApproved: r.blocks[i].wasApproved }))
+  } else if (opts.paper === 'ours') {
+    // Ours, with no original to hand: our approved clauses stand in for what we sent.
+    const r = compareWithTemplate(blocks, opts.library, true)
+    d.blocks = r.blocks
+    if (r.baseline) d.baseline = r.baseline
   } else {
     // A first draft: compare with our standard wording when it's on our paper.
     const r = compareWithTemplate(blocks, opts.library)

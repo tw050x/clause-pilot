@@ -1,7 +1,7 @@
 import type {
   Account, ContractRecord, AiTaskKind, AiQuestion,
   AuditEntry, ChatConversation, SeenHit, EmailDraft, LibraryClause, Nomination,
-  PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings
+  PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings, DraftOrigin, DraftProbe
 } from '../shared/types'
 
 type Unsub = () => void
@@ -41,7 +41,10 @@ export interface Api {
   }
   file: { open(): Promise<string | null>; bytes(path: string): Promise<Uint8Array> }
   review: {
-    start(path: string, contractId?: string): Promise<ReviewSession>
+    /** origin: for a first draft, where it started (with the original we sent, it's compared with that). */
+    start(path: string, contractId?: string, origin?: DraftOrigin): Promise<ReviewSession>
+    /** How much of a draft is our approved wording, to suggest whose paper it is. */
+    probe(path: string): Promise<DraftProbe>
     get(id: string): Promise<ReviewSession>
     list(): Promise<ReviewSummary[]>
     /** Close (true) or reopen (false) a review. */

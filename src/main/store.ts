@@ -149,6 +149,7 @@ export class Store {
           decided: d ? changed.filter((b) => !stillOpen(d, b)).length : decisions.length,
           rejected: d ? rejectedCount(d) : decisions.filter((x) => x.decision === 'rejected').length,
           closed: !!s.closed,
+          original: s.original || undefined,
           contractArchived: !!contract?.archived
         }
       })

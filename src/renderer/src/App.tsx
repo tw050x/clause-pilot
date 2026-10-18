@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Account, ContractRecord, Nomination, PlaybookProposal, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, Nomination, PlaybookProposal, DraftOrigin, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
@@ -70,10 +70,10 @@ export function App() {
     refreshReviews()
   }, [decisionCount, session?.id])
 
-  const openContract = useCallback(async (path: string, contractId?: string) => {
+  const openContract = useCallback(async (path: string, contractId?: string, origin?: DraftOrigin) => {
     setError(null)
     try {
-      const s = await window.api.review.start(path, contractId)
+      const s = await window.api.review.start(path, contractId, origin)
       setSession(s)
       if (s.accountId) setActiveAccountId(s.accountId)
       refreshReviews()
@@ -339,9 +339,9 @@ export function App() {
           account={activeAccount}
           initialContractId={openModal.contractId}
           onClose={() => setOpenModal(null)}
-          onOpen={(path, contractId) => {
+          onOpen={(path, contractId, origin) => {
             setOpenModal(null)
-            openContract(path, contractId)
+            openContract(path, contractId, origin)
           }}
         />
       )}

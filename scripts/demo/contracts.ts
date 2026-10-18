@@ -107,6 +107,23 @@ export const BRIGHTWATER_V1: ContractFile = {
   ]
 }
 
+/**
+ * Round 0: the NDA as we sent it to Brightwater, our approved clauses filled in. Uploaded as the
+ * original with their redline, so their changes made without Track Changes (2.2, 5.4) are found
+ * exactly. Their tracked insertions weren't in it; their tracked edits started from it.
+ */
+export const BRIGHTWATER_V0: ContractFile = {
+  file: 'Brightwater-Mutual-NDA-v0-original-we-sent.docx',
+  author: 'PortSwigger Legal',
+  date: '2026-10-05T10:00:00Z',
+  blocks: BRIGHTWATER_V1.blocks.flatMap((b): Block[] => {
+    if (b.kind !== 'para') return [b]
+    if (b.tracked?.inserted) return []
+    const text = b.tracked?.base ?? (b.text === CARE_REWORDED ? lib('nda-care') : b.text === ASSIGNMENT_STRICT ? lib('gen-assignment') : b.text)
+    return [{ kind: 'para', number: b.number, text }]
+  })
+}
+
 /** What we sent back, if the tester follows the README's round 1 (their next draft starts from this). */
 const SENT = {
   exclusions: EXCLUSIONS_REWORDED,
@@ -234,4 +251,4 @@ export const KESTREL: ContractFile = {
   ]
 }
 
-export const CONTRACTS = [BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL]
+export const CONTRACTS = [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL]

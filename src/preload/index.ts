@@ -42,7 +42,8 @@ const api: Api = {
   },
   file: { open: () => invoke('file:open'), bytes: (path) => invoke('file:bytes', path) },
   review: {
-    start: (path, contractId) => invoke('review:start', path, contractId),
+    start: (path, contractId, origin) => invoke('review:start', path, contractId, origin),
+    probe: (path) => invoke('review:probe', path),
     get: (id) => invoke('review:get', id),
     list: () => invoke('review:list'),
     close: (id, closed) => invoke('review:close', id, closed),

@@ -123,7 +123,7 @@ function InProgress({ onOpen }: { onOpen: (id: string) => void }) {
     window.api.review.list().then(setReviews)
   }, [])
   const latest = new Map<string, ReviewSummary>()
-  for (const r of reviews) {
+  for (const r of reviews.filter((x) => !x.original)) {
     const key = r.contractId ?? r.id
     const have = latest.get(key)
     if (!have || (r.version ?? 0) > (have.version ?? 0)) latest.set(key, r)

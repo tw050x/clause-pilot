@@ -9,8 +9,10 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
   const [q, setQ] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const hidden = (r: ReviewSummary) => !!r.closed || !!r.contractArchived
-  const hiddenCount = reviews.filter(hidden).length
-  const shown = reviews.filter((r) => (showHidden || !hidden(r)) && (!q || r.docName.toLowerCase().includes(q.toLowerCase()) || (r.contractTitle ?? '').toLowerCase().includes(q.toLowerCase())))
+  // The original we sent with a first draft isn't a review: it's on its contract's page.
+  const listed = reviews.filter((r) => !r.original)
+  const hiddenCount = listed.filter(hidden).length
+  const shown = listed.filter((r) => (showHidden || !hidden(r)) && (!q || r.docName.toLowerCase().includes(q.toLowerCase()) || (r.contractTitle ?? '').toLowerCase().includes(q.toLowerCase())))
   const toggle = async (r: ReviewSummary) => {
     await window.api.review.close(r.id, !r.closed)
     onChanged()
@@ -20,7 +22,7 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
       <div className="row-gap" style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
         <div>
           <h1>
-            All reviews <span className="faint" style={{ fontWeight: 400 }}>{reviews.length - hiddenCount}</span>
+            All reviews <span className="faint" style={{ fontWeight: 400 }}>{listed.length - hiddenCount}</span>
           </h1>
           <p className="lede" style={{ margin: 0 }}>
             Every open review for {accountName}, newest first. Close a review when you’re done with it; it’s kept, just out of the way.
@@ -33,7 +35,7 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
           <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show closed reviews and reviews of archived contracts ({hiddenCount})
         </label>
       )}
-      {!reviews.length ? (
+      {!listed.length ? (
         <p className="faint">No reviews yet. Open a contract from the Start page.</p>
       ) : !shown.length ? (
         <p className="faint">No open reviews{q ? ' match the filter' : ''}.</p>

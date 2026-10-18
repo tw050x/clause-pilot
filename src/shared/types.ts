@@ -549,6 +549,11 @@ export interface ReviewSession {
   version?: number
   /** The review of the previous version this one was compared with. */
   previous?: { sessionId: string; version: number }
+  /**
+   * The original we sent (version 0), uploaded with a first draft on our paper so the draft can be
+   * compared with it exactly. Kept for comparison; there is nothing to review in it.
+   */
+  original?: boolean
   versionLinks?: Record<string, VersionLink>
   removed?: RemovedClause[]
   /** Clauses deleted as tracked changes in this draft (Word redlines). */
@@ -618,6 +623,8 @@ export interface ReviewSummary {
   decided: number
   rejected: number
   closed?: boolean
+  /** The original we sent (version 0): kept for comparison, not a review. */
+  original?: boolean
   /** Its contract is archived. */
   contractArchived?: boolean
 }
@@ -728,4 +735,22 @@ export interface EmailDraft {
   subject: string
   body: string
   generatedBy: 'ai' | 'template'
+}
+
+/**
+ * Where a first draft started, as the reviewer says when opening it:
+ * - original: ours, and here is the document we sent (compared with it exactly)
+ * - ours: ours, but no original to hand (compared with our approved clauses)
+ * - theirs: their paper (nothing is assumed to be ours; close clauses are offered to compare)
+ */
+export type DraftOrigin = { kind: 'original'; path: string } | { kind: 'ours' } | { kind: 'theirs' }
+
+/** What a first draft looks like before it's opened: how much of it is our approved wording. */
+export interface DraftProbe {
+  /** Paragraphs of 8 words or more. */
+  paragraphs: number
+  /** Of those, word for word one of our approved clauses. */
+  approved: number
+  /** Enough of it is our wording that it looks like our paper. */
+  looksOurs: boolean
 }

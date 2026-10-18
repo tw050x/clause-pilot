@@ -143,13 +143,22 @@ const isInserted = (b: DocBlock) => !!b.segments?.length && b.segments.every((s)
 const ON_OUR_PAPER = 0.4
 const MIN_WORDS = 8
 
+/** How much of a draft is word for word our approved wording (substantial paragraphs only). */
+export function paperCheck(blocks: DocBlock[], library: LibraryClause[]): { paragraphs: number; approved: number; looksOurs: boolean } {
+  const byText = new Set(library.map((c) => canonical(c.text)))
+  const eligible = blocks.filter((b) => (b.kind === 'para' || b.kind === 'row') && b.text.split(/\s+/).length >= MIN_WORDS)
+  const approved = eligible.filter((b) => byText.has(canonical(b.text)) || (theyChanged(b) && byText.has(canonical(beforeTheirs(b))))).length
+  return { paragraphs: eligible.length, approved, looksOurs: !!library.length && !!eligible.length && approved / eligible.length >= ON_OUR_PAPER }
+}
+
 /**
  * Compare a first draft with our pre-approved wording. Paragraphs that are
  * word for word ours are noted; paragraphs close to one of ours but different
  * become an untracked change against it; on our paper, paragraphs that aren't
- * ours at all are shown as added. Drafts that aren't on our paper are left alone.
+ * ours at all are shown as added. Drafts that aren't on our paper are left alone,
+ * unless `ours` (the reviewer said it's ours).
  */
-export function compareWithTemplate(blocks: DocBlock[], library: LibraryClause[]): { blocks: DocBlock[]; baseline: Baseline | null } {
+export function compareWithTemplate(blocks: DocBlock[], library: LibraryClause[], ours = false): { blocks: DocBlock[]; baseline: Baseline | null } {
   const byText = new Map(library.map((c) => [canonical(c.text), c]))
   // Tracked changes are already shown; note when they change, or produce, our approved wording.
   const out = blocks.map((b): DocBlock => {
@@ -160,7 +169,8 @@ export function compareWithTemplate(blocks: DocBlock[], library: LibraryClause[]
   const eligible = out.filter((b) => (b.kind === 'para' || b.kind === 'row') && b.text.split(/\s+/).length >= MIN_WORDS)
   if (!library.length || !eligible.length) return { blocks: out, baseline: null }
   const exact = eligible.filter((b) => b.approved || b.wasApproved).length
-  if (exact / eligible.length < ON_OUR_PAPER) return { blocks: out, baseline: null }
+  // On our paper: the reviewer said so, or enough of it is our wording word for word.
+  if (!ours && exact / eligible.length < ON_OUR_PAPER) return { blocks: out, baseline: null }
 
   let untracked = 0
   const result = out.map((b) => {

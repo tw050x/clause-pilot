@@ -29,7 +29,7 @@ There is no second round.
 
 ## Review
 
-6. On the contract page, press **Upload first draft** and choose `Kestrel-Confidentiality-Agreement-client-paper.docx`.
+6. On the contract page, press **Upload first draft** and choose `Kestrel-Confidentiality-Agreement-client-paper.docx`. The app asks **Where did this draft start?** and suggests **Theirs**, since little of it is our approved wording. Keep it and press **Open review**.
 
    Nothing here is our wording, so almost every paragraph has a **grey bar** ("To read"). The right-hand column says *Not on our paper* and counts the paragraphs to read. When the file was opened, the app found the closest of our approved clauses for each paragraph, up to three, by keywords and on your machine. Nothing was sent anywhere.
 

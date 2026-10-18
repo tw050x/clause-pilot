@@ -10,6 +10,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
 |---|---|---|
 | `library.json` | PortSwigger's approved clauses (38) | Setup |
 | `playbook.json` | PortSwigger's standard positions (11) | Setup |
+| `Brightwater-Mutual-NDA-v0-original-we-sent.docx` | The NDA as we sent it to them | Round 1, as the original |
 | `Brightwater-Mutual-NDA-v1-client-redline.docx` | Their redline of our NDA | Round 1 |
 | `Brightwater-Mutual-NDA-v2-client-response.docx` | Their next draft, replying to what we sent | Round 2 |
 
@@ -26,32 +27,32 @@ This demo shows the app on our own paper. Most of the document is our approved w
 
 ## Round 1: their redline
 
-6. On the contract page, press **Upload first draft** and choose `Brightwater-Mutual-NDA-v1-client-redline.docx`.
+6. On the contract page, press **Upload first draft** and choose `Brightwater-Mutual-NDA-v1-client-redline.docx`. The app asks **Where did this draft start?**, and suggests **Ours** because most of it is our approved wording. Keep **Ours, and I have the original we sent**, press **Choose the original…**, choose `Brightwater-Mutual-NDA-v0-original-we-sent.docx`, and press **Open review**. Their draft is compared with the original exactly, so anything they changed without Track Changes shows. The original is kept on the contract page.
+
+   (Without the original, choose **Ours, but I don’t have the original**: the draft is compared with our approved clauses instead. The two silent changes still show, as *not our standard*, but so do the parties and signature paragraphs, which aren't in our template.)
 
    The document opens like Word with Track Changes. The bar beside each paragraph shows its state:
    - **Green:** our approved wording, word for word. Nothing to check.
    - **Blue:** their change, to decide.
    - **Red:** your edits.
 
-7. Look at the right-hand column. It should say that most paragraphs match our approved wording. These paragraphs have changes:
+7. Look at the right-hand column. It should say *Compared with the original we sent*. These paragraphs have changes:
 
    | Where | What they did | What you see |
    |---|---|---|
-   | Parties paragraph | Their company details | Not in our template |
    | 1.3 | Reworded our exclusions, with the same meaning | Tracked change and a comment |
    | 2.1 | Added "Affiliates" to who may see the information | Tracked change and a comment |
-   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Marked *not our standard* |
+   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Marked *not tracked* |
    | 2.4 | Inserted a residuals clause | Tracked insertion and a comment |
    | 3.3 | Deleted our "No warranty" clause | Tracked deletion |
    | 4.1 | Changed the survival period from three years to five | Tracked change and a comment |
-   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Marked *not our standard* |
+   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Marked *not tracked* |
    | 5.8, 5.9 | Changed the governing law and the courts to New York | Tracked changes and a comment |
    | 5.10 | Inserted a non-solicitation clause | Tracked insertion |
-   | Signature paragraph | Their signatory | Not in our template |
 
 8. Select from 1.3 to 2.2 (or the whole document with ⌘A). The **AI** section of the right-hand column offers cards for what you selected; press **Ask: Does the intent match?**. The answer comes back on the card; you can start the other cards while it works. The AI compares each changed paragraph with the approved clause it started from: 1.3 and 2.2 should turn **dashed green**, meaning the AI thinks they still mean the same. It only advises: they stay unaccepted until you decide. Try **Ask: What do their changes do?** and **Ask: Does it meet our playbook?** on 2.4 (the residuals clause) too: where the AI suggests wording, its card shows it as a redline with **Apply to §2.4**.
 9. Decide each change. Select some text (a word, a paragraph or several paragraphs), and the right-hand column lists the changes in the selection with one **Accept** and one **Reject** for all of them. Clicking inside a change selects the whole change. To match the client's round-2 reply, decide as follows:
-   - **Accept** the parties paragraph, 1.3, 2.1, 2.2 and the signature paragraph.
+   - **Accept** 1.3, 2.1 and 2.2.
    - **Reject** 2.4, 3.3, 5.4, 5.8, 5.9 and 5.10.
    - **Reject** 4.1. Then click into 4.1, select **three (3)** and type **four (4)**. Your wording appears in red.
 10. Add comments. Select text, press the comment button that appears in the margin, and type in the right-hand column:

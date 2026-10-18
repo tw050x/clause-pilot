@@ -1,7 +1,8 @@
 /**
  * Builds the demo files (demo/), for trying the app as a user would, with real AI. Each demo
  * folder gets everything it needs; its README.md (written by hand, not generated) is the guide.
- *   demo/1-our-nda-two-rounds/   library.json, playbook.json, the client's redline, their next draft
+ *   demo/1-our-nda-two-rounds/   library.json, playbook.json, the NDA as we sent it, the client's redline,
+ *                                their next draft
  *   demo/2-client-paper/         library.json, playbook.json, the client's own agreement
  * library.json and playbook.json are in the app's export format: import them on the Library and
  * Playbook pages.
@@ -15,10 +16,10 @@ import { diffSegments } from '../../src/shared/diff'
 import { libraryFile, playbookFile } from '../../src/main/transfer'
 import { LIBRARY } from './library'
 import { PLAYBOOK } from './playbook'
-import { BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
+import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
 
 const DEMOS = [
-  { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V1, BRIGHTWATER_V2] },
+  { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2] },
   { dir: 'demo/2-client-paper', contracts: [KESTREL] }
 ]
 

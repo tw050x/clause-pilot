@@ -26,6 +26,8 @@ export function ContractView({
     onChanged()
   }
   const versions = reviews.filter((r) => r.contractId === contract.id).sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
+  // Drafts reviewed (the original we sent, if uploaded, is listed with them but isn't one).
+  const drafts = versions.filter((v) => !v.original)
 
   return (
     <div className="page">
@@ -34,7 +36,7 @@ export function ContractView({
         <div>
           <h1>{contract.title}</h1>
           <p className="lede" style={{ margin: 0 }}>
-            {versions.length ? `${versions.length} version${versions.length === 1 ? '' : 's'} reviewed` : 'No drafts yet'}
+            {drafts.length ? `${drafts.length} version${drafts.length === 1 ? '' : 's'} reviewed` : 'No drafts yet'}
             {contract.contractType !== 'general' && ` · ${contract.contractType === 'nda' ? 'NDA' : 'Order form'}`}
           </p>
         </div>
@@ -44,7 +46,7 @@ export function ContractView({
           </button>
           {!contract.archived && (
             <button className="btn primary upload-draft" onClick={() => onUploadDraft(contract.id)}>
-              <Icon name="upload" /> {versions.length ? 'Upload new draft' : 'Upload first draft'}
+              <Icon name="upload" /> {drafts.length ? 'Upload new draft' : 'Upload first draft'}
             </button>
           )}
         </div>
@@ -76,7 +78,19 @@ export function ContractView({
               </tr>
             </thead>
             <tbody>
-              {versions.map((v) => (
+              {versions.map((v) =>
+                v.original ? (
+                  <tr key={v.id} className="clickable version-row" onClick={() => onOpenReview(v.id)}>
+                    <td>
+                      <strong>Original</strong>
+                      <span className="pill neutral" style={{ marginLeft: 6 }}>ours</span>
+                    </td>
+                    <td>{v.docName}</td>
+                    <td className="muted">What we sent: the first draft is compared with it</td>
+                    <td className="muted">{new Date(v.createdAt).toLocaleString()}</td>
+                    <td></td>
+                  </tr>
+                ) : (
                 <tr key={v.id} className="clickable version-row" onClick={() => onOpenReview(v.id)}>
                   <td>
                     <strong>Version {v.version}</strong>
@@ -100,7 +114,8 @@ export function ContractView({
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              )}
             </tbody>
           </table>
         </div>

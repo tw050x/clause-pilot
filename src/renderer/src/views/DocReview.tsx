@@ -153,15 +153,18 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             Closed by {session.closed.by} on {new Date(session.closed.at).toLocaleDateString()}. It’s kept, but hidden on the Reviews page.
           </div>
         )}
-        {session.version && (
+        {session.original && (
+          <div className="banner info">The original we sent them, kept to compare their first draft with. There’s nothing to review in it.</div>
+        )}
+        {session.version !== undefined && (
           <div className="faint rc-sub">
-            Version {session.version}
+            {session.original ? 'Original' : `Version ${session.version}`}
             {session.previous && (
               <>
                 {' '}
                 · after{' '}
                 <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
-                  version {session.previous.version}
+                  {session.previous.version === 0 ? 'the original we sent' : `version ${session.previous.version}`}
                 </button>
               </>
             )}{' '}
@@ -213,13 +216,15 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
             {d.baseline && (
               <p className="faint rc-note">
                 {d.baseline.kind === 'sent'
-                  ? `Compared with what we sent for version ${d.baseline.version}.`
+                  ? d.baseline.version === 0
+                    ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
+                    : `Compared with what we sent for version ${d.baseline.version}.`
                   : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
               </p>
             )}
             {!d.baseline && toRead > 0 && (
               <p className="faint rc-note">
-                Not on our paper: nothing here is our approved wording, so every paragraph needs reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
+                Their paper: paragraphs that aren’t word for word our approved wording need reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
               </p>
             )}
             <button className="link-btn rc-key-toggle" onClick={() => toggleKey(false)}>
