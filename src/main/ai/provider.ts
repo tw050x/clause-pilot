@@ -5,6 +5,7 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z as zod, type z } from 'zod'
 import type { ChatMessage } from '@shared/types'
 import { sha256 } from '../engine/text'
+import { compileSchema } from '@shared/schema'
 import {
   IntentSchema,
   OverridesSchema,
@@ -371,7 +372,8 @@ export class VllmProvider implements AiProvider {
 
 /**
  * A structured answer read and checked against the JSON Schema it was asked for (as Zod reads
- * it), so the app only builds cards from what was asked for.
+ * it), so the app only builds cards from what was asked for. A schema that can't be compiled
+ * is an error, never an unchecked answer.
  */
 function checked(schema: Record<string, unknown>, text: string): unknown {
   let json: unknown
@@ -381,13 +383,8 @@ function checked(schema: Record<string, unknown>, text: string): unknown {
   } catch {
     throw new Error('The model returned output that was not valid JSON.')
   }
-  let validator: z.ZodType
-  try {
-    validator = zod.fromJSONSchema(schema as Parameters<typeof zod.fromJSONSchema>[0])
-  } catch {
-    return json
-  }
-  const r = validator.safeParse(json)
+  // Schemas are checked to compile when saved, so this only fails for one edited by hand on disk.
+  const r = compileSchema(schema).safeParse(json)
   if (!r.success) throw new Error(`The model's answer didn't match the question's schema: ${r.error.issues.slice(0, 4).map((i) => `${i.path.join('.') || '(top)'} ${i.message}`).join('; ')}`)
   return json
 }
