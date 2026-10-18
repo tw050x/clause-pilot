@@ -135,6 +135,10 @@ function spans(marks: Mark[]) {
 const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
   m.theirs && m.seg !== undefined ? { blockId: b.id, kind: 'theirs', seg: groupOf(b, m.seg)[0] } : m.ours ? { blockId: b.id, kind: 'ours', op: m.ours, text: m.text } : null
 
+/** The gutter's comment button's label, and about how wide the button is with it (icon, padding, ~7px a character). */
+const commentLabel = (n: number) => (n ? `${n} comment${n === 1 ? '' : 's'}` : 'Comment')
+const labelledWidth = (n: number) => 40 + commentLabel(n).length * 7
+
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -145,7 +149,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   const clicked = useRef<SelectedChange | null>(null)
   const cb = useRef({ act, onFocusBlock, onComment, onSelectChanges, onShowComments })
   cb.current = { act, onFocusBlock, onComment, onSelectChanges, onShowComments }
-  const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string } | null>(null)
+  /** The gutter's comment button, level with the selection; `left` (from the wrapper) when there's room beside the page for its label to run outward. */
+  const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string; left?: number } | null>(null)
+  /** A paragraph's comments, theirs and ours (for the gutter button's label). */
+  const commentsOn = (blockId: string) => {
+    const d = model.current
+    return (d.blocks.find((b) => b.id === blockId)?.comments?.length ?? 0) + d.comments.filter((c) => c.blockId === blockId).length
+  }
 
   // ---- set up the editor once per review ----------------------------------------------------
   useEffect(() => {
@@ -381,7 +391,15 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       if (sel.$from.parent === sel.$to.parent) {
         const a = v.coordsAtPos(sel.from)
         const box = host.current!.getBoundingClientRect()
-        setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to) })
+        // The text stops 72px short of the page's edge: the button starts just after it, and its
+        // label runs outward when there's room before whatever clips the page (the scrolling
+        // pane); otherwise it sits against that edge, over the end of the line.
+        const wrap = host.current!.parentElement!
+        let clip = wrap
+        while (clip.parentElement && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement
+        const start = box.right - 68
+        const fits = start + labelledWidth(commentsOn(sel.$from.parent.attrs.id)) <= clip.getBoundingClientRect().right - 2
+        setBubble({ x: 0, y: a.top - box.top, blockId: sel.$from.parent.attrs.id, quote: state.doc.textBetween(sel.from, sel.to), ...(fits ? { left: start - wrap.getBoundingClientRect().left } : {}) })
       }
     }
 
@@ -727,8 +745,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       <div ref={host} className="ed-host" />
       {bubble && (
         <button
-          className="ed-gutter-btn"
-          style={{ top: bubble.y }}
+          className={`ed-gutter-btn ${bubble.left !== undefined ? 'out' : ''}`}
+          style={bubble.left !== undefined ? { top: bubble.y, left: bubble.left } : { top: bubble.y }}
           title="Comment on the selected text (in the right-hand column)"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
@@ -736,7 +754,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             setBubble(null)
           }}
         >
-          <CommentIcon size={18} />
+          <CommentIcon size={16} />
+          <span>{commentLabel(commentsOn(bubble.blockId))}</span>
         </button>
       )}
     </>
