@@ -162,8 +162,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // A packaged app takes its icon from the bundle; in development, show it in the Dock too.
-  const devIcon = join(appRoot, 'build/icon.png')
+  // A packaged app takes its icon from the bundle; in development, show it in the Dock too (the
+  // macOS version, with the margin the Dock expects, so it's the size of the others).
+  const devIcon = join(appRoot, 'build/icon-mac.png')
   if (!app.isPackaged && process.platform === 'darwin' && existsSync(devIcon)) app.dock?.setIcon(devIcon)
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())

@@ -1,7 +1,8 @@
 // Renders the app icon (build/icon.svg) into the files electron-builder packages:
 //   build/icon.icns  macOS (Apple's grid: the rounded square with its margin)
 //   build/icon.ico   Windows (cropped to the square, 16–256 px)
-//   build/icon.png   Linux, and the window/dock icon in development (cropped, 1024 px)
+//   build/icon.png   Linux, and the window icon in development on Windows and Linux (cropped, 1024 px)
+//   build/icon-mac.png  the Dock icon in development on macOS (Apple's grid, 1024 px)
 // Run with: npm run icon  (uses Electron to draw the SVG, and macOS's iconutil for the .icns)
 import { app, BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -68,7 +69,8 @@ app.whenReady().then(async () => {
   for (const size of sizes) images.push({ size, png: await render(cropped, size) })
   writeFileSync(join(build, 'icon.ico'), ico(images))
   writeFileSync(join(build, 'icon.png'), await render(cropped, 1024))
-  console.log('Wrote build/icon.icns, build/icon.ico and build/icon.png')
+  writeFileSync(join(build, 'icon-mac.png'), await render(svg, 1024))
+  console.log('Wrote build/icon.icns, build/icon.ico, build/icon.png and build/icon-mac.png')
   app.quit()
 }).catch((e) => {
   console.error(e)

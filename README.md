@@ -25,7 +25,7 @@ The title bar shows which AI is in use.
 | `npm run docs:check` | Check the documented AI schemas match the code |
 | `npm run pack` | Build an unpacked app for this machine (in `release/`) |
 | `npm run release` | Build installers for this machine (in `release/`) |
-| `npm run icon` | Remake the app icons from `build/icon.svg`: `icon.icns` (macOS), `icon.ico` (Windows) and `icon.png` (Linux). Needs macOS (for `iconutil`) |
+| `npm run icon` | Remake the app icons from `build/icon.svg`: `icon.icns` (macOS), `icon.ico` (Windows), `icon.png` (Linux) and `icon-mac.png` (the Dock in development). Needs macOS (for `iconutil`) |
 
 ## Where data is stored
 
