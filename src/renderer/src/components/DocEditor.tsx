@@ -168,14 +168,6 @@ const GUTTER: Record<GutterState, { label: string; tip: string }> = {
   read: { label: 'To read', tip: 'Not our wording and nothing to accept or reject: read it, then mark it as checked.' }
 }
 
-/** What a paragraph's untracked-change tag means, for its tooltip. */
-const tagTip = (b: DocBlock) =>
-  b.untracked === 'sent'
-    ? 'Not tracked: this paragraph differs from the version we sent, but they didn’t show the change with Track Changes. It was found by comparing their draft with ours, and the difference is shown as if they had tracked it.'
-    : b.standard
-      ? `Not our standard: this draft is on our paper, and this paragraph is close to our approved clause “${b.standard}” but not word for word. The difference wasn’t tracked; it was found by comparing the draft with our library, and is shown as if they had tracked it.`
-      : 'Not in our template: this draft is on our paper, but this paragraph isn’t close to any of our approved clauses, and it wasn’t tracked. It is shown as added, as if they had tracked it.'
-
 const labelledWidth = (n: number) => 40 + commentLabel(n).length * 7
 
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {
@@ -396,7 +388,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const decos: Decoration[] = []
       const f = focused.current
       // Each paragraph's bar (its colour and style), so a run of the same bar is drawn as one.
-      const bars: { offset: number; size: number; bar: string; cls: string; tag: string; gone: boolean }[] = []
+      const bars: { offset: number; size: number; bar: string; cls: string; gone: boolean }[] = []
       const statesNow = new Map<string, GutterState>()
       state.doc.forEach((node, offset) => {
         const b = blocks.get(node.attrs.id)
@@ -414,11 +406,10 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // Nothing to look at: its changes all decided, or (untouched) it's our approved wording
         // word for word, or exactly what we sent last round.
         const checked = !open && !edited && (decided || isCleared(d, b))
-        const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
         // The AI found it means the same as our approved wording: dashed green until you decide it.
         // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
         const bar = `${(open || needsReading(d, b)) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : needsReading(d, b) && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''}`.replace(/\s+/g, ' ').trim()
-        bars.push({ offset, size: node.nodeSize, bar, cls: `${bar} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`, tag, gone })
+        bars.push({ offset, size: node.nodeSize, bar, cls: `${bar} ${gone ? 'gone' : ''}`, gone })
         // Exactly our approved wording, or exactly what we sent last round: "Unchanged" in the gutter.
         // (Not one a reviewer marked as checked: that's a judgement, not a match.)
         const exact = !open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))
@@ -439,24 +430,6 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
                       ? 'checked'
                       : null
         if (state) statesNow.set(b.id, state)
-        // Why an untracked change is shown as one: a tag above the paragraph, explained on hover.
-        if (tag)
-          decos.push(
-            Decoration.widget(
-              start,
-              () => {
-                const t = document.createElement('span')
-                t.className = 'ed-tag'
-                t.contentEditable = 'false'
-                t.textContent = tag
-                // Shown on hover by CSS (a native title doesn't show inside the editor).
-                t.dataset.tip = tagTip(b)
-                t.setAttribute('aria-label', `${tag}. ${tagTip(b)}`)
-                return t
-              },
-              { side: -200, key: `tag:${b.id}:${tag}:${b.standard ?? ''}`, ignoreSelection: true }
-            )
-          )
         // The number as it now reads: clauses we add are numbered, and the ones after move up.
         const label = labelOf(d, b)
         if (label) {

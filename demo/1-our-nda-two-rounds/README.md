@@ -29,7 +29,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
 
 6. On the contract page, press **Upload first draft** and choose `Brightwater-Mutual-NDA-v1-client-redline.docx`. The app asks **Where did this draft start?**, and suggests **Ours** because most of it is our approved wording. Keep **Ours, and I have the original we sent**, press **Choose the original…**, choose `Brightwater-Mutual-NDA-v0-original-we-sent.docx`, and press **Open review**. Their draft is compared with the original exactly, so anything they changed without Track Changes shows. The original is kept on the contract page.
 
-   (Without the original, choose **Ours, but I don’t have the original**: the draft is compared with our approved clauses instead. The two silent changes still show, as *not our standard*, but so do the parties and signature paragraphs, which aren't in our template.)
+   (Without the original, choose **Ours, but I don’t have the original**: the draft is compared with our approved clauses instead. The two silent changes still show, as differing from our approved clauses, but so do the parties and signature paragraphs, which aren't in our template.)
 
    The document opens like Word with Track Changes. The bar beside each paragraph shows its state:
    - **Green:** our approved wording, word for word. Nothing to check.
@@ -42,11 +42,11 @@ This demo shows the app on our own paper. Most of the document is our approved w
    |---|---|---|
    | 1.3 | Reworded our exclusions, with the same meaning | Tracked change and a comment |
    | 2.1 | Added "Affiliates" to who may see the information | Tracked change and a comment |
-   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Marked *not tracked* |
+   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Dashed bar; the review column says *without Track Changes* |
    | 2.4 | Inserted a residuals clause | Tracked insertion and a comment |
    | 3.3 | Deleted our "No warranty" clause | Tracked deletion |
    | 4.1 | Changed the survival period from three years to five | Tracked change and a comment |
-   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Marked *not tracked* |
+   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Dashed bar; the review column says *without Track Changes* |
    | 5.8, 5.9 | Changed the governing law and the courts to New York | Tracked changes and a comment |
    | 5.10 | Inserted a non-solicitation clause | Tracked insertion |
 
@@ -78,7 +78,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
     | 5.8 | Accepted English law | Green, with their comment "English law is fine." |
     | 2.3 | Removed "and reasonable assistance to seek a protective order" | Tracked change and a comment |
     | 2.4 | Put back a narrower residuals clause | Tracked insertion and a comment |
-    | 5.4 | Quietly put their strict assignment wording back | **Not tracked**, with what we proposed last round |
+    | 5.4 | Quietly put their strict assignment wording back | Dashed bar, *without Track Changes*, with what we proposed last round |
     | 5.9 | Made the English courts' jurisdiction non-exclusive | Tracked change and a comment |
     | 5.10 | Added an anti-bribery clause | Tracked insertion and a comment |
 
