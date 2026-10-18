@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Clause Pilot app icon: a marked-up page (one clause struck out, its replacement underlined)
-       with a navigation arrow. Drawn on Apple's 1024 grid (824 body, 100 margin); the Windows and
+  <!-- Clause Pilot app icon: a page (one clause picked out in orange) with a
+       navigation arrow. Drawn on Apple's 1024 grid (824 body, 100 margin); the Windows and
        Linux icons crop to the body (scripts/icon.mjs). -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
@@ -32,16 +32,9 @@
   <rect x="312" y="300" width="70" height="30" rx="15" fill="#1c2128"/>
   <rect x="402" y="300" width="200" height="30" rx="15" fill="#c9cfd6"/>
   <rect x="312" y="366" width="380" height="26" rx="13" fill="#c9cfd6"/>
-
-  <!-- Struck out -->
-  <rect x="312" y="430" width="330" height="26" rx="13" fill="#f3b5a3"/>
-  <rect x="300" y="438" width="356" height="10" rx="5" fill="#c0262d"/>
-
-  <!-- Inserted, underlined -->
+  <rect x="312" y="430" width="330" height="26" rx="13" fill="#c9cfd6"/>
   <rect x="312" y="494" width="290" height="26" rx="13" fill="#ff6633"/>
-  <rect x="312" y="532" width="290" height="9" rx="4.5" fill="#c2410c"/>
-
-  <rect x="312" y="580" width="240" height="26" rx="13" fill="#c9cfd6"/>
+  <rect x="312" y="558" width="240" height="26" rx="13" fill="#c9cfd6"/>
 
   <!-- The pilot: a navigation arrow in a badge -->
   <circle cx="688" cy="692" r="138" fill="#1c2128" stroke="#fff" stroke-width="20"/>
