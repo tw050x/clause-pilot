@@ -219,6 +219,7 @@ export function App() {
           )}
           {view === 'home' && (
             <Home
+              onOpenReview={openSession}
               onOpenLive={() => (activeAccount ? setOpenModal({}) : setPickerOpen(true))}
               onNavigate={setView}
               account={activeAccount}

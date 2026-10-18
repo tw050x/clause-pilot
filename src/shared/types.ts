@@ -607,6 +607,8 @@ export interface ReviewSummary {
   version?: number
   docName: string
   createdAt: string
+  /** When it was last saved (anything done in it). */
+  updatedAt: string
   mode: 'live' | 'demo'
   contractType: ContractType
   /** Paragraphs they changed, and how many of those are decided (all their changes accepted or rejected). */

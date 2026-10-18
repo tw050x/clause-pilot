@@ -1,5 +1,5 @@
 import { rejectedCount, stillOpen, theyChanged } from '@shared/changes'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultQuestions } from '@shared/questions'
 import { DEFAULT_PROMPTS } from './ai/prompts'
@@ -126,7 +126,8 @@ export class Store {
     return readdirSync(join(this.dir, 'sessions'))
       .filter((f) => f.endsWith('.json'))
       .map((f) => {
-        const s = JSON.parse(readFileSync(join(this.dir, 'sessions', f), 'utf8')) as ReviewSession
+        const file = join(this.dir, 'sessions', f)
+        const s = JSON.parse(readFileSync(file, 'utf8')) as ReviewSession
         const decisions = Object.values(s.decisions)
         // Document reviews: paragraphs they changed, and how many are fully decided.
         const d = s.doc
@@ -141,6 +142,7 @@ export class Store {
           version: s.version,
           docName: s.docName,
           createdAt: s.createdAt,
+          updatedAt: statSync(file).mtime.toISOString(),
           mode: s.mode,
           contractType: s.contractType,
           clauses: d ? changed.length : s.clauses.length,

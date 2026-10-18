@@ -911,3 +911,20 @@ del.us-del ins.th-ins { color: inherit; }
 .raw-modal .modal-head h3 { margin: 0; font-size: 15px; }
 .raw-text { margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-2); font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
 .msg-raw { display: block; margin-top: 6px; font-size: 11.5px; color: var(--text-3); }
+
+/* Start page: the reviews in progress, for quick access. */
+.home-recent { margin: 0 0 28px; max-width: 860px; }
+.home-h { font-size: 15px; margin: 0 0 10px; }
+.home-h .faint { font-weight: 400; font-size: 13px; margin-left: 4px; }
+.recent-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.recent-review { display: grid; grid-template-columns: minmax(0, 1fr) 190px 90px 14px; align-items: center; gap: 14px; padding: 10px 14px; border: none; border-top: 1px solid var(--border); background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.recent-review:first-child { border-top: none; }
+.recent-review:hover { background: var(--surface-2); }
+.recent-review svg { color: var(--text-3); }
+.recent-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.recent-main strong { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-main .faint { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-progress { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.recent-bar { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.recent-bar span { display: block; height: 100%; background: var(--exact); }
+.recent-when { font-size: 12px; text-align: right; }

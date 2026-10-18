@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Account, Settings } from '@shared/types'
+import type { Account, ReviewSummary, Settings } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 import type { View } from '../components/NavDrawer'
 
@@ -8,8 +8,10 @@ export function Home({
   onOpenLive,
   account,
   accounts,
-  onChooseAccount
+  onChooseAccount,
+  onOpenReview
 }: {
+  onOpenReview: (id: string) => void
   /** The client being worked on. Opening contracts needs one. */
   account: Account | null
   accounts: Account[]
@@ -70,6 +72,8 @@ export function Home({
         </div>
       ) : null}
 
+      <InProgress onOpen={onOpenReview} />
+
       {ws && !dismissed && (
         <SetupChecklist
           onDismiss={dismiss}
@@ -105,6 +109,78 @@ export function Home({
 
     </div>
   )
+}
+
+/**
+ * The reviews still in progress, most recently worked on first, for quick access: the latest
+ * version of each contract (an earlier one is superseded), not closed, its contract not archived.
+ * Any client's: opening one switches to its client.
+ */
+function InProgress({ onOpen }: { onOpen: (id: string) => void }) {
+  // Read afresh each time the Start page opens, so "last worked on" is current.
+  const [reviews, setReviews] = useState<ReviewSummary[]>([])
+  useEffect(() => {
+    window.api.review.list().then(setReviews)
+  }, [])
+  const latest = new Map<string, ReviewSummary>()
+  for (const r of reviews) {
+    const key = r.contractId ?? r.id
+    const have = latest.get(key)
+    if (!have || (r.version ?? 0) > (have.version ?? 0)) latest.set(key, r)
+  }
+  const open = [...latest.values()].filter((r) => !r.closed && !r.contractArchived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  if (!open.length) return null
+  const shown = open.slice(0, MAX_RECENT)
+  return (
+    <section className="home-recent">
+      <h2 className="home-h">
+        In progress <span className="faint">{open.length > shown.length ? `${shown.length} most recent of ${open.length}` : open.length}</span>
+      </h2>
+      <div className="recent-list">
+        {shown.map((r) => (
+          <button key={r.id} className="recent-review" onClick={() => onOpen(r.id)}>
+            <span className="recent-main">
+              <strong>{r.contractTitle ?? r.docName}</strong>
+              <span className="faint">
+                {[r.accountName, r.version ? `Version ${r.version}` : null, r.docName].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+            <span className="recent-progress">
+              {r.clauses ? (
+                <>
+                  <span className="recent-bar" aria-hidden>
+                    <span style={{ width: `${Math.round((r.decided / r.clauses) * 100)}%` }} />
+                  </span>
+                  <span className="faint">
+                    {r.decided} of {r.clauses} decided
+                  </span>
+                </>
+              ) : (
+                <span className="faint">No changes to decide</span>
+              )}
+            </span>
+            <span className="recent-when faint" title={new Date(r.updatedAt).toLocaleString()}>
+              {ago(r.updatedAt)}
+            </span>
+            <Chevron size={12} />
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+const MAX_RECENT = 6
+
+/** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", then the date. */
+function ago(iso: string): string {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`
+  if (s < 2 * 86400) return 'yesterday'
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)} days ago`
+  return new Date(iso).toLocaleDateString()
 }
 
 interface ChecklistItem {
