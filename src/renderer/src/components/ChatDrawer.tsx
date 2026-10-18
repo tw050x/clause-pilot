@@ -59,6 +59,9 @@ export function ChatPanel({
   }, [sessionId, key])
 
   useEffect(() => window.api.chat.onDelta(({ requestId, text }) => setStreams((x) => ({ ...x, [requestId]: (x[requestId] ?? '') + text }))), [])
+  /** Requests whose model is thinking before it answers. */
+  const [thinking, setThinking] = useState<Set<string>>(new Set())
+  useEffect(() => window.api.chat.onThinking(({ requestId }) => setThinking((x) => new Set([...x, requestId]))), [])
 
   const entries = chat?.entries ?? []
   // A card asked now (still running) shows open; earlier ones are folded.
@@ -72,11 +75,11 @@ export function ChatPanel({
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [entries.length, streams])
 
-  const send = async (text: string) => {
+  const send = async (text: string, again?: { about?: string }) => {
     if (!session || !text.trim() || asking) return
-    setInput('')
-    const about = followUp ?? undefined
-    setFollowUp(null)
+    if (!again) setInput('')
+    const about = again ? again.about : (followUp ?? undefined)
+    if (!again) setFollowUp(null)
     const requestId = crypto.randomUUID()
     setAsking(requestId)
     try {
@@ -92,8 +95,17 @@ export function ChatPanel({
 
   const runOf = (id?: string) => (id ? session?.doc?.aiRuns?.find((r) => r.id === id) : undefined)
   const answered = new Set(entries.filter((e) => e.role === 'assistant' && e.runId).map((e) => e.runId))
-  const waiting = (text?: string) => (
-    <div className="msg assistant">{text ? <Markdown text={text} /> : <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} />}</div>
+  const waiting = (id: string) => (
+    <div className="msg assistant">
+      {streams[id] ? (
+        <Markdown text={streams[id]} />
+      ) : (
+        <span className="chat-waiting">
+          <span className="spinner" style={{ display: 'inline-block', color: 'var(--processing)' }} />
+          {thinking.has(id) && <span className="faint">Thinking…</span>}
+        </span>
+      )}
+    </div>
   )
 
   // A card's answer, with its finding cards and actions (when it was asked in this version); anything else as Markdown.
@@ -174,7 +186,7 @@ export function ChatPanel({
                       return n
                     })
                   }
-                  pending={!reply && runOf(e.runId)?.status === 'running' ? waiting(streams[e.runId]) : null}
+                  pending={!reply && runOf(e.runId)?.status === 'running' ? waiting(e.runId) : null}
                   answer={reply ? answer(reply) : null}
                   following={followUp === e.runId}
                   onFollowUp={() => {
@@ -190,7 +202,16 @@ export function ChatPanel({
                 </div>
               ) : (
                 // The AI's answer: in the flow of the page, not in a bubble.
-                <div className={`msg assistant ${e.failed ? 'failed' : ''}`}>{answer(e)}</div>
+                <div className={`msg assistant ${e.failed || !e.content.trim() ? 'failed' : ''}`}>
+                  {/* An empty answer (saved before empty answers were caught): say so. */}
+                  {e.content.trim() ? answer(e) : <p>No answer came back from the AI.</p>}
+                  {/* A failed answer to the latest question: ask it again. */}
+                  {(e.failed || !e.content.trim()) && e === last && prev?.role === 'user' && !prev.runId && (
+                    <button className="btn sm msg-again" disabled={!!asking} onClick={() => send(prev.content, { about: prev.about })}>
+                      Ask again
+                    </button>
+                  )}
+                </div>
               )}
               {/* A card's answer, until the conversation goes on: back to the review, where it's on the card too. */}
               {reply && reply === last && !asking && (
@@ -204,7 +225,7 @@ export function ChatPanel({
             </div>
           )
         })}
-        {asking && last?.role === 'user' && !last.runId && waiting(streams[asking])}
+        {asking && last?.role === 'user' && !last.runId && waiting(asking)}
       </div>
       {followUp && (
         <div className="chat-following">

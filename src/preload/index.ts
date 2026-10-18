@@ -74,6 +74,7 @@ const api: Api = {
     send: (id, question, requestId, about) => invoke('chat:send', id, question, requestId, about),
     clear: (id) => invoke('chat:clear', id),
     onDelta: on('chat:delta'),
+    onThinking: on('chat:thinking'),
     onChanged: on('chat:changed')
   },
   kb: {

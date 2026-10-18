@@ -871,3 +871,5 @@ del.us-del ins.th-ins { color: inherit; }
 .msg-followed { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
 .chat-following { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 12px; padding: 6px 8px 6px 10px; font-size: 12px; color: var(--text-2); background: var(--surface-2); border-radius: 7px 7px 0 0; border: 1px solid var(--border); border-bottom: none; }
 .chat-following strong { color: var(--text); font-weight: 600; }
+.chat-waiting { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.msg-again { display: flex; margin-top: 8px; color: var(--text); }

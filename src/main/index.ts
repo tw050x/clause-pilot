@@ -104,7 +104,7 @@ function provider(): AiProvider {
 }
 
 /** The chat panel's model: the same AI, streaming. */
-function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void) => Promise<string> } | null {
+function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void, onThinking?: () => void) => Promise<string> } | null {
   const s = loadSettings()
   if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() }) : null
   const key = apiKey()
@@ -999,7 +999,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
       const model = chatModel()
       if (!model) throw new Error(NO_MODEL())
       // A one-off, like the other cards: the contract and the review as it stands, not the conversation.
-      const text = await model.chat(chatSystem(s), [{ role: 'user', content: withState(reviewState(s), run.question) }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'chat.usage', s.id, { task: 'explain', ...u }))
+      const text = await model.chat(chatSystem(s), [{ role: 'user', content: withState(reviewState(s), run.question) }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'chat.usage', s.id, { task: 'explain', ...u }), () => send('chat:thinking', { requestId: run.id }))
       finish({ status: 'done', answer: text, raw: text })
     }
   })()
@@ -1115,7 +1115,7 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requ
     return
   }
   try {
-    const text = await model.chat(chatSystem(s), await chatRequestFor(s, model), (t) => send('chat:delta', { requestId, text: t }), (u) => ws.audit.append('system', 'chat.usage', s.id, { ...u }))
+    const text = await model.chat(chatSystem(s), await chatRequestFor(s, model), (t) => send('chat:delta', { requestId, text: t }), (u) => ws.audit.append('system', 'chat.usage', s.id, { ...u }), () => send('chat:thinking', { requestId }))
     addChat(s, { role: 'assistant', content: text })
   } catch (e) {
     addChat(s, { role: 'assistant', content: `Sorry, that failed: ${e instanceof Error ? e.message : String(e)}`, failed: true })

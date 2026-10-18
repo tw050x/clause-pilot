@@ -137,7 +137,7 @@ export class AnthropicProvider implements AiProvider {
    * all review) and at the end of the conversation before the newest message (it only grows, so
    * the next request reuses this one's cached start and pays in full only for what's new).
    */
-  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void): Promise<string> {
+  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void, _onThinking?: () => void): Promise<string> {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: 16000,
@@ -155,7 +155,7 @@ export class AnthropicProvider implements AiProvider {
     if (final.stop_reason === 'refusal') throw new AiRefusalError('The model declined this request.')
     const u = final.usage
     onUsage?.({ input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), cached: u.cache_read_input_tokens ?? 0, output: u.output_tokens })
-    return final.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('')
+    return finished(final.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''), final.stop_reason === 'max_tokens', final.content.some((b) => b.type === 'thinking'))
   }
 }
 
@@ -269,12 +269,15 @@ export class VllmProvider implements AiProvider {
    * A chat reply, streamed as it's written (server-sent events). The request starts with the
    * same system prompt and conversation as the last one, so a server with prefix caching reuses
    * that work; `cached` reports it when the server says (prompt_tokens_details.cached_tokens).
+   * Reasoning models stream their thinking separately (`reasoning_content` or `reasoning`) and
+   * it counts against max_tokens: it isn't shown, but `onThinking` says it's happening, and an
+   * answer that never arrives (the allowance spent thinking) is an error, not an empty reply.
    */
-  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void): Promise<string> {
+  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void, onThinking?: () => void): Promise<string> {
     const res = await this.post({
       messages: [{ role: 'system', content: system }, ...history.map((m) => ({ role: m.role, content: m.content }))] satisfies Msg[],
       temperature: 0.3,
-      max_tokens: 2000,
+      max_tokens: CHAT_MAX_TOKENS,
       stream: true,
       stream_options: { include_usage: true }
     })
@@ -282,7 +285,9 @@ export class VllmProvider implements AiProvider {
     const decoder = new TextDecoder()
     let buffer = ''
     let out = ''
-    for (;;) {
+    let thought = 0
+    let finish: string | null = null
+    read: for (;;) {
       const { value, done } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
@@ -292,14 +297,21 @@ export class VllmProvider implements AiProvider {
         buffer = buffer.slice(nl + 1)
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
-        if (data === '[DONE]') return out
+        if (data === '[DONE]') break read
         try {
           const chunk = JSON.parse(data) as {
-            choices?: { delta?: { content?: string } }[]
+            choices?: { delta?: { content?: string | null; reasoning_content?: string | null; reasoning?: string | null }; finish_reason?: string | null }[]
             usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null
           }
           if (chunk.usage) onUsage?.({ input: chunk.usage.prompt_tokens ?? 0, cached: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0, output: chunk.usage.completion_tokens ?? 0 })
-          const delta = chunk.choices?.[0]?.delta?.content
+          const choice = chunk.choices?.[0]
+          if (choice?.finish_reason) finish = choice.finish_reason
+          const thinking = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
+          if (thinking) {
+            if (!thought) onThinking?.()
+            thought += thinking.length
+          }
+          const delta = choice?.delta?.content
           if (delta) {
             out += delta
             onDelta(delta)
@@ -309,8 +321,23 @@ export class VllmProvider implements AiProvider {
         }
       }
     }
-    return out
+    return finished(out, finish === 'length', thought > 0)
   }
+}
+
+/** Room for a chat answer, including a reasoning model's thinking (which counts against it). */
+const CHAT_MAX_TOKENS = 8000
+
+/**
+ * A chat answer as it ended: none at all is an error (saying why, when we know), and one cut off
+ * by the length limit says so at the end.
+ */
+function finished(text: string, cutOff: boolean, thought: boolean): string {
+  if (!text.trim()) {
+    if (cutOff) throw new Error(`The model ran out of room before it answered${thought ? ' (it spent its whole allowance thinking)' : ''}. Ask again, or ask something narrower.`)
+    throw new Error('The model sent back an empty answer. Ask again.')
+  }
+  return cutOff ? `${text}\n\n*(The answer was cut off at the length limit.)*` : text
 }
 
 /** Tokens a chat request used: all its input, how much of that came from the prompt cache, and its output. */

@@ -95,6 +95,8 @@ export interface Api {
     send(id: string, question: string, requestId: string, about?: string): Promise<void>
     clear(id: string): Promise<void>
     onDelta(cb: (d: { requestId: string; text: string }) => void): Unsub
+    /** A reasoning model started thinking before it answers (the thinking isn't shown). */
+    onThinking(cb: (d: { requestId: string }) => void): Unsub
     /** The conversation for this contract (`key`) changed. */
     onChanged(cb: (d: { key: string }) => void): Unsub
   }

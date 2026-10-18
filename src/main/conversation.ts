@@ -82,6 +82,8 @@ export function threadFor(c: ChatConversation, followed: (runId: string) => stri
   const out: ChatMessage[] = []
   const push = (m: ChatMessage) => {
     const last = out[out.length - 1]
+    // The same question again (asked again after a failed answer): once.
+    if (last?.role === m.role && last.content === m.content) return
     if (last?.role === m.role) last.content += `\n\n${m.content}`
     else out.push({ ...m })
   }
@@ -107,7 +109,14 @@ export function chatRequest(c: ChatConversation, state: string, followed: (runId
   const before: ChatConversation = { ...c, entries: c.entries.slice(0, -1) }
   const thread = threadFor(before, followed)
   const prev = [...live(before)].reverse().find((e) => e.version)?.version
-  thread.push({ role: 'user', content: withState(state, asked(question, prev, followed)) })
+  const text = asked(question, prev, followed)
+  // Asked again after a failed answer: the unanswered copy goes.
+  if (thread[thread.length - 1]?.role === 'user' && thread[thread.length - 1].content.endsWith(text)) {
+    const t = thread[thread.length - 1]
+    t.content = t.content.slice(0, -text.length).trimEnd()
+    if (!t.content) thread.pop()
+  }
+  thread.push({ role: 'user', content: withState(state, text) })
   // An unanswered question before it (its answer failed): one user message.
   const n = thread.length
   if (n > 1 && thread[n - 2].role === 'user') thread.splice(n - 2, 2, { role: 'user', content: `${thread[n - 2].content}\n\n${thread[n - 1].content}` })
