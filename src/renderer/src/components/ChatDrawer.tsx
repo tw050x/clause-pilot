@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AiTaskRun, ChatConversation, ChatEntry, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
 import { AiAnswer } from './AiAnswer'
@@ -33,6 +33,8 @@ export function ChatPanel({
   /** A typed question waiting on its answer. */
   const [asking, setAsking] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  /** AI card exchanges shown open (the rest are folded). */
+  const [openRuns, setOpenRuns] = useState<Set<string>>(new Set())
   /** The AI card answer the next question follows up (its run id). */
   const [followUp, setFollowUp] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -44,6 +46,7 @@ export function ChatPanel({
     setChat(null)
     setClearing(false)
     setFollowUp(null)
+    setOpenRuns(new Set())
     if (!sessionId) return
     let live = true
     const load = () => window.api.chat.get(sessionId).then((c) => live && setChat(c))
@@ -58,6 +61,13 @@ export function ChatPanel({
   useEffect(() => window.api.chat.onDelta(({ requestId, text }) => setStreams((x) => ({ ...x, [requestId]: (x[requestId] ?? '') + text }))), [])
 
   const entries = chat?.entries ?? []
+  // A card asked now (still running) shows open; earlier ones are folded.
+  const runningIds = entries.filter((e) => e.role === 'user' && e.runId && session?.doc?.aiRuns?.find((r) => r.id === e.runId)?.status === 'running').map((e) => e.runId!)
+  const runningKey = runningIds.join(',')
+  useEffect(() => {
+    if (runningIds.length) setOpenRuns((x) => (runningIds.every((id) => x.has(id)) ? x : new Set([...x, ...runningIds])))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningKey])
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [entries.length, streams])
@@ -140,48 +150,57 @@ export function ChatPanel({
           </div>
         )}
         {entries.map((e, i) => {
+          // A card's answer is shown in its question's fold.
+          if (e.role === 'assistant' && e.runId) return null
           const prev = entries[i - 1]
           const version = e.version && prev?.version !== undefined && e.version !== prev.version ? <div className="chat-divider">Version {e.version}</div> : null
           const summarised = chat?.summary && prev?.id === chat.summary.through ? <div className="chat-divider" title="To keep each request a manageable size, the AI is sent a summary of the messages above, then the rest as written.">Earlier messages are summarised for the AI</div> : null
+          const reply = e.runId ? entries.find((x) => x.role === 'assistant' && x.runId === e.runId) : undefined
           return (
             <div key={e.id} className="chat-entry">
               {summarised}
               {version}
-              {e.role === 'user' ? (
-                <div className={`msg user ${e.runId ? 'task' : ''}`}>
+              {e.runId ? (
+                <TaskFold
+                  question={e}
+                  reply={reply}
+                  run={runOf(e.runId)}
+                  open={openRuns.has(e.runId)}
+                  onOpen={(on) =>
+                    setOpenRuns((x) => {
+                      const n = new Set(x)
+                      if (on) n.add(e.runId!)
+                      else n.delete(e.runId!)
+                      return n
+                    })
+                  }
+                  pending={!reply && runOf(e.runId)?.status === 'running' ? waiting(streams[e.runId]) : null}
+                  answer={reply ? answer(reply) : null}
+                  following={followUp === e.runId}
+                  onFollowUp={() => {
+                    setFollowUp(e.runId!)
+                    inputRef.current?.focus()
+                  }}
+                  onShowText={onShowText}
+                />
+              ) : e.role === 'user' ? (
+                <div className="msg user">
                   {e.about && <FollowedUp text={questionOf(e.about)} />}
-                  {e.runId ? <CardQuestion text={e.content} run={runOf(e.runId)} onShowText={onShowText} /> : e.content}
+                  {e.content}
                 </div>
               ) : (
-                // The AI's answer: in the flow of the page, not in a bubble. A card's answer is a one-off, marked as such.
-                <div className={`msg assistant ${e.failed ? 'failed' : ''} ${e.runId ? 'task' : ''}`}>
-                  {e.runId && !e.failed && <div className="msg-task-label">One-off check · not part of the conversation</div>}
-                  {answer(e)}
-                  {e.runId && !e.failed && (
-                    <button
-                      className={`btn sm msg-follow ${followUp === e.runId ? 'on' : ''}`}
-                      onClick={() => {
-                        setFollowUp(e.runId!)
-                        inputRef.current?.focus()
-                      }}
-                      title="Ask about this answer: it goes into the conversation with your question"
-                    >
-                      <Icon name="chat" size={13} /> Ask a follow-up
-                    </button>
-                  )}
-                  {/* An answer to a card, until the conversation goes on: back to the review, where it's on the card too. */}
-                  {e.runId && e === last && !asking && (
-                    <button className="btn sm msg-return" onClick={onReturn}>
-                      <span className="back-chevron">
-                        <Chevron size={10} />
-                      </span>{' '}
-                      Return to review
-                    </button>
-                  )}
-                </div>
+                // The AI's answer: in the flow of the page, not in a bubble.
+                <div className={`msg assistant ${e.failed ? 'failed' : ''}`}>{answer(e)}</div>
               )}
-              {/* A card's question still being answered. */}
-              {e.role === 'user' && e.runId && !answered.has(e.runId) && runOf(e.runId)?.status === 'running' && waiting(streams[e.runId])}
+              {/* A card's answer, until the conversation goes on: back to the review, where it's on the card too. */}
+              {reply && reply === last && !asking && (
+                <button className="btn sm msg-return" onClick={onReturn}>
+                  <span className="back-chevron">
+                    <Chevron size={10} />
+                  </span>{' '}
+                  Return to review
+                </button>
+              )}
             </div>
           )
         })}
@@ -222,6 +241,165 @@ export function ChatPanel({
         </button>
       </form>
     </div>
+  )
+}
+
+/**
+ * An AI card's question and answer in Ask AI: a one-off, not part of the conversation, so it
+ * folds away. Folded, a thin row: the question, a line of the answer, and a bar to hold to open
+ * it (the bar fills from where it's pressed; when full it opens). Open, the bar at the bottom
+ * closes it with a click.
+ */
+function TaskFold({
+  question,
+  reply,
+  run,
+  open,
+  onOpen,
+  pending,
+  answer,
+  following,
+  onFollowUp,
+  onShowText
+}: {
+  question: ChatEntry
+  reply?: ChatEntry
+  run?: AiTaskRun
+  open: boolean
+  onOpen: (on: boolean) => void
+  pending: ReactNode
+  answer: ReactNode
+  following: boolean
+  onFollowUp: () => void
+  onShowText: (blockIds: string[], quote: string) => void
+}) {
+  const q = question.content.split('\n\n> ')[0]
+  const m = q.match(/^(.*?)\s*\(([^()]*)\)\s*$/)
+  return (
+    <section className={`task-fold ${open ? 'open' : ''}`}>
+      {open ? (
+        <div className="task-fold-body">
+          <div className="msg user">
+            <CardQuestion text={question.content} run={run} onShowText={onShowText} />
+          </div>
+          {pending}
+          {reply && (
+            <div className={`msg assistant ${reply.failed ? 'failed' : ''}`}>
+              {answer}
+              {!reply.failed && (
+                <button className={`btn sm msg-follow ${following ? 'on' : ''}`} onClick={onFollowUp} title="Ask about this answer: it goes into the conversation with your question">
+                  <Icon name="chat" size={13} /> Ask a follow-up
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="task-fold-head">
+          <Icon name="sparkle" size={13} />
+          <div className="task-fold-text">
+            <strong>
+              {m ? m[1] : q}
+              {m && <span className="faint"> · {m[2]}</span>}
+            </strong>
+            <span className={`faint ${reply?.failed ? 'dr-err' : ''}`}>{reply ? overview(reply, run) : pending ? 'Working on it…' : 'No answer.'}</span>
+          </div>
+        </div>
+      )}
+      {open ? (
+        <button className="task-fold-bar" onClick={() => onOpen(false)}>
+          <span className="task-fold-chev up">
+            <Chevron size={10} />
+          </span>
+          Close
+        </button>
+      ) : (
+        <HoldBar onDone={() => onOpen(true)} />
+      )}
+    </section>
+  )
+}
+
+/** A line of the answer: its summary, or the start of its text. */
+function overview(reply: ChatEntry, run?: AiTaskRun): string {
+  const text = run?.parts?.find((p) => p.type === 'text')?.markdown ?? reply.content
+  const line = text
+    .replace(/^#+\s*/gm, '')
+    .replace(/[*_`>]/g, '')
+    .split('\n')
+    .map((x) => x.trim())
+    .find(Boolean) ?? ''
+  return line.length > 140 ? `${line.slice(0, 140).trimEnd()}…` : line
+}
+
+const HOLD_MS = 550
+
+/**
+ * Hold to open: while pressed, a tint spreads from the pointer to every corner of the bar; when
+ * it covers the bar, `onDone`. Let go early and it drains away. Enter or Space opens at once.
+ */
+function HoldBar({ onDone }: { onDone: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  const [fill, setFill] = useState<{ x: number; y: number; r: number; on: boolean } | null>(null)
+  const timer = useRef(0)
+  const start = (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    const box = ref.current!.getBoundingClientRect()
+    const x = e.clientX - box.left
+    const y = e.clientY - box.top
+    // Far enough to reach the furthest corner.
+    const r = Math.max(Math.hypot(x, y), Math.hypot(box.width - x, y), Math.hypot(x, box.height - y), Math.hypot(box.width - x, box.height - y))
+    ref.current!.setPointerCapture(e.pointerId)
+    setFill({ x, y, r, on: false })
+    requestAnimationFrame(() => setFill((f) => (f ? { ...f, on: true } : f)))
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      setFill(null)
+      onDone()
+    }, HOLD_MS)
+  }
+  const stop = () => {
+    window.clearTimeout(timer.current)
+    setFill((f) => (f ? { ...f, on: false } : f))
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  return (
+    <button
+      ref={ref}
+      className="task-fold-bar hold"
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onDone()
+        }
+      }}
+      title="Press and hold to open"
+    >
+      {fill && (
+        <span
+          className="task-fold-fill"
+          style={{
+            left: fill.x - fill.r,
+            top: fill.y - fill.r,
+            width: fill.r * 2,
+            height: fill.r * 2,
+            transform: `scale(${fill.on ? 1 : 0})`,
+            transitionDuration: fill.on ? `${HOLD_MS}ms` : '180ms'
+          }}
+          aria-hidden
+        />
+      )}
+      <span className="task-fold-label">
+        <span className="task-fold-chev">
+          <Chevron size={10} />
+        </span>
+        Hold to open
+      </span>
+    </button>
   )
 }
 
