@@ -287,24 +287,11 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
       )}
-      {/* Fixed at the bottom of the column: what you do with the review as a whole. */}
-      <div className="rc-footer">
-          <div className="rc-actions">
-            <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it">
-              <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
-            </button>
-            <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
-              <Icon name="doc" size={14} /> Marked-up copy
-            </button>
-            <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
-              <Icon name="mail" size={14} /> Draft response
-            </button>
-          </div>
-      </div>
     </div>
   )
 
   return (
+    <div className="dr-main">
     <div className="ed-wrap">
       {error && (
         <div className="banner danger dr-error">
@@ -334,6 +321,19 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       {panel && createPortal(column, panel)}
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
+    </div>
+      {/* Fixed at the bottom of the document: what you do with the review as a whole. */}
+      <div className="doc-footer">
+        <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
+          <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
+        </button>
+        <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
+          <Icon name="doc" size={14} /> Marked-up copy
+        </button>
+        <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
+          <Icon name="mail" size={14} /> Draft response
+        </button>
+      </div>
     </div>
   )
 }

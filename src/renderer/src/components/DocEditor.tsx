@@ -504,6 +504,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // The text stops 72px short of the page's edge: the button starts just after it, and its
         // label runs outward when there's room before whatever clips the page (the scrolling
         // pane); otherwise it sits against that edge, over the end of the line.
+        // Positioned in the page's frame (the host's parent).
         const wrap = host.current!.parentElement!
         let clip = wrap
         while (clip.parentElement && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement
@@ -884,22 +885,22 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
             </button>
           ))}
         </div>
+        {bubble && (
+          <button
+            className={`ed-gutter-btn ${bubble.left !== undefined ? 'out' : ''}`}
+            style={bubble.left !== undefined ? { top: bubble.y, left: bubble.left } : { top: bubble.y }}
+            title="Comment on the selected text (in the right-hand column)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              cb.current.onComment(bubble.blockId, bubble.quote)
+              setBubble(null)
+            }}
+          >
+            <CommentIcon size={16} />
+            <span>{commentLabel(commentsOn(bubble.blockId))}</span>
+          </button>
+        )}
       </div>
-      {bubble && (
-        <button
-          className={`ed-gutter-btn ${bubble.left !== undefined ? 'out' : ''}`}
-          style={bubble.left !== undefined ? { top: bubble.y, left: bubble.left } : { top: bubble.y }}
-          title="Comment on the selected text (in the right-hand column)"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            cb.current.onComment(bubble.blockId, bubble.quote)
-            setBubble(null)
-          }}
-        >
-          <CommentIcon size={16} />
-          <span>{commentLabel(commentsOn(bubble.blockId))}</span>
-        </button>
-      )}
     </>
   )
 }
