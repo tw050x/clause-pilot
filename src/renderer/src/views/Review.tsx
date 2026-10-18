@@ -5,6 +5,8 @@ interface Props {
   session: ReviewSession
   /** Right sidebar element the review controls are rendered into. */
   panel: HTMLElement | null
+  /** The bar under the document and the review column, for the review's actions. */
+  bar: HTMLElement | null
   onChange: (s: ReviewSession) => void
   onNominationsChanged: () => void
   /** Debug mode (Settings): show raw AI responses. */

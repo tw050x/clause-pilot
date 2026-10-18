@@ -20,6 +20,8 @@ import { Markdown } from '../components/Markdown'
 interface Props {
   session: ReviewSession
   panel: HTMLElement | null
+  /** The bar under the document and the review column: the review's actions, and Accept / Reject. */
+  bar: HTMLElement | null
   onChange: (s: ReviewSession) => void
   alert: SecurityAlert | null
   onOpenSecurity: () => void
@@ -49,7 +51,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
+export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -60,6 +62,8 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
   /** Each new selection is a new action: everything decided in it undoes together. */
   const [selection, setSelection] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
+  /** The right of the bottom bar, where the selection's Accept and Reject go. */
+  const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars take room at the top; they can be folded to one line.
   // Remembered on this machine (a convenience only).
   const [showKey, setShowKey] = useState(() => {
@@ -270,7 +274,7 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
       ) : picked && picked.length > 0 ? (
         <>
-          <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} />
+          <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} slot={decideSlot} />
           {highlight && hlBlock && (
             <section className="rc-section">
               <CommentsBlock session={session} b={hlBlock} quote={highlight.quote} draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
@@ -327,8 +331,12 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
-      {/* Fixed at the bottom of the document: what you do with the review as a whole. */}
-      <div className="doc-footer">
+      {/* In the bar under the document and the review column: the review as a whole on the left,
+          Accept / Reject for the selected changes on the right. */}
+      {bar &&
+        createPortal(
+          <>
+            <div className="bottombar-group">
         <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
           <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
         </button>
@@ -338,8 +346,32 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
         <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
           <Icon name="mail" size={14} /> Draft response
         </button>
-      </div>
+            </div>
+            <div className="bottombar-group" ref={setDecideSlot}>
+              {!(picked && picked.length > 0 && !showHistory) && <DecideButtons open={0} />}
+            </div>
+          </>,
+          bar
+        )}
     </div>
+  )
+}
+
+/**
+ * Accept and Reject in the bottom bar: for the changes of theirs in the selection that are still
+ * open, all at once. Shown, disabled, when there's nothing selected to decide.
+ */
+function DecideButtons({ open, busy, onDecide }: { open: number; busy?: boolean; onDecide?: (outcome: 'accepted' | 'rejected') => void }) {
+  const why = open ? undefined : 'Select their changes in the document to accept or reject them'
+  return (
+    <>
+      <button className="btn sm accept" disabled={!open || busy} title={why} onClick={() => onDecide?.('accepted')}>
+        <Icon name="check" size={13} /> Accept{open > 1 ? ` all ${open}` : ''}
+      </button>
+      <button className="btn sm reject" disabled={!open || busy} title={why} onClick={() => onDecide?.('rejected')}>
+        <Icon name="x" size={13} /> Reject{open > 1 ? ` all ${open}` : ''}
+      </button>
+    </>
   )
 }
 
@@ -357,13 +389,16 @@ function SelectionPanel({
   picked,
   act,
   group,
-  highlighted
+  highlighted,
+  slot
 }: {
   session: ReviewSession
   picked: SelectedChange[]
   act: (p: Promise<ReviewSession>) => Promise<boolean>
   group: string
   highlighted: boolean
+  /** Where Accept and Reject go: the right of the bottom bar. */
+  slot: HTMLElement | null
 }) {
   const d = session.doc!
   const blocks = new Map(d.blocks.map((b) => [b.id, b]))
@@ -432,16 +467,12 @@ function SelectionPanel({
         )}
       </h4>
       {items.length > 1 && <p className="faint dr-small">{counts.join(', ')}</p>}
+      {slot && createPortal(<DecideButtons open={open.length} busy={busy} onDecide={decide} />, slot)}
       {theirs.length > 0 &&
         (open.length ? (
-          <div className="dr-card-actions">
-            <button className="btn sm accept" disabled={busy} onClick={() => decide('accepted')}>
-              <Icon name="check" size={13} /> Accept{open.length > 1 ? ` all ${open.length}` : ''}
-            </button>
-            <button className="btn sm reject" disabled={busy} onClick={() => decide('rejected')}>
-              Reject{open.length > 1 ? ` all ${open.length}` : ''}
-            </button>
-          </div>
+          <p className="faint dr-small">
+            {open.length === 1 ? 'Accept or reject it' : `Accept or reject all ${open.length}`} with the buttons at the bottom right.
+          </p>
         ) : (
           <p className={`dr-small sel-done ${rejected && !accepted ? 'rejected' : accepted && !rejected ? 'accepted' : ''}`}>
             {accepted && rejected ? `${accepted} accepted, ${rejected} rejected` : accepted ? (accepted === 1 ? 'Accepted' : `All ${accepted} accepted`) : rejected === 1 ? 'Rejected' : `All ${rejected} rejected`}

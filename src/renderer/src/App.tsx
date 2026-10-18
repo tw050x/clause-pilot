@@ -28,6 +28,7 @@ export function App() {
   const [navOpen, setNavOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
+  const [bottomBar, setBottomBar] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -211,6 +212,9 @@ export function App() {
           onNewContract={() => setView('new-contract')}
           onChooseAccount={() => setPickerOpen(true)}
         />
+        {/* Beside the menu: the page (and the review column), with the review's bar under both. */}
+        <div className="work">
+        <div className="work-row">
         <main className="main">
           {error && (
             <div className="banner danger" style={{ margin: 12 }}>
@@ -231,6 +235,7 @@ export function App() {
             <Review
               session={session}
               panel={reviewPanel}
+              bar={bottomBar}
               onChange={setSession}
               onNominationsChanged={refreshNominations}
               alert={alerts.find((a) => a.sessionId === session.id) ?? null}
@@ -315,6 +320,10 @@ export function App() {
             <ChatPanel session={session} debug={!!settings?.debug} />
           </div>
         </aside>
+        </div>
+        {/* The review's actions, under the document and the review column: rendered into by a portal. */}
+        <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
+        </div>
       </div>
       {pickerOpen && (
         <AccountPicker

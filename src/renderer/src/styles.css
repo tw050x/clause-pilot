@@ -99,7 +99,7 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .body { display: flex; min-height: 0; min-width: 0; position: relative; overflow: hidden; }
 /* The sidebar floats off the window edges as a card. */
 .nav { width: 232px; flex-shrink: 0; margin: 10px 0 12px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; transition: margin 0.25s ease; }
-.nav.closed { margin-left: -248px; } /* width + left margin + border, so it slides fully out */
+.nav.closed { margin-left: -232px; } /* its width (border included): fully out, and what's beside it starts at the window's edge */
 .nav-section { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); padding: 12px 10px 4px; }
 .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 7px; border: none; background: none; cursor: pointer; text-align: left; color: var(--text-2); width: 100%; }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
@@ -108,6 +108,13 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .nav-item .sub { display: block; font-size: 11.5px; color: var(--text-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Beside the menu: the page and the review column, with the review's bar under both. */
+.work { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.work-row { flex: 1; min-height: 0; display: flex; }
+/* A card like the menu, from the menu's edge (or the window's, with it closed) to the window's. */
+.bottombar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 12px 12px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.bottombar[hidden] { display: none; }
+.bottombar-group { display: flex; align-items: center; gap: 8px; }
 
 /* ---- right sidebar: review controls + chat ---- */
 /* Floats off the window edges as a card, like the left sidebar. */
@@ -667,7 +674,6 @@ del.us-del ins.th-ins { color: inherit; }
 .dr-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ed-wrap { flex: 1; min-height: 0; overflow-y: auto; background: var(--surface); position: relative; }
 /* Under the document, always in view: what you do with the review as a whole. */
-.doc-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 18px; background: var(--surface); }
 .ed-doc { max-width: 860px; margin: 0 auto; padding: 40px 72px 200px; outline: none; font: 15px/1.6 Georgia, 'Times New Roman', serif; color: var(--text); caret-color: var(--rejected); }
 .ed-row { position: relative; margin: 0 0 10px; padding-left: 12px; border-left: 3px solid transparent; }
 .ed-row.theirs { border-left-color: color-mix(in srgb, #1d4ed8 45%, transparent); }
@@ -706,7 +712,7 @@ del.us-del ins.th-ins { color: inherit; }
 .sel-st.accepted { color: var(--exact); }
 .sel-st.rejected { color: var(--rejected); }
 
-.doc-footer .btn.on { background: var(--surface-2); border-color: var(--text-3); }
+.bottombar .btn.on { background: var(--surface-2); border-color: var(--text-3); }
 .hist-list { display: flex; flex-direction: column; gap: 8px; }
 .hist-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12.5px; }
 .hist-item.undone .hist-label { color: var(--text-3); text-decoration: line-through; }
