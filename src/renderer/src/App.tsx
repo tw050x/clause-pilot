@@ -311,7 +311,7 @@ export function App() {
           {/* The Review view renders its controls into this element through a portal. */}
           <div className="rightbar-body" ref={setReviewPanel} style={{ display: rightTab === 'review' ? undefined : 'none' }} />
           <div className="rightbar-chat" style={{ display: rightTab === 'chat' ? undefined : 'none' }}>
-            <ChatPanel session={session} />
+            <ChatPanel session={session} debug={!!settings?.debug} />
           </div>
         </aside>
       </div>

@@ -1193,11 +1193,33 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requ
     addChat(s, { role: 'assistant', content: `Sorry, that failed: ${NO_MODEL()}`, failed: true })
     return
   }
+  // What Debug mode shows: who answered, how much was sent, and what came back.
+  const conf = loadSettings()
+  const raw: Record<string, unknown> = { provider: conf.aiProvider, model: conf.aiProvider === 'vllm' ? conf.vllmModel : conf.model }
+  let streamed = ''
   try {
-    const text = await model.chat(chatSystem(s), await chatRequestFor(s, model), (t) => send('chat:delta', { requestId, text: t }), (u) => ws.audit.append('system', 'chat.usage', s.id, { ...u }), () => send('chat:thinking', { requestId }))
-    addChat(s, { role: 'assistant', content: text })
+    const request = await chatRequestFor(s, model)
+    raw.sent = { messages: request.length, characters: request.reduce((n, m) => n + m.content.length, 0) }
+    const text = await model.chat(
+      chatSystem(s),
+      request,
+      (t) => {
+        streamed += t
+        send('chat:delta', { requestId, text: t })
+      },
+      (u) => {
+        raw.usage = u
+        ws.audit.append('system', 'chat.usage', s.id, { ...u })
+      },
+      () => {
+        raw.thinking = true
+        send('chat:thinking', { requestId })
+      }
+    )
+    addChat(s, { role: 'assistant', content: text, raw: { ...raw, text } })
   } catch (e) {
-    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${e instanceof Error ? e.message : String(e)}`, failed: true })
+    const error = e instanceof Error ? e.message : String(e)
+    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${error}`, failed: true, raw: { ...raw, error, ...(streamed ? { text: streamed } : {}) } })
   }
 })
 

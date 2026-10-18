@@ -818,7 +818,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ai-card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11.5px; }
 .ai-card-go svg { color: inherit; margin-top: 0; }
 .ai-card-foot .link-btn { font-size: 11.5px; }
-.ai-raw { margin: 6px 0 0; max-height: 260px; overflow: auto; font: 11px ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
 
 /* ---- structured AI answers: text, then a card per finding with its actions ---- */
 .ai-answer { display: flex; flex-direction: column; gap: 8px; }
@@ -893,3 +892,8 @@ del.us-del ins.th-ins { color: inherit; }
 .schema-help p:last-child { margin-bottom: 0; }
 .schema-help .kv { margin-bottom: 8px; font-size: 12.5px; }
 .schema-help code { font-size: 12px; }
+/* Debug mode: an AI answer as returned. */
+.modal.raw-modal { width: min(860px, calc(100vw - 48px)); }
+.raw-modal .modal-head h3 { margin: 0; font-size: 15px; }
+.raw-text { margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-2); font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.msg-raw { display: block; margin-top: 6px; font-size: 11.5px; color: var(--text-3); }

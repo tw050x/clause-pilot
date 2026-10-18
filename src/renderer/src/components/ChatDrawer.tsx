@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChatConversation, ReviewSession } from '@shared/types'
+import type { ChatConversation, ChatEntry, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
+import { RawModal } from './RawModal'
 
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
@@ -10,7 +11,7 @@ const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 
  * cards, and reach the conversation only as part of the review state the AI is sent. What the AI
  * is sent is managed in the main process: older messages are summarised once the conversation grows long.
  */
-export function ChatPanel({ session }: { session: ReviewSession | null }) {
+export function ChatPanel({ session, debug }: { session: ReviewSession | null; debug: boolean }) {
   const [chat, setChat] = useState<ChatConversation | null>(null)
   /** Answers streaming in, by request id. */
   const [streams, setStreams] = useState<Record<string, string>>({})
@@ -18,6 +19,8 @@ export function ChatPanel({ session }: { session: ReviewSession | null }) {
   /** A question waiting on its answer. */
   const [asking, setAsking] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  /** Debug mode: the answer whose raw response is open. */
+  const [rawOf, setRawOf] = useState<ChatEntry | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const key = session ? (session.contractId ?? session.id) : null
   const sessionId = session?.id
@@ -140,6 +143,11 @@ export function ChatPanel({ session }: { session: ReviewSession | null }) {
                       Ask again
                     </button>
                   )}
+                  {debug && (
+                    <button className="link-btn msg-raw" onClick={() => setRawOf(e)}>
+                      Raw response
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -147,6 +155,14 @@ export function ChatPanel({ session }: { session: ReviewSession | null }) {
         })}
         {asking && last?.role === 'user' && waiting(asking)}
       </div>
+      {rawOf && (
+        <RawModal
+          title="Raw response: the Agent"
+          raw={rawOf.raw ?? rawOf.content}
+          note={rawOf.raw ? `As the server returned it, ${new Date(rawOf.at).toLocaleString()}.` : 'Saved before raw responses were kept: the answer as saved.'}
+          onClose={() => setRawOf(null)}
+        />
+      )}
       <form
         className="chat-input"
         onSubmit={(e) => {

@@ -8,6 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { AiAnswer } from '../components/AiAnswer'
+import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
 import { questionIdOf } from '@shared/questions'
@@ -1086,12 +1087,12 @@ function AiCard({
               {result.by} · {new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
             {debug && (
-              <button className="link-btn" onClick={() => setRaw((v) => !v)}>
-                {raw ? 'Hide' : 'Raw'} response
+              <button className="link-btn" onClick={() => setRaw(true)}>
+                Raw response
               </button>
             )}
           </div>
-          {debug && raw && <pre className="ai-raw">{typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw, null, 2)}</pre>}
+          {debug && raw && <RawModal title={`Raw response: ${title}`} raw={result.raw ?? null} note={`As the server returned it, ${result.by} · ${new Date(result.at).toLocaleString()}.`} onClose={() => setRaw(false)} />}
         </div>
       )}
       {running && (stream.text || stream.thinking) && (

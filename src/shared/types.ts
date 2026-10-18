@@ -704,6 +704,8 @@ export interface ChatEntry {
   about?: string
   /** An answer that failed: shown, but not sent to the AI as context. */
   failed?: boolean
+  /** An answer as the server returned it, with how it was asked (shown in Debug mode). */
+  raw?: unknown
 }
 
 /**
