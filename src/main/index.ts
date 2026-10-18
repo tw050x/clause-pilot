@@ -127,6 +127,8 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 640,
     title: 'Clause Pilot',
+    // Windows and Linux in development (packaged builds use the executable's icon).
+    ...(!app.isPackaged && process.platform !== 'darwin' ? { icon: join(appRoot, 'build/icon.png') } : {}),
     backgroundColor: '#ffffff',
     // Frameless: the app draws its own 44px top bar. macOS keeps its traffic lights
     // (centred in that bar); Windows/Linux get native buttons overlaid on the right.
@@ -159,6 +161,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // A packaged app takes its icon from the bundle; in development, show it in the Dock too.
+  const devIcon = join(appRoot, 'build/icon.png')
+  if (!app.isPackaged && process.platform === 'darwin' && existsSync(devIcon)) app.dock?.setIcon(devIcon)
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })

@@ -12,6 +12,7 @@
     "demo:build": "tsx --tsconfig tsconfig.node.json scripts/demo/build.ts",
     "release": "electron-vite build && electron-builder",
     "pack": "electron-vite build && electron-builder --dir",
+    "icon": "electron scripts/icon.mjs",
     "docs:check": "tsx --tsconfig tsconfig.node.json scripts/check-docs.ts"
   },
   "dependencies": {

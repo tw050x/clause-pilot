@@ -3,6 +3,8 @@ appId: com.clausepilot.app
 productName: Clause Pilot
 directories:
   output: release
+  # The icons live here (made from build/icon.svg by npm run icon).
+  buildResources: build
 files:
   - out/**
   - data/**
@@ -10,11 +12,13 @@ files:
 # Builds are unsigned for now; macOS will ask users to confirm on first open.
 mac:
   category: public.app-category.business
+  icon: build/icon.icns
   target:
     - target: dmg
       arch: [arm64, x64]
   identity: null
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
@@ -23,6 +27,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 linux:
   category: Office
+  icon: build/icon.png
   target:
     - target: AppImage
       arch: [x64]
