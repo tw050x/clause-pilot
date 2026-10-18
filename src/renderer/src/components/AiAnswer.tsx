@@ -32,7 +32,7 @@ export function AiAnswer({
           <div key={i} className={`ai-finding ${p.tone}`}>
             <div className="ai-finding-head">
               <strong>{p.title}</strong>
-              <span className={`ai-verdict ${p.tone}`}>{p.verdict}</span>
+              {p.verdict && <span className={`ai-verdict ${p.tone}`}>{p.verdict}</span>}
             </div>
             {p.where && (
               <button className="msg-link ai-where" onClick={() => onShow(p.where!.blockIds)} title="Show in the document">

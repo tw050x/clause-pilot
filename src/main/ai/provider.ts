@@ -11,9 +11,7 @@ import {
   PositionSchema,
   EmailSchema,
   ChangeSchema,
-  FindingsSchema,
-  type FindingsInput,
-  type FindingsOut,
+  type StructuredInput,
   type ChangeInput,
   type ChangeOut,
   type IntentInput,
@@ -35,7 +33,7 @@ import {
   EMAIL_SYSTEM,
   paragraphsBlock,
   changeQuestion,
-  FINDINGS_SYSTEM
+  STRUCTURED_SYSTEM
 } from './prompts'
 
 export interface AiProvider {
@@ -44,7 +42,8 @@ export interface AiProvider {
   overrides(input: OverridesInput): Promise<OverridesOut>
   position(input: PositionInput): Promise<PositionOut>
   change(input: ChangeInput): Promise<ChangeOut>
-  findings(input: FindingsInput): Promise<FindingsOut>
+  /** An answer in the shape of the input's JSON Schema, checked against it. */
+  schemaAnswer(input: StructuredInput): Promise<unknown>
 }
 
 /** A change review is replayed by the contract and the change; the playbook and history it was given are context. */
@@ -133,16 +132,28 @@ export class AnthropicProvider implements AiProvider {
     )
   }
 
-  findings(input: FindingsInput): Promise<FindingsOut> {
-    return this.structured(
-      FindingsSchema,
-      FINDINGS_SYSTEM,
-      [
-        { type: 'text', text: input.contract, cache_control: { type: 'ephemeral' } },
-        { type: 'text', text: input.question }
-      ],
-      'medium'
-    )
+  /** A question's own JSON Schema (not a Zod schema): the answer is parsed here and checked against it. */
+  async schemaAnswer(input: StructuredInput): Promise<unknown> {
+    const res = await this.client.beta.messages.create({
+      model: this.model,
+      max_tokens: 16000,
+      betas: BETAS,
+      fallbacks: 'default',
+      system: STRUCTURED_SYSTEM,
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: input.schema } },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: input.contract, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: input.question }
+          ]
+        }
+      ]
+    })
+    if (res.stop_reason === 'refusal') throw new AiRefusalError('The model declined this request.')
+    if (res.stop_reason === 'max_tokens') throw new Error('The model response was cut off (max_tokens).')
+    return checked(input.schema, res.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''))
   }
 
   email(userPrompt: string): Promise<EmailOut> {
@@ -281,8 +292,21 @@ export class VllmProvider implements AiProvider {
   change(input: ChangeInput): Promise<ChangeOut> {
     return this.structured('change_review', ChangeSchema, DOCUMENT_SYSTEM, `${paragraphsBlock(input.contract)}\n\n${changeQuestion(input)}`)
   }
-  findings(input: FindingsInput): Promise<FindingsOut> {
-    return this.structured('findings', FindingsSchema, FINDINGS_SYSTEM, `${input.contract}\n\n${input.question}`)
+  async schemaAnswer(input: StructuredInput): Promise<unknown> {
+    const res = await this.post({
+      messages: [
+        { role: 'system', content: STRUCTURED_SYSTEM },
+        { role: 'user', content: `${input.contract}\n\n${input.question}` }
+      ] satisfies Msg[],
+      temperature: 0,
+      max_tokens: 8000,
+      response_format: { type: 'json_schema', json_schema: { name: 'answer', schema: input.schema, strict: true } }
+    })
+    const body = (await res.json()) as { choices?: { message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }[] }
+    const choice = body.choices?.[0]
+    if (choice?.message?.refusal) throw new AiRefusalError('The model declined this request.')
+    if (choice?.finish_reason === 'length') throw new Error('The model response was cut off (max_tokens).')
+    return checked(input.schema, choice?.message?.content ?? '')
   }
 
   /**
@@ -345,6 +369,29 @@ export class VllmProvider implements AiProvider {
   }
 }
 
+/**
+ * A structured answer read and checked against the JSON Schema it was asked for (as Zod reads
+ * it), so the app only builds cards from what was asked for.
+ */
+function checked(schema: Record<string, unknown>, text: string): unknown {
+  let json: unknown
+  try {
+    // Some models wrap JSON in a code fence even when asked not to.
+    json = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+  } catch {
+    throw new Error('The model returned output that was not valid JSON.')
+  }
+  let validator: z.ZodType
+  try {
+    validator = zod.fromJSONSchema(schema as Parameters<typeof zod.fromJSONSchema>[0])
+  } catch {
+    return json
+  }
+  const r = validator.safeParse(json)
+  if (!r.success) throw new Error(`The model's answer didn't match the question's schema: ${r.error.issues.slice(0, 4).map((i) => `${i.path.join('.') || '(top)'} ${i.message}`).join('; ')}`)
+  return json
+}
+
 /** Room for a chat answer, including a reasoning model's thinking (which counts against it). */
 const CHAT_MAX_TOKENS = 8000
 
@@ -370,7 +417,7 @@ export interface ChatUsage {
 /** No AI configured: every AI step says what's missing; everything else still works. */
 export const noAiProvider = (why: string): AiProvider => {
   const fail = () => Promise.reject(new Error(why))
-  return { kind: 'none', intent: fail, overrides: fail, position: fail, change: fail, findings: fail }
+  return { kind: 'none', intent: fail, overrides: fail, position: fail, change: fail, schemaAnswer: fail }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +485,7 @@ export class RecordingProvider implements AiProvider {
   change(input: ChangeInput) {
     return this.rec('change', changeKey(input), () => this.inner.change(input))
   }
-  findings(input: FindingsInput) {
-    return this.rec('findings', input, () => this.inner.findings(input))
+  schemaAnswer(input: StructuredInput) {
+    return this.rec('structured', input, () => this.inner.schemaAnswer(input))
   }
 }

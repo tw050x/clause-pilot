@@ -16,7 +16,8 @@ import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, m
 import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
 import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
-import { answerMarkdown, changesAnswer, findingsAnswer, intentAnswer, playbookAnswer } from './ai/answers'
+import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnswer } from './ai/answers'
+import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf } from './questions'
 import { defaultQuestions, methodOf } from '@shared/questions'
@@ -1012,14 +1013,17 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
         sets.map((x) => ({ change: x.where, response: raws[x.id] ?? null }))
       )
     } else if (q.answer === 'findings') {
-      // Once, as findings: the contract (or the highlighted paragraphs) first, so it can be cached.
+      // Once, as cards, in the shape of the question's schema (or the default): the contract (or
+      // the highlighted paragraphs) first, so it can be cached.
       const whole = data.includes('contract')
       const contract = whole ? contractOf(s) : paragraphsOf(s, blocks)
       const extra = contextFor(s, blocks, data, knowledge, whole ? ['contract'] : ['contract', 'paragraphs'])
-      const out = await provider().findings({ contract, question: [extra, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n') })
-      injection(q.title, out)
+      const schema = q.schema ?? DEFAULT_SCHEMA
+      const out = await provider().schemaAnswer({ contract, question: [extra, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n'), schema: schemaToSend(schema) })
+      const flags = out as { injection_suspected?: boolean; injection_notes?: string }
+      injection(q.title, { injection_suspected: !!flags.injection_suspected, injection_notes: String(flags.injection_notes ?? '') })
       const allowed = new Set((whole ? d.blocks : blocks).map((b) => b.id))
-      done(findingsAnswer(out, placeIn(allowed), prose(d)), out)
+      done(schemaAnswer(out, schema, placeIn(allowed), prose(d)), out)
     } else {
       // Once, in writing: streamed, like the Agent.
       const model = chatModel()
@@ -1049,6 +1053,10 @@ ipcMain.handle('questions:save', (_e, q: AiQuestion) => {
   const before = i < 0 ? null : all[i]
   const next: AiQuestion = { ...q, id: q.id || uid('q'), title: q.title.trim().replace(/^ask:\s*/i, ''), detail: q.detail.trim(), prompt: q.prompt.trim(), updatedBy: actor(), updatedAt: new Date().toISOString() }
   if (!next.title || !next.prompt) throw new Error('A question needs a title and a prompt.')
+  const bad = next.schema && schemaProblem(next.schema)
+  if (bad) throw new Error(`The response schema can't be used: ${bad}`)
+  // Only a question answered as cards, asked once, uses a schema.
+  if (next.method !== 'once' || next.answer !== 'findings') delete next.schema
   if (i < 0) all.push(next)
   else all[i] = next
   ws.store.saveQuestions(all)
@@ -1234,7 +1242,12 @@ ipcMain.handle('kb:import', async (_e, kind: KnowledgeKind) => {
     return result
   }
   if (kind === 'questions') {
-    const { next, result } = mergeQuestions(ws.store.questions(), parseImport<AiQuestion>('questions', raw), actor())
+    const incoming = parseImport<AiQuestion>('questions', raw)
+    for (const q of incoming) {
+      const bad = q.schema && schemaProblem(q.schema)
+      if (bad) throw new Error(`The response schema of “${q.title}” can't be used: ${bad}`)
+    }
+    const { next, result } = mergeQuestions(ws.store.questions(), incoming, actor())
     ws.store.saveQuestions(next)
     ws.audit.append(actor(), 'questions.imported', null, { file: res.filePaths[0], ...result })
     questionsChanged()

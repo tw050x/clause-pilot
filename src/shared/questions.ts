@@ -6,7 +6,7 @@ import type { AiQuestion, AiTaskKind, AiTaskRun, QuestionData, QuestionMethod } 
  */
 
 export const METHODS: { id: QuestionMethod; label: string; detail: string; fixed: QuestionData[] }[] = [
-  { id: 'once', label: 'Once, about the highlight', detail: 'One request. Answered in writing, or as findings with suggested wording.', fixed: [] },
+  { id: 'once', label: 'Once, about the highlight', detail: 'One request. Answered in writing, or as cards (with suggested wording to apply), in a shape you can set with a JSON Schema.', fixed: [] },
   {
     id: 'paragraphs',
     label: 'For each paragraph, against our approved wording',

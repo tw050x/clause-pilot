@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { AiQuestion, QuestionData, QuestionMethod } from '@shared/types'
 import { DATA, METHODS, methodOf } from '@shared/questions'
+import { CARD_FIELDS, DEFAULT_SCHEMA, schemaProblem } from '@shared/schema'
 import { useTransfer } from '../components/Transfer'
 import { Icon } from '../lib/icons'
 
@@ -95,7 +96,7 @@ export function QuestionsView() {
                 <dt>Asked</dt>
                 <dd>
                   {methodOf(q.method).label}
-                  {q.method === 'once' && <span className="faint"> · {q.answer === 'text' ? 'written answer' : 'findings'}</span>}
+                  {q.method === 'once' && <span className="faint"> · {q.answer === 'text' ? 'written answer' : q.schema ? 'cards, in its own schema' : 'cards'}</span>}
                 </dd>
                 <dt>Sent</dt>
                 <dd>
@@ -138,10 +139,26 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
   const set = (patch: Partial<AiQuestion>) => setQ((x) => ({ ...x, ...patch }))
   const method = methodOf(q.method)
   const fixed = (x: QuestionData) => method.fixed.includes(x)
-  const valid = q.title.trim() && q.prompt.trim()
+  // The response schema as typed (empty: the app's default).
+  const [schemaText, setSchemaText] = useState(initial.schema ? JSON.stringify(initial.schema, null, 2) : '')
+  const usesSchema = q.method === 'once' && q.answer === 'findings'
+  const parsed = useMemo(() => {
+    if (!schemaText.trim()) return { schema: undefined, error: null }
+    try {
+      const schema = JSON.parse(schemaText) as Record<string, unknown>
+      return { schema, error: schemaProblem(schema) }
+    } catch (e) {
+      return { schema: undefined, error: `Not valid JSON: ${(e as Error).message}` }
+    }
+  }, [schemaText])
+  const schemaError = usesSchema ? parsed.error : null
+  const valid = q.title.trim() && q.prompt.trim() && !schemaError
   const reset = async () => {
     const d = initial.origin ? await window.api.questions.defaultFor(initial.origin) : null
-    if (d) setQ({ ...d, id: initial.id, priority: q.priority })
+    if (d) {
+      setQ({ ...d, id: initial.id, priority: q.priority })
+      setSchemaText('')
+    }
   }
 
   return (
@@ -216,11 +233,12 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
               <input type="radio" name="answer" checked={q.answer === 'text'} onChange={() => set({ answer: 'text' })} /> Written, streamed as it’s written
             </label>
             <label className="row-gap" style={{ fontWeight: 400 }}>
-              <input type="radio" name="answer" checked={q.answer === 'findings'} onChange={() => set({ answer: 'findings' })} /> Findings, with suggested wording to apply
+              <input type="radio" name="answer" checked={q.answer === 'findings'} onChange={() => set({ answer: 'findings' })} /> Cards, with suggested wording to apply
             </label>
           </div>
         </div>
       )}
+      {q.method === 'once' && q.answer === 'findings' && <SchemaField text={schemaText} onText={setSchemaText} problem={schemaError} />}
       <div className="field">
         <label className="row-gap" style={{ fontWeight: 400 }}>
           <input type="checkbox" checked={q.priority} onChange={(e) => set({ priority: e.target.checked })} /> Prioritised
@@ -228,7 +246,7 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
         <span className="hint">Prioritised questions are cards in the review’s AI section. The rest are under More questions.</span>
       </div>
       <div className="row-gap">
-        <button className="btn primary" disabled={!valid} onClick={() => onSave(q)}>
+        <button className="btn primary" disabled={!valid} onClick={() => onSave({ ...q, schema: usesSchema ? parsed.schema : undefined })}>
           {initial.id ? 'Save' : 'Add question'}
         </button>
         <button className="btn ghost" onClick={onCancel}>
@@ -243,6 +261,49 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The response schema of a question answered as cards: optional JSON Schema, checked as it is
+ * typed. The app builds cards from the fields it recognises; the rest show as labelled lines.
+ */
+function SchemaField({ text, onText, problem }: { text: string; onText: (t: string) => void; problem: string | null }) {
+  const [help, setHelp] = useState(false)
+  return (
+    <div className="field wide">
+      <label>Response schema (optional)</label>
+      <textarea rows={text.trim() ? 14 : 3} value={text} onChange={(e) => onText(e.target.value)} placeholder="Empty: a summary, then a card per point (the app’s default). Or a JSON Schema of your own." spellCheck={false} />
+      {problem ? <span className="hint dr-err">{problem}</span> : <span className="hint">{text.trim() ? 'The AI answers in this shape. Every object is closed and its fields required unless you say which; constraints the AI providers can’t enforce (lengths, ranges) are left out.' : 'Using the default.'}</span>}
+      <div className="row-gap" style={{ marginTop: 2 }}>
+        <button className="btn sm" type="button" onClick={() => onText(JSON.stringify(DEFAULT_SCHEMA, null, 2))}>
+          {text.trim() ? 'Replace with the default' : 'Start from the default'}
+        </button>
+        <button className="link-btn" type="button" onClick={() => setHelp((x) => !x)}>
+          {help ? 'Hide' : 'What the app recognises'}
+        </button>
+      </div>
+      {help && (
+        <div className="schema-help">
+          <p>
+            At the top, a string <code>summary</code> is the answer’s first line; other strings, numbers and lists show as labelled lines. Each object, or list of objects, becomes cards, built from:
+          </p>
+          <dl className="kv">
+            {CARD_FIELDS.map((f) => (
+              <Fragment key={f.key}>
+                <dt>
+                  <code>{f.key}</code>
+                </dt>
+                <dd>{f.does}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          <p>
+            Any other field on a card shows as a labelled line. A property’s <code>title</code> is its label, and its <code>description</code> tells the AI what to put there. <code>injection_suspected</code> and <code>injection_notes</code> are always added, so text addressed to an AI reviewer still goes to Security.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

@@ -143,10 +143,10 @@ ${positions ? `\nOur standard positions:\n${positions}\n` : ''}${seen ? `\nHow w
 ${extra(input.extra)}QUESTION: ${input.prompt ?? DEFAULT_PROMPTS.changes}`
 }
 
-/** A question asked once of the highlighted text, answered as findings. */
-export const FINDINGS_SYSTEM = `${DOCUMENT_SYSTEM}
+/** A question asked once of the highlighted text, answered in the shape of a JSON Schema (the question's own, or the default). */
+export const STRUCTURED_SYSTEM = `${DOCUMENT_SYSTEM}
 
-Answer with a short summary, then one finding per point that matters (none if nothing does). Give each finding a short title, a verdict of a few words, a tone (good: fine for us; warn: worth a look; bad: against us; neutral), the ids of the paragraphs it is about, and an explanation a lawyer can verify quickly. Where wording should change, give the complete wording for the first paragraph in its ids, ready to drop in (without its number); where we should tell them something, a short courteous comment to them.`
+Answer in the JSON format you are given, following each field's description. Put paragraph ids exactly as given in fields meant for ids; everywhere else, name paragraphs by their number.`
 
 /** A question asked once of the highlighted text, answered in writing. */
 export const TEXT_SYSTEM = `${ROLE}

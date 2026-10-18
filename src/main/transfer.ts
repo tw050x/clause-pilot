@@ -47,6 +47,7 @@ export const QuestionSchema = z.object({
   method: z.enum(['once', 'paragraphs', 'positions', 'changes']).default('once'),
   data: z.array(z.enum(['contract', 'paragraphs', 'changes', 'edits', 'library', 'playbook', 'precedents', 'findings'])).default([]),
   answer: z.enum(['text', 'findings']).default('text'),
+  schema: z.record(z.string(), z.unknown()).optional(),
   priority: z.boolean().optional(),
   /** Files exported before questions were prioritised: shown ones were cards. */
   shown: z.boolean().optional(),

@@ -127,29 +127,14 @@ export const ChangeSchema = z.object({
 })
 export type ChangeOut = z.infer<typeof ChangeSchema>
 
-/** A question asked once of the highlighted text, answered as findings. */
-export interface FindingsInput {
+/** A question asked once of the highlighted text, answered in the shape of a JSON Schema (its own, or the default). */
+export interface StructuredInput {
   /** The contract, or the highlighted paragraphs (cached first). */
   contract: string
   /** The context the question asks for, the highlight, and the question. */
   question: string
+  /** The schema as sent (see schemaToSend). */
+  schema: Record<string, unknown>
 }
 
-export const FindingsSchema = z.object({
-  summary: z.string().describe('One or two sentences answering the question.'),
-  findings: z.array(
-    z.object({
-      title: z.string().describe('A few words: what this point is about.'),
-      verdict: z.string().describe('A few words, e.g. "Acceptable", "Against us", "Unclear".'),
-      tone: z.enum(['good', 'warn', 'bad', 'neutral']).describe('good: fine for us; warn: worth a look; bad: against us.'),
-      clause_ids: z.array(z.string()).describe('Ids of the paragraphs this point is about.'),
-      explanation: z.string().describe('Two to four sentences a lawyer can verify quickly, naming paragraphs by their number.'),
-      suggested_wording: z.string().describe('Complete wording for the first paragraph in clause_ids, ready to drop in (without its number). Empty if no wording change.'),
-      comment_to_them: z.string().describe('A short, courteous comment to the counterparty. Empty if none.')
-    })
-  ),
-  ...injection
-})
-export type FindingsOut = z.infer<typeof FindingsSchema>
-
-export type TaskName = 'intent' | 'overrides' | 'position' | 'change' | 'findings'
+export type TaskName = 'intent' | 'overrides' | 'position' | 'change' | 'structured'

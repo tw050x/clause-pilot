@@ -1,5 +1,6 @@
 import type { AiAction, AiAnswerPart, ChangeReview, IntentCheck, PlaybookPosition } from '@shared/types'
-import type { FindingsOut, IntentOut, PositionOut } from './tasks'
+import type { IntentOut, PositionOut } from './tasks'
+import type { JsonSchema } from '@shared/schema'
 
 /**
  * The answers to the AI tasks on highlighted text, built from what the server returned: a line
@@ -105,19 +106,79 @@ export function changesAnswer(results: { where: string; blockIds: string[]; revi
   })
 }
 
-/** A question asked once and answered as findings: its summary, then a card per point, worst first. */
-export function findingsAnswer(out: FindingsOut, place: (ids: string[]) => { label: string; blockIds: string[] } | undefined, prose: (t: string) => string): Part[] {
-  const rank = { bad: 0, warn: 1, neutral: 2, good: 3 } as const
-  const parts: Part[] = [text(nothing(out.summary) ? 'No summary.' : prose(out.summary.trim()))]
-  for (const f of [...out.findings].sort((a, b) => rank[a.tone] - rank[b.tone])) {
-    const at = place(f.clause_ids)
-    const target = at?.blockIds[0]
-    const actions: AiAction[] = []
-    if (target && !nothing(f.suggested_wording)) actions.push({ type: 'apply-wording', blockId: target, where: place([target])!.label, text: f.suggested_wording.trim() })
-    if (target && !nothing(f.comment_to_them)) actions.push({ type: 'comment', blockId: target, where: place([target])!.label, text: f.comment_to_them.trim() })
-    parts.push({ type: 'finding', title: f.title, verdict: f.verdict, tone: f.tone, where: at, body: nothing(f.explanation) ? undefined : prose(f.explanation.trim()), actions })
+type Place = (ids: string[]) => { label: string; blockIds: string[] } | undefined
+const TONES = ['good', 'warn', 'bad', 'neutral'] as const
+const RANK = { bad: 0, warn: 1, neutral: 2, good: 3 } as const
+/** Fields read for the app's own features, on a card and at the top. */
+const CARD = ['title', 'name', 'verdict', 'tone', 'clause_ids', 'explanation', 'suggested_wording', 'comment_to_them']
+const HIDDEN = ['injection_suspected', 'injection_notes']
+
+/** A property's label: its title in the schema, or its name in words. */
+const labelOf = (key: string, node?: JsonSchema) => (typeof node?.title === 'string' && node.title) || key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+const propsOf = (node?: JsonSchema) => (node?.properties ?? {}) as Record<string, JsonSchema>
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Any other value as Markdown: a labelled line, or a labelled list. */
+function line(label: string, v: unknown, prose: (t: string) => string): string | null {
+  if (v === null || v === undefined || (typeof v === 'string' && nothing(v))) return null
+  if (Array.isArray(v)) {
+    const items = v.filter((x) => x !== null && x !== '').map((x) => (isRecord(x) ? Object.values(x).join(' · ') : String(x)))
+    return items.length ? `**${label}:**\n${items.map((x) => `- ${prose(x)}`).join('\n')}` : null
   }
-  return parts
+  if (isRecord(v)) return `**${label}:** ${Object.entries(v).map(([k, x]) => `${labelOf(k)}: ${String(x)}`).join('; ')}`
+  if (typeof v === 'boolean') return `**${label}:** ${v ? 'Yes' : 'No'}`
+  return `**${label}:** ${prose(String(v))}`
+}
+
+/** One card from an object in the answer: the fields the app knows, then the rest as lines. */
+function cardOf(item: Record<string, unknown>, node: JsonSchema | undefined, fallback: string, place: Place, prose: (t: string) => string): Finding {
+  const str = (k: string) => (typeof item[k] === 'string' ? (item[k] as string) : '')
+  const tone = TONES.includes(item.tone as (typeof TONES)[number]) ? (item.tone as Finding['tone']) : 'neutral'
+  const ids = Array.isArray(item.clause_ids) ? item.clause_ids.filter((x): x is string => typeof x === 'string') : []
+  const at = place(ids)
+  const target = at?.blockIds[0]
+  const body: string[] = []
+  if (!nothing(str('explanation'))) body.push(prose(str('explanation').trim()))
+  for (const [k, v] of Object.entries(item)) {
+    if (CARD.includes(k)) continue
+    const l = line(labelOf(k, propsOf(node)[k]), v, prose)
+    if (l) body.push(l)
+  }
+  const actions: AiAction[] = []
+  if (target && !nothing(str('suggested_wording'))) actions.push({ type: 'apply-wording', blockId: target, where: place([target])!.label, text: str('suggested_wording').trim() })
+  if (target && !nothing(str('comment_to_them'))) actions.push({ type: 'comment', blockId: target, where: place([target])!.label, text: str('comment_to_them').trim() })
+  return { type: 'finding', title: prose(str('title') || str('name') || fallback), verdict: prose(str('verdict')), tone, where: at, body: body.length ? body.join('\n\n') : undefined, actions }
+}
+
+/**
+ * An answer in the shape of a question's JSON Schema, as text and cards: the top level's
+ * summary first, then its other values as labelled lines, and each object (or list of objects)
+ * as cards, worst first. See @shared/schema for the fields the app recognises.
+ */
+export function schemaAnswer(out: unknown, schema: JsonSchema, place: Place, prose: (t: string) => string): Part[] {
+  if (!isRecord(out)) return [text(prose(String(out)))]
+  const props = propsOf(schema)
+  const parts: Part[] = []
+  if (typeof out.summary === 'string' && !nothing(out.summary)) parts.push(text(prose(out.summary.trim())))
+  const lines: string[] = []
+  const cards: Finding[] = []
+  // In the schema's order, then anything it didn't name.
+  const keys = [...new Set([...Object.keys(props), ...Object.keys(out)])].filter((k) => k !== 'summary' && !HIDDEN.includes(k) && k in out)
+  for (const k of keys) {
+    const v = out[k]
+    const node = props[k]
+    if (Array.isArray(v) && v.length && v.every(isRecord)) {
+      const items = node?.items as JsonSchema | undefined
+      cards.push(...v.map((x, i) => cardOf(x, items, `${labelOf(k, node)} ${i + 1}`, place, prose)))
+    } else if (isRecord(v)) cards.push(cardOf(v, node, labelOf(k, node), place, prose))
+    else {
+      const l = line(labelOf(k, node), v, prose)
+      if (l) lines.push(l)
+    }
+  }
+  if (lines.length) parts.push(text(lines.join('\n\n')))
+  parts.push(...cards.sort((a, b) => RANK[a.tone] - RANK[b.tone]))
+  return parts.length ? parts : [text('The AI found nothing to report.')]
 }
 
 /** The parts as Markdown: the answer as text (kept on the run), and the fallback for display. */
