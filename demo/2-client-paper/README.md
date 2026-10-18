@@ -62,7 +62,7 @@ There is no second round.
    | 4.06 | Delaware law and courts |
    | 4.07 | Only Kestrel may assign in a merger |
 
-8. Select the text of one paragraph, for example Section 2.03, and press **Ask: Does the intent match?** again: the card shows which of our clauses it matched, how confident the AI is, its reasoning, and any differences and who they favour. **Raw response** shows exactly what the server returned.
+8. Select the text of one paragraph, for example Section 2.03, and press **Ask: Does the intent match?** again: the card shows which of our clauses it matched, how confident the AI is, its reasoning, and any differences and who they favour.
 9. Select the whole agreement again and press **Ask: Does it meet our playbook?**. The selected text is checked against each position that applies to an NDA, one request per position. The answer lists the positions worst first, with the sections each is about.
 
    Expect deviations on:

@@ -816,8 +816,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ai-card-body { padding: 4px 12px 10px; border-top: 1px solid var(--border); font-size: 13px; }
 .ai-card-body .md { padding-top: 6px; }
 .ai-card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11.5px; }
-.ai-card-foot .link-btn { font-size: 11.5px; }
-.ai-raw { margin: 6px 0 0; max-height: 260px; overflow: auto; font: 11px ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
 .ai-card-go svg { color: inherit; margin-top: 0; }
 
 /* ---- structured AI answers: text, then a card per finding with its actions ---- */

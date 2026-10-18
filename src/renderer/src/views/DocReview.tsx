@@ -1044,7 +1044,6 @@ function AiCard({
   session: ReviewSession
   onChange: (s: ReviewSession) => void
 }) {
-  const [raw, setRaw] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const running = result?.status === 'running'
   const stream = useStream(running ? result!.id : undefined)
@@ -1078,11 +1077,7 @@ function AiCard({
             <span className="faint">
               {result.by} · {new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
-            <button className="link-btn" onClick={() => setRaw((v) => !v)}>
-              {raw ? 'Hide' : 'Raw'} response
-            </button>
           </div>
-          {raw && <pre className="ai-raw">{typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw, null, 2)}</pre>}
         </div>
       )}
       {running && (stream.text || stream.thinking) && (
