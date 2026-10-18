@@ -43,10 +43,10 @@ export const questionIdOf = (r: AiTaskRun) => r.questionId ?? r.kind ?? ''
  * (DEFAULT_PROMPTS); `defaultQuestions` fills them in.
  */
 export const DEFAULTS: Omit<AiQuestion, 'prompt'>[] = [
-  { id: 'intent', origin: 'intent', title: 'Does the intent match?', detail: 'Compares it with our approved wording', method: 'paragraphs', data: ['paragraphs', 'library'], answer: 'findings', shown: true },
-  { id: 'playbook', origin: 'playbook', title: 'Does it meet our playbook?', detail: 'Each standard position that applies', method: 'positions', data: ['paragraphs', 'playbook'], answer: 'findings', shown: true },
-  { id: 'changes', origin: 'changes', title: 'What do their changes do?', detail: 'Who they favour, and what to do', method: 'changes', data: ['contract', 'changes', 'playbook', 'precedents'], answer: 'findings', shown: true },
-  { id: 'explain', origin: 'explain', title: 'What does this mean?', detail: 'In plain English: what it means for us', method: 'once', data: ['contract', 'changes', 'edits', 'findings'], answer: 'text', shown: true }
+  { id: 'intent', origin: 'intent', title: 'Does the intent match?', detail: 'Compares it with our approved wording', method: 'paragraphs', data: ['paragraphs', 'library'], answer: 'findings', priority: true },
+  { id: 'playbook', origin: 'playbook', title: 'Does it meet our playbook?', detail: 'Each standard position that applies', method: 'positions', data: ['paragraphs', 'playbook'], answer: 'findings', priority: true },
+  { id: 'changes', origin: 'changes', title: 'What do their changes do?', detail: 'Who they favour, and what to do', method: 'changes', data: ['contract', 'changes', 'playbook', 'precedents'], answer: 'findings', priority: true },
+  { id: 'explain', origin: 'explain', title: 'What does this mean?', detail: 'In plain English: what it means for us', method: 'once', data: ['contract', 'changes', 'edits', 'findings'], answer: 'text', priority: true }
 ]
 
 export const defaultQuestions = (prompts: Record<AiTaskKind, string>): AiQuestion[] => DEFAULTS.map((q) => ({ ...q, prompt: prompts[q.origin!] }))

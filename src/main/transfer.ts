@@ -47,7 +47,9 @@ export const QuestionSchema = z.object({
   method: z.enum(['once', 'paragraphs', 'positions', 'changes']).default('once'),
   data: z.array(z.enum(['contract', 'paragraphs', 'changes', 'edits', 'library', 'playbook', 'precedents', 'findings'])).default([]),
   answer: z.enum(['text', 'findings']).default('text'),
-  shown: z.boolean().default(true),
+  priority: z.boolean().optional(),
+  /** Files exported before questions were prioritised: shown ones were cards. */
+  shown: z.boolean().optional(),
   origin: z.enum(['intent', 'playbook', 'changes', 'explain']).optional(),
   updatedBy: z.string().optional(),
   updatedAt: z.string().optional()
@@ -58,7 +60,7 @@ export const QuestionsFileSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string().optional(),
   exportedBy: z.string().optional(),
-  questions: z.array(QuestionSchema)
+  questions: z.array(QuestionSchema.transform(({ shown, priority, ...q }) => ({ ...q, priority: priority ?? shown ?? false })))
 })
 
 export const LibraryFileSchema = z.object({

@@ -6,7 +6,7 @@ import { Icon } from '../lib/icons'
 
 type Draft = { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'delete'; id: string }
 
-const BLANK: AiQuestion = { id: '', title: '', detail: '', prompt: '', method: 'once', data: ['contract'], answer: 'text', shown: true }
+const BLANK: AiQuestion = { id: '', title: '', detail: '', prompt: '', method: 'once', data: ['contract'], answer: 'text', priority: false }
 
 /**
  * The questions asked of highlighted text: each is a card in the review's AI section. A question
@@ -43,7 +43,7 @@ export function QuestionsView() {
             Questions <span className="faint" style={{ fontWeight: 400 }}>{questions.length}</span>
           </h1>
           <p className="lede" style={{ margin: 0 }}>
-            What you can ask the AI about highlighted text. Each question is a card in the review’s AI section: set what it asks, how, and what is sent with it. Changes take effect at once and are recorded in the audit log.
+            What you can ask the AI about highlighted text: set what each question asks, how, and what is sent with it. Every question is available in reviews; prioritised ones are cards in the review’s AI section, and the rest are under <strong>More questions</strong> below them. Changes take effect at once and are recorded in the audit log.
           </p>
         </div>
         <div className="row-gap">
@@ -68,11 +68,11 @@ export function QuestionsView() {
           draft?.mode === 'edit' && draft.id === q.id ? (
             <QuestionForm key={q.id} initial={q} onCancel={() => setDraft(null)} onSave={(next) => act(window.api.questions.save(next))} />
           ) : (
-            <div key={q.id} className={`card question-card ${q.shown ? '' : 'off'}`}>
+            <div key={q.id} className="card question-card">
               <div className="row-gap" style={{ marginBottom: 6 }}>
                 <Icon name="sparkle" size={14} />
                 <h3 style={{ fontSize: 15 }}>Ask: {q.title}</h3>
-                {!q.shown && <span className="pill neutral">Hidden</span>}
+                {q.priority && <span className="pill intent">Prioritised</span>}
                 <div style={{ flex: 1 }} />
                 <button className="icon-btn" title="Move up" aria-label="Move up" disabled={i === 0} onClick={() => act(window.api.questions.move(q.id, -1))}>
                   <Icon name="arrow-up" size={14} />
@@ -80,8 +80,8 @@ export function QuestionsView() {
                 <button className="icon-btn" title="Move down" aria-label="Move down" disabled={i === questions.length - 1} onClick={() => act(window.api.questions.move(q.id, 1))}>
                   <Icon name="arrow-down" size={14} />
                 </button>
-                <button className="btn sm" onClick={() => act(window.api.questions.save({ ...q, shown: !q.shown }))}>
-                  {q.shown ? 'Hide' : 'Show'} in reviews
+                <button className="btn sm" onClick={() => act(window.api.questions.save({ ...q, priority: !q.priority }))} title={q.priority ? 'Move it under More questions in reviews' : 'Show it as a card in reviews'}>
+                  {q.priority ? 'Unprioritise' : 'Prioritise'}
                 </button>
                 <button className="btn sm" onClick={() => setDraft({ mode: 'edit', id: q.id })}>
                   Edit
@@ -141,7 +141,7 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
   const valid = q.title.trim() && q.prompt.trim()
   const reset = async () => {
     const d = initial.origin ? await window.api.questions.defaultFor(initial.origin) : null
-    if (d) setQ({ ...d, id: initial.id, shown: q.shown })
+    if (d) setQ({ ...d, id: initial.id, priority: q.priority })
   }
 
   return (
@@ -223,8 +223,9 @@ function QuestionForm({ initial, onSave, onCancel }: { initial: AiQuestion; onSa
       )}
       <div className="field">
         <label className="row-gap" style={{ fontWeight: 400 }}>
-          <input type="checkbox" checked={q.shown} onChange={(e) => set({ shown: e.target.checked })} /> Offer it in reviews
+          <input type="checkbox" checked={q.priority} onChange={(e) => set({ priority: e.target.checked })} /> Prioritised
         </label>
+        <span className="hint">Prioritised questions are cards in the review’s AI section. The rest are under More questions.</span>
       </div>
       <div className="row-gap">
         <button className="btn primary" disabled={!valid} onClick={() => onSave(q)}>

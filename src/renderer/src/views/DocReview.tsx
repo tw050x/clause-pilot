@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { AiQuestion, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
 import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
@@ -919,8 +919,9 @@ function useQuestions(): AiQuestion[] {
 }
 
 /**
- * The AI section: a card for each question (set on the Questions page) that fits the highlighted
- * text. Using a card asks the AI, and the answer, written from the server's response, comes
+ * The AI section: a card for each prioritised question (set on the Questions page) that fits the
+ * highlighted text, then any other question already asked of it, then More questions: a menu of
+ * the rest, which asks the one picked (its card then shows here too). Using a card asks the AI, and the answer, written from the server's response, comes
  * back onto the card, with the response as returned. The cards run independently, so several
  * can be asked at once; their answers stay here (the Agent sees their findings as part of the
  * review, not as messages).
@@ -940,7 +941,7 @@ function AiSection({
 }) {
   const d = session.doc!
   const lib = useLibrary()
-  const questions = useQuestions().filter((q) => q.shown)
+  const questions = useQuestions()
   if (!highlight?.quote)
     return (
       <section className="rc-section ai-section">
@@ -963,15 +964,66 @@ function AiSection({
     return runs.find((r) => r.quote === highlight.quote) ?? (q.method === 'once' ? undefined : runs[0])
   }
   const offered = questions.filter(fits)
+  // Prioritised questions, and others once asked of this text, are cards; the rest are in the menu.
+  const cards = offered.filter((q) => q.priority || latest(q))
+  const more = offered.filter((q) => !cards.includes(q))
   return (
     <section className="rc-section ai-section">
       <div className="dr-mini-h">AI</div>
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
       {!offered.length && <p className="faint dr-small">No questions fit this text. Add questions on the Questions page.</p>}
-      {offered.map((q) => (
+      {cards.map((q) => (
         <AiCard key={q.id} title={`Ask: ${q.title}`} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} />
       ))}
+      {more.length > 0 && <MoreQuestions questions={more} detail={detail} disabled={onHold} onPick={(q) => run(q.id)} />}
     </section>
+  )
+}
+
+/** More questions: a button that opens a menu of the questions that aren't prioritised; picking one asks it. */
+function MoreQuestions({ questions, detail, disabled, onPick }: { questions: AiQuestion[]; detail: (q: AiQuestion) => string; disabled: boolean; onPick: (q: AiQuestion) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  return (
+    <div className="ai-more" ref={ref}>
+      <button className={`ai-more-btn ${open ? 'on' : ''}`} disabled={disabled} onClick={() => setOpen((x) => !x)} aria-expanded={open} aria-haspopup="menu">
+        <Icon name="sparkle" size={13} />
+        <span>More questions</span>
+        <span className="faint">{questions.length}</span>
+        <span className={`ai-more-chev ${open ? 'up' : ''}`}>
+          <Chevron size={10} />
+        </span>
+      </button>
+      {open && (
+        <div className="ai-more-menu" role="menu">
+          {questions.map((q) => (
+            <button
+              key={q.id}
+              role="menuitem"
+              className="ai-more-item"
+              onClick={() => {
+                setOpen(false)
+                onPick(q)
+              }}
+            >
+              <strong>Ask: {q.title}</strong>
+              {detail(q) && <span className="faint">{detail(q)}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -457,8 +457,8 @@ export interface AiQuestion {
   data: QuestionData[]
   /** For questions asked once: a written answer, or findings (a verdict per point, with suggested wording to apply). The other methods always answer with findings. */
   answer: 'text' | 'findings'
-  /** Offered in the review's AI section. */
-  shown: boolean
+  /** Prioritised: a card in the review's AI section. The rest are offered under "More questions". */
+  priority: boolean
   /** The question the app started with that this was (it can be reset to that). */
   origin?: AiTaskKind
   updatedBy?: string

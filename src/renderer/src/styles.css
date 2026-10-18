@@ -853,7 +853,6 @@ del.us-del ins.th-ins { color: inherit; }
 
 /* ---- Questions page ---- */
 .question-card { padding: 16px; }
-.question-card.off { opacity: 0.7; }
 .question-card h3 { margin: 0; }
 .question-card .icon-btn:disabled { opacity: 0.3; cursor: default; }
 .question-data { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -870,3 +869,16 @@ del.us-del ins.th-ins { color: inherit; }
 .choice strong { font-weight: 600; font-size: 13px; }
 .choice .faint { font-size: 12px; }
 .choice.on { border-color: var(--border); background: var(--surface-2); }
+
+/* More questions: the questions that aren't prioritised, in a menu under the cards. */
+.ai-more { position: relative; }
+.ai-more-btn { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 11px; border: 1px dashed var(--border-strong); border-radius: 9px; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--text-2); cursor: pointer; text-align: left; }
+.ai-more-btn:hover:not(:disabled), .ai-more-btn.on { color: var(--text); background: var(--surface-2); border-style: solid; }
+.ai-more-btn:disabled { opacity: 0.6; cursor: default; }
+.ai-more-btn svg { color: var(--processing); }
+.ai-more-chev { display: inline-flex; margin-left: auto; transform: rotate(90deg); color: var(--text-3); }
+.ai-more-chev.up { transform: rotate(-90deg); }
+.ai-more-menu { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; max-height: 320px; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+.ai-more-item { display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; border: none; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; }
+.ai-more-item:hover, .ai-more-item:focus-visible { background: var(--surface-2); outline: none; }
+.ai-more-item .faint { font-size: 12px; }

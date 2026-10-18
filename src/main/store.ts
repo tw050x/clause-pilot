@@ -42,7 +42,9 @@ export class Store {
 
   /** The questions asked of highlighted text, in the order offered (the app's own until any are changed). */
   questions(): AiQuestion[] {
-    return existsSync(join(this.dir, 'questions.json')) ? this.read<AiQuestion[]>('questions.json') : defaultQuestions(DEFAULT_PROMPTS)
+    if (!existsSync(join(this.dir, 'questions.json'))) return defaultQuestions(DEFAULT_PROMPTS)
+    // Saved before questions were prioritised: the ones shown as cards are the prioritised ones.
+    return this.read<(AiQuestion & { shown?: boolean })[]>('questions.json').map(({ shown, ...q }) => ({ ...q, priority: q.priority ?? shown ?? false }))
   }
 
   saveQuestions(q: AiQuestion[]): void {
