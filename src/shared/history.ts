@@ -67,8 +67,11 @@ export function apply(d: DocReview, values: Facets) {
       if (v === null) delete d.checked[id]
       else d.checked[id] = v as CheckedMark
     } else if (kind === 'com') {
-      d.comments = d.comments.filter((c) => c.id !== id)
-      if (v !== null) d.comments.push(v as OurComment)
+      // In place, so undoing an edit doesn't move the comment to the end of its thread.
+      const at = d.comments.findIndex((c) => c.id === id)
+      if (v === null) d.comments = d.comments.filter((c) => c.id !== id)
+      else if (at >= 0) d.comments[at] = v as OurComment
+      else d.comments.push(v as OurComment)
     } else if (kind === 'para') {
       d.blocks = d.blocks.filter((b) => b.id !== id)
       if (v !== null) {
@@ -150,9 +153,12 @@ export function describe(d: DocReview, a: HistoryAction): string {
   if (resolvedN) parts.push(`resolved ${resolvedN === 1 ? 'a comment' : `${resolvedN} comments`}`)
   if (cdone.length - resolvedN) parts.push(`reopened ${cdone.length - resolvedN === 1 ? 'a comment' : `${cdone.length - resolvedN} comments`}`)
   const coms = keys.filter((k) => k.startsWith('com:'))
-  const cAdded = coms.filter((k) => a.after[k] !== null)
+  const cAdded = coms.filter((k) => a.after[k] !== null && a.before[k] === null)
+  const cEdited = coms.filter((k) => a.after[k] !== null && a.before[k] !== null)
+  const cDeleted = coms.filter((k) => a.after[k] === null)
   if (cAdded.length) parts.push(`commented on ${places(cAdded.map((k) => (a.after[k] as OurComment).blockId))}`)
-  if (coms.length - cAdded.length) parts.push(`deleted ${coms.length - cAdded.length === 1 ? 'a comment' : 'comments'}`)
+  if (cEdited.length) parts.push(`edited ${cEdited.length === 1 ? 'a comment' : `${cEdited.length} comments`}`)
+  if (cDeleted.length) parts.push(`deleted ${cDeleted.length === 1 ? 'a comment' : 'comments'}`)
   const text = parts.join('; ') || 'No change'
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
@@ -162,7 +168,7 @@ export type ActionItem =
   | { kind: 'resolved'; blockId: string; where: string; outcome: 'accepted' | 'rejected' | null; op: 'ins' | 'del'; text: string }
   | { kind: 'edited'; blockId: string; where: string; before: string; after: string }
   | { kind: 'paragraph'; blockId: string; where: string; added: boolean; text: string }
-  | { kind: 'comment'; blockId: string; where: string; added: boolean; text: string }
+  | { kind: 'comment'; blockId: string; where: string; added: boolean; text: string; was?: string }
   | { kind: 'checked'; blockId: string; where: string; added: boolean; text: string }
   | { kind: 'resolvedComment'; blockId: string; where: string; done: boolean; text: string }
 
@@ -215,7 +221,8 @@ export function details(d: DocReview, a: HistoryAction): ActionItem[] {
       items.push({ kind: 'checked', blockId: id, where: where(id), added: a.after[k] !== null, text: m.text })
     } else if (kind === 'com') {
       const c = (a.after[k] ?? a.before[k]) as OurComment
-      items.push({ kind: 'comment', blockId: c.blockId, where: where(c.blockId), added: a.after[k] !== null, text: c.text })
+      const was = a.after[k] !== null && a.before[k] !== null ? (a.before[k] as OurComment).text : undefined
+      items.push({ kind: 'comment', blockId: c.blockId, where: where(c.blockId), added: a.after[k] !== null, text: c.text, was })
     }
   }
   return items.sort((x, y) => (order.get(x.blockId) ?? 1e9) - (order.get(y.blockId) ?? 1e9))

@@ -546,7 +546,13 @@ function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: strin
     )
   return (
     <div className="hist-row">
-      {where} {item.added ? 'comment' : 'comment deleted'}: <span className="hist-comment">“{short(item.text)}”</span>
+      {where} {item.was !== undefined ? 'comment edited' : item.added ? 'comment' : 'comment deleted'}:{' '}
+      {item.was !== undefined && (
+        <>
+          <span className="hist-comment del">“{short(item.was)}”</span> →{' '}
+        </>
+      )}
+      <span className="hist-comment">“{short(item.text)}”</span>
     </div>
   )
 }
@@ -774,7 +780,13 @@ function CommentsBlock({
               {ours
                 .filter((o) => o.replyTo === c.id)
                 .map((o) => (
-                  <OurCommentCard key={o.id} c={o} reply onDelete={() => act(window.api.doc.uncomment(session.id, o.id))} />
+                  <OurCommentCard
+                    key={o.id}
+                    c={o}
+                    reply
+                    onEdit={(text) => act(window.api.doc.editComment(session.id, o.id, text))}
+                    onDelete={() => act(window.api.doc.uncomment(session.id, o.id))}
+                  />
                 ))}
               {isDone ? null : draft?.replyTo === c.id ? (
                 <CommentForm placeholder={`Reply to ${c.author}`} onDone={done} />
@@ -792,6 +804,7 @@ function CommentsBlock({
             c={o}
             done={commentResolved(d, o) ? (d.commentsDone?.[o.id] ?? null) : null}
             onResolve={(v) => act(window.api.doc.resolveComment(session.id, o.id, v))}
+            onEdit={(text) => act(window.api.doc.editComment(session.id, o.id, text))}
             onDelete={() => act(window.api.doc.uncomment(session.id, o.id))}
           />
         ))}
@@ -810,10 +823,14 @@ function CommentsBlock({
  * Resolve or reopen a comment thread, as in Word. A resolved thread stays, greyed out, with who
  * resolved it; its text is no longer highlighted in the document.
  */
-function ResolveControl({ done, onResolve }: { done: { by: string } | null; onResolve: (done: boolean) => void }) {
+function ResolveControl({ done, onResolve, thread }: { done: { by: string } | null; onResolve: (done: boolean) => void; thread?: boolean }) {
   return done ? null : (
-    <button className="icon-btn sm dr-resolve" title="Resolve: keep the comment, but mark it done and stop highlighting its text" onClick={() => onResolve(true)}>
-      <Icon name="check" size={13} />
+    <button
+      className="link-btn dr-comment-act"
+      title={`Mark this ${thread ? 'thread' : 'comment'} as done. It stays in the review and goes into the marked-up copy marked resolved, greyed out, and its text is no longer highlighted. You can reopen it.`}
+      onClick={() => onResolve(true)}
+    >
+      Resolve
     </button>
   )
 }
@@ -838,7 +855,7 @@ function TheirComment({ c, done, onResolve, children }: { c: DocComment; done: {
         <strong>{c.author}</strong>
         {c.date && <span className="faint">{new Date(c.date).toLocaleDateString()}</span>}
         <span style={{ flex: 1 }} />
-        <ResolveControl done={done} onResolve={onResolve} />
+        <ResolveControl done={done} onResolve={onResolve} thread />
       </div>
       {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
       <div>{c.text}</div>
@@ -853,6 +870,7 @@ function OurCommentCard({
   reply,
   done = null,
   onResolve,
+  onEdit,
   onDelete
 }: {
   c: OurComment
@@ -860,28 +878,58 @@ function OurCommentCard({
   /** Not for replies: a reply is resolved with the comment it replies to. */
   done?: { by: string } | null
   onResolve?: (done: boolean) => void
+  /** Ours in this review can be reworded (theirs, and ours from earlier rounds, can't). */
+  onEdit: (text: string) => Promise<boolean>
   onDelete: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const what = reply ? 'reply' : 'comment'
   return (
     <div className={`dr-comment ours ${reply ? 'reply' : ''} ${done ? 'resolved' : ''}`}>
       <div className="dr-comment-head">
         <strong>{c.by}</strong>
-        <span className="faint">{new Date(c.at).toLocaleDateString()}</span>
+        <span className="faint" title={c.edited ? `Edited by ${c.edited.by} on ${new Date(c.edited.at).toLocaleString()}` : undefined}>
+          {new Date(c.at).toLocaleDateString()}
+          {c.edited && ' · edited'}
+        </span>
         <span style={{ flex: 1 }} />
-        {onResolve && <ResolveControl done={done} onResolve={onResolve} />}
-        <button className="icon-btn sm" title="Delete comment" onClick={onDelete}>
-          <Icon name="x" size={12} />
-        </button>
+        {!editing && !done && (
+          <button className="link-btn dr-comment-act" title={`Change the wording of this ${what}. It goes to them as it reads when you send the marked-up copy.`} onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
+        {!editing && onResolve && <ResolveControl done={done} onResolve={onResolve} />}
+        {!editing && (
+          <button
+            className="link-btn dr-comment-act danger"
+            title={`Remove this ${what} from the review, so it isn't sent to them. You can undo it from History.`}
+            onClick={onDelete}
+          >
+            Delete
+          </button>
+        )}
       </div>
       {c.quote && <div className="dr-quote">“{snippet(c.quote)}”</div>}
-      <div>{c.text}</div>
+      {editing ? (
+        <CommentForm
+          initial={c.text}
+          action="Save"
+          placeholder={`Your ${what}`}
+          onDone={async (text) => {
+            if (text !== undefined && !(await onEdit(text))) return
+            setEditing(false)
+          }}
+        />
+      ) : (
+        <div>{c.text}</div>
+      )}
       {onResolve && <ResolvedLine done={done} onResolve={onResolve} />}
     </div>
   )
 }
 
-function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (text?: string) => void }) {
-  const [text, setText] = useState('')
+function CommentForm({ placeholder, onDone, initial = '', action = 'Comment' }: { placeholder: string; onDone: (text?: string) => void; initial?: string; action?: string }) {
+  const [text, setText] = useState(initial)
   return (
     <div className="dr-comment-form">
       <AutoTextarea
@@ -896,8 +944,8 @@ function CommentForm({ placeholder, onDone }: { placeholder: string; onDone: (te
         }}
       />
       <div className="row-gap">
-        <button className="btn sm primary" disabled={!text.trim()} onClick={() => onDone(text)}>
-          Comment
+        <button className="btn sm primary" disabled={!text.trim() || text.trim() === initial.trim()} onClick={() => onDone(text)}>
+          {action}
         </button>
         <button className="btn sm ghost" onClick={() => onDone(undefined)}>
           Cancel

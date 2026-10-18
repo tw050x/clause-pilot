@@ -314,6 +314,8 @@ export interface OurComment {
   replyTo?: string
   by: string
   at: string
+  /** Changed after it was written (it can be, until the review is sent on). */
+  edited?: { by: string; at: string }
 }
 
 /**

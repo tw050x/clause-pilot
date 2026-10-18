@@ -57,6 +57,8 @@ export interface Api {
     decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
     comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
     uncomment(id: string, commentId: string): Promise<ReviewSession>
+    /** Our comments and replies in this review only. */
+    editComment(id: string, commentId: string, text: string): Promise<ReviewSession>
     /** Resolve a comment thread (theirs or ours), or reopen it. */
     resolveComment(id: string, commentId: string, done: boolean): Promise<ReviewSession>
     /** Enter: split a paragraph at the caret; the rest goes into a new paragraph of ours. */

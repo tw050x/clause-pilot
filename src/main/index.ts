@@ -766,6 +766,28 @@ ipcMain.handle('doc:resolveComment', (_e, sessionId: string, commentId: string, 
   return out
 })
 
+/**
+ * Change the wording of one of our comments or replies in this review. Theirs, and ours from
+ * earlier rounds (which come back to us in their file), can't be changed. One history action.
+ */
+ipcMain.handle('doc:editComment', (_e, sessionId: string, commentId: string, text: string) => {
+  const out = tracked(session(sessionId), undefined, () => {
+    const { s, d } = docOf(sessionId)
+    const at = d.comments.findIndex((c) => c.id === commentId)
+    if (at < 0) throw new Error('Only comments made in this review can be edited.')
+    const was = d.comments[at]
+    if (!text.trim()) throw new Error('Write a comment first, or delete it.')
+    if (text.trim() === was.text) return s
+    d.comments[at] = { ...was, text: text.trim(), edited: { by: actor(), at: new Date().toISOString() } }
+    ws.audit.append(actor(), 'doc.comment-edited', s.id, { commentId, block: blockWhere(s, was.blockId), before: was.text, after: text.trim() })
+    recordTouching(s, was.blockId)
+    persist(s)
+    return s
+  })
+  persist(session(sessionId))
+  return out
+})
+
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
