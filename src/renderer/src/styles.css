@@ -730,8 +730,8 @@ del.us-del ins.th-ins { color: inherit; }
 /* The left gutter (the page's 72px margin, left of the paragraphs' bars): labels and markers over the page. */
 .ed-gutter-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 /* A run of paragraphs that read exactly as ours: one label, kept in view while the run scrolls past. */
-.ed-unchanged-run { position: absolute; left: 0; width: 61px; display: flex; flex-direction: column; align-items: flex-end; }
-.ed-unchanged { position: sticky; top: 10px; margin-top: 3px; padding: 0 3px; border-radius: 4px; font: 500 9.5px/1.6 system-ui, sans-serif; letter-spacing: -0.01em; color: var(--exact); background: color-mix(in srgb, var(--exact) 10%, var(--surface)); white-space: nowrap; pointer-events: auto; cursor: default; }
+.ed-unchanged-run { position: absolute; left: 0; width: 59px; display: flex; flex-direction: column; align-items: flex-end; }
+.ed-unchanged { position: sticky; top: 10px; margin-top: 4px; padding: 0 3px; border-radius: 3px; font: 500 8px/1.5 system-ui, sans-serif; letter-spacing: 0.01em; color: var(--exact); background: color-mix(in srgb, var(--exact) 10%, var(--surface)); white-space: nowrap; pointer-events: auto; cursor: default; }
 /* A highlight with AI answers: a marker on the bar at its first paragraph; click to select it again. */
 .ed-ai-mark { position: absolute; left: 64px; width: 20px; height: 20px; margin-top: 2px; display: grid; place-items: center; padding: 0; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; }
 .ed-ai-mark:hover { background: var(--processing-tint); }
