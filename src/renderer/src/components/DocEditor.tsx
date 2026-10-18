@@ -65,6 +65,25 @@ const flashPlugin = new Plugin<string[]>({
 })
 let flashTimer = 0
 
+const PREVIEW = 'aiPreview'
+/** The text an AI answer's marker is about, while the pointer is over the marker: tinted, as a decoration. */
+const previewPlugin = new Plugin<{ from: number; to: number } | null>({
+  state: {
+    init: () => null,
+    apply: (tr, range) => {
+      const next = tr.getMeta(PREVIEW) as { from: number; to: number } | null | undefined
+      if (next !== undefined) return next
+      return range && tr.docChanged ? { from: tr.mapping.map(range.from), to: tr.mapping.map(range.to) } : range
+    }
+  },
+  props: {
+    decorations(state) {
+      const r = this.getState(state)
+      return r && r.to > r.from ? DecorationSet.create(state.doc, [Decoration.inline(r.from, r.to, { class: 'ed-ai-preview' })]) : null
+    }
+  }
+})
+
 /** Point at paragraphs without changing the selection: scroll to the first and flash them. */
 export function flashParagraphs(blockIds: string[]) {
   const v = flashView
@@ -188,7 +207,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const groups = new Map<string, { blockIds: string[]; quote: string; titles: string[]; asked: Set<string> }>()
       for (const r of model.current.aiRuns ?? []) {
         if (r.status !== 'done') continue
-        const key = [...r.blockIds].sort().join(',')
+        // One marker per highlight: its paragraphs and its text.
+        const key = `${[...r.blockIds].sort().join(',')}\u0000${r.quote.replace(/\s+/g, ' ').trim()}`
         const g = groups.get(key) ?? { blockIds: r.blockIds, quote: r.quote, titles: [], asked: new Set<string>() }
         // Each question once, by its title (runs from before questions had titles: the built-in's).
         const q = questionIdOf(r)
@@ -196,13 +216,29 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           g.asked.add(q)
           g.titles.push(r.title ?? DEFAULTS.find((x) => x.id === q)?.title ?? r.question.split('\n')[0])
         }
-        g.quote = r.quote
         groups.set(key, g)
       }
-      const ai = [...groups.values()].flatMap((g) => {
-        const first = g.blockIds.filter((id) => order.has(id)).sort((a, b) => order.get(a)! - order.get(b)!)[0]
-        return first ? [{ blockIds: g.blockIds, quote: g.quote, titles: g.titles, top: box(paras[order.get(first)!]).top }] : []
-      })
+      // Level with where the highlighted text starts (two highlights in one paragraph get a marker
+      // each), or with its first paragraph if it can't be found.
+      const v = view.current
+      const ai = [...groups.values()]
+        .flatMap((g) => {
+          const first = g.blockIds.filter((id) => order.has(id)).sort((a, b) => order.get(a)! - order.get(b)!)[0]
+          if (!first) return []
+          const at = v && locate(v.state, g.blockIds, g.quote)
+          let top = box(paras[order.get(first)!]).top
+          if (v && at) {
+            try {
+              top = v.coordsAtPos(at.from).top - top0
+            } catch {
+              // a position the view can't place: the paragraph's top
+            }
+          }
+          return [{ blockIds: g.blockIds, quote: g.quote, titles: g.titles, top }]
+        })
+        .sort((a, b) => a.top - b.top)
+      // Two on the same line: the next one just below, so both can be clicked.
+      for (let n = 1; n < ai.length; n++) if (ai[n].top < ai[n - 1].top + 22) ai[n].top = ai[n - 1].top + 22
       setGutter({ runs, ai })
     })
   }
@@ -214,8 +250,22 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
    */
   const selectText = (blockIds: string[], quote: string) => {
     const v = view.current
+    const at = v && locate(v.state, blockIds, quote)
+    if (!v || !at) return
+    v.focus()
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, at.from, at.to)))
+    window.setTimeout(() => reportRef.current?.(v), 0)
+  }
+
+  /** Tint (or stop tinting) the text an AI marker is about. */
+  const preview = (a: { blockIds: string[]; quote: string } | null) => {
+    const v = view.current
     if (!v) return
-    const { state } = v
+    v.dispatch(v.state.tr.setMeta(PREVIEW, a ? locate(v.state, a.blockIds, a.quote) : null).setMeta('addToHistory', false))
+  }
+
+  /** Where some highlighted text is now: in its paragraphs as they read (the paragraphs as a whole if it has changed since). */
+  const locate = (state: EditorState, blockIds: string[], quote: string): { from: number; to: number } | null => {
     // The paragraphs' text joined as the selection reads it (a space between paragraphs), with the
     // document position of each character.
     let flat = ''
@@ -242,10 +292,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     }
     const from = posOf.slice(i).find((p) => p >= 0)
     const to = posOf.slice(0, i + len).reverse().find((p) => p >= 0)
-    if (from === undefined || to === undefined) return
-    v.focus()
-    v.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to + 1)))
-    window.setTimeout(() => reportRef.current?.(v), 0)
+    return from === undefined || to === undefined ? null : { from, to: to + 1 }
   }
 
   /** A paragraph's comments, theirs and ours (for the gutter button's label). */
@@ -653,7 +700,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           }),
           keymap(baseKeymap),
           redline,
-          flashPlugin
+          flashPlugin,
+          previewPlugin
         ]
       }),
       editable: () => !readOnly,
@@ -873,13 +921,18 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
           ))}
           {gutter.ai.map((a) => (
             <button
-              key={a.blockIds.join(',')}
+              key={`${a.blockIds.join(',')}:${a.quote}`}
               className="ed-ai-mark"
               style={{ top: a.top }}
               title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
               aria-label="Show the AI answers for this text"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => selectText(a.blockIds, a.quote)}
+              onClick={() => {
+                preview(null)
+                selectText(a.blockIds, a.quote)
+              }}
+              onMouseEnter={() => preview(a)}
+              onMouseLeave={() => preview(null)}
             >
               <SparkleIcon />
             </button>

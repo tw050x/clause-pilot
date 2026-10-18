@@ -928,3 +928,5 @@ del.us-del ins.th-ins { color: inherit; }
 .recent-bar { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
 .recent-bar span { display: block; height: 100%; background: var(--exact); }
 .recent-when { font-size: 12px; text-align: right; }
+/* Hovering an AI answer's marker: the text it's about. */
+.ed-doc .ed-ai-preview { background: color-mix(in srgb, var(--processing) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--processing) 30%, transparent); border-radius: 2px; }
