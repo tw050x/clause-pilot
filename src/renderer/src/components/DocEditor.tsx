@@ -421,7 +421,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
                 t.className = 'ed-tag'
                 t.contentEditable = 'false'
                 t.textContent = tag
-                t.title = tagTip(b)
+                // Shown on hover by CSS (a native title doesn't show inside the editor).
+                t.dataset.tip = tagTip(b)
+                t.setAttribute('aria-label', `${tag}. ${tagTip(b)}`)
                 return t
               },
               { side: -200, key: `tag:${b.id}:${tag}:${b.standard ?? ''}`, ignoreSelection: true }
