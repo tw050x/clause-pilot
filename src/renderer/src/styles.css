@@ -528,6 +528,11 @@ del.rl-del { color: #1d4ed8; text-decoration: line-through; text-decoration-colo
 .redline-side h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin: 6px 0 0; }
 .redline-comment { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .redline-comment:hover { border-color: var(--focus); }
+/* Tracked changes in the marked-up copy, as Word shows them: inserted text coloured and underlined, deleted text coloured and struck through. */
+.redline-pages ins { color: var(--rejected); text-decoration: underline; text-decoration-color: currentColor; }
+.redline-pages ins * { color: inherit; }
+.redline-pages del { color: var(--rejected); text-decoration: line-through; text-decoration-color: currentColor; }
+.redline-pages del * { color: inherit; text-decoration: inherit; }
 .redline-pages mark.orig-hl { background: color-mix(in srgb, var(--review) 30%, transparent); color: inherit; border-radius: 2px; }
 .redline-comment .faint { font-size: 11.5px; }
 .redline-their { color: var(--text-2); font-size: 12.5px; border-left: 2px solid var(--border-strong); padding-left: 8px; }

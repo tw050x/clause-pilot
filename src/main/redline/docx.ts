@@ -464,8 +464,9 @@ class Markup {
   /** Change a typed clause number, as a tracked change. */
   renumber(paras: Element[], from: string, to: string) {
     const lead = visiblePieces(paras).map((x) => x.text).join('').match(/^\s*/)![0].length
+    // The old number struck out, then the new one after it, as Word shows a replacement.
+    this.deleteRange(paras, lead, lead + from.length)
     this.insertAt(paras, lead, to, 0)
-    this.deleteRange(paras, lead + to.length, lead + to.length + from.length)
   }
 
   /** A whole new paragraph as our tracked insertion, after `after` (or before `before`), styled like its neighbour. */
