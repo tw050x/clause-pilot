@@ -8,8 +8,9 @@ const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 
 
 /**
  * Ask AI: one conversation per contract, across its versions, kept by the main process (so it
- * survives restarts). The AI cards' questions and answers are part of it. What the AI is sent is
- * managed there too: older messages are summarised once the conversation grows long.
+ * survives restarts). The AI cards' questions and answers show here too, but each is a one-off:
+ * not part of the conversation unless a question follows it up (Ask a follow-up). What the AI is
+ * sent is managed in the main process: older messages are summarised once the conversation grows long.
  */
 export function ChatPanel({
   session,
@@ -32,6 +33,9 @@ export function ChatPanel({
   /** A typed question waiting on its answer. */
   const [asking, setAsking] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  /** The AI card answer the next question follows up (its run id). */
+  const [followUp, setFollowUp] = useState<string | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const key = session ? (session.contractId ?? session.id) : null
   const sessionId = session?.id
@@ -39,6 +43,7 @@ export function ChatPanel({
   useEffect(() => {
     setChat(null)
     setClearing(false)
+    setFollowUp(null)
     if (!sessionId) return
     let live = true
     const load = () => window.api.chat.get(sessionId).then((c) => live && setChat(c))
@@ -60,10 +65,12 @@ export function ChatPanel({
   const send = async (text: string) => {
     if (!session || !text.trim() || asking) return
     setInput('')
+    const about = followUp ?? undefined
+    setFollowUp(null)
     const requestId = crypto.randomUUID()
     setAsking(requestId)
     try {
-      await window.api.chat.send(session.id, text.trim(), requestId)
+      await window.api.chat.send(session.id, text.trim(), requestId, about)
     } finally {
       setAsking(null)
       setStreams((x) => {
@@ -85,6 +92,9 @@ export function ChatPanel({
     if (!run?.parts || !session || e.failed) return <Markdown text={e.content} />
     return <AiAnswer parts={run.parts} session={session} onChange={onChange} onShow={(ids) => onShowText(run.blockIds, run.quote, ids)} />
   }
+
+  // A card's question without its quote: "Does this meet our playbook? (§2.4)".
+  const questionOf = (runId: string) => (entries.find((x) => x.runId === runId && x.role === 'user')?.content ?? '').split('\n\n> ')[0]
 
   const last = entries[entries.length - 1]
   return (
@@ -138,11 +148,27 @@ export function ChatPanel({
               {summarised}
               {version}
               {e.role === 'user' ? (
-                <div className="msg user">{e.runId ? <CardQuestion text={e.content} run={runOf(e.runId)} onShowText={onShowText} /> : e.content}</div>
+                <div className={`msg user ${e.runId ? 'task' : ''}`}>
+                  {e.about && <FollowedUp text={questionOf(e.about)} />}
+                  {e.runId ? <CardQuestion text={e.content} run={runOf(e.runId)} onShowText={onShowText} /> : e.content}
+                </div>
               ) : (
-                // The AI's answer: in the flow of the page, not in a bubble.
-                <div className={`msg assistant ${e.failed ? 'failed' : ''}`}>
+                // The AI's answer: in the flow of the page, not in a bubble. A card's answer is a one-off, marked as such.
+                <div className={`msg assistant ${e.failed ? 'failed' : ''} ${e.runId ? 'task' : ''}`}>
+                  {e.runId && !e.failed && <div className="msg-task-label">One-off check · not part of the conversation</div>}
                   {answer(e)}
+                  {e.runId && !e.failed && (
+                    <button
+                      className={`btn sm msg-follow ${followUp === e.runId ? 'on' : ''}`}
+                      onClick={() => {
+                        setFollowUp(e.runId!)
+                        inputRef.current?.focus()
+                      }}
+                      title="Ask about this answer: it goes into the conversation with your question"
+                    >
+                      <Icon name="chat" size={13} /> Ask a follow-up
+                    </button>
+                  )}
                   {/* An answer to a card, until the conversation goes on: back to the review, where it's on the card too. */}
                   {e.runId && e === last && !asking && (
                     <button className="btn sm msg-return" onClick={onReturn}>
@@ -161,6 +187,16 @@ export function ChatPanel({
         })}
         {asking && last?.role === 'user' && !last.runId && waiting(streams[asking])}
       </div>
+      {followUp && (
+        <div className="chat-following">
+          <span>
+            Following up: <strong>{questionOf(followUp)}</strong>
+          </span>
+          <button className="icon-btn sm" title="Not a follow-up" aria-label="Not a follow-up" onClick={() => setFollowUp(null)}>
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+      )}
       <form
         className="chat-input"
         onSubmit={(e) => {
@@ -169,9 +205,10 @@ export function ChatPanel({
         }}
       >
         <textarea
+          ref={inputRef}
           value={input}
           rows={2}
-          placeholder="Ask a question…"
+          placeholder={followUp ? 'Ask about that answer…' : 'Ask a question…'}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -186,6 +223,11 @@ export function ChatPanel({
       </form>
     </div>
   )
+}
+
+/** On a question that follows up a card's answer: which one. */
+function FollowedUp({ text }: { text: string }) {
+  return <div className="msg-followed">↪ {text}</div>
 }
 
 /**

@@ -91,8 +91,8 @@ export interface Api {
   /** Ask AI: one conversation per contract, kept in the main process. */
   chat: {
     get(id: string): Promise<ChatConversation>
-    /** Ask a question; the question and the answer are added to the conversation (the answer streams as deltas). */
-    send(id: string, question: string, requestId: string): Promise<void>
+    /** Ask a question (following up an AI card's answer: its run id); the question and the answer are added to the conversation (the answer streams as deltas). */
+    send(id: string, question: string, requestId: string, about?: string): Promise<void>
     clear(id: string): Promise<void>
     onDelta(cb: (d: { requestId: string; text: string }) => void): Unsub
     /** The conversation for this contract (`key`) changed. */

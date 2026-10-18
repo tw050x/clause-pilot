@@ -654,8 +654,10 @@ export interface ChatEntry {
   /** The review (version) it was asked in. */
   sessionId: string
   version?: number
-  /** From an AI card: the task it asked and answered. */
+  /** From an AI card: the task it asked and answered. A one-off: not part of the conversation's thread. */
   runId?: string
+  /** A typed question following up an AI card's answer (its run): that answer goes with it. */
+  about?: string
   /** An answer that failed: shown, but not sent to the AI as context. */
   failed?: boolean
 }

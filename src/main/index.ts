@@ -8,18 +8,18 @@ import type { Account, ContractRecord, ChatMessage, EmailDraft, LibraryClause, P
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
-import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noAiProvider, vllmModels, type AiProvider } from './ai/provider'
+import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noAiProvider, vllmModels, type AiProvider, type ChatUsage } from './ai/provider'
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
 import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
-import type { AiAnswerPart, ChatEntry, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
+import type { AiAnswerPart, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
-import { HISTORY_BUDGET, SUMMARY_SYSTEM, contextFor, needsCompacting, summaryRequest, toSummarise } from './conversation'
+import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise, withState } from './conversation'
 import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer } from './ai/answers'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
-import { chatSystem } from './chat'
+import { chatSystem, reviewState } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, parseImport, playbookFile } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { precedentFor, seenBefore } from './engine/seen'
@@ -104,7 +104,7 @@ function provider(): AiProvider {
 }
 
 /** The chat panel's model: the same AI, streaming. */
-function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void) => Promise<string> } | null {
+function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void) => Promise<string> } | null {
   const s = loadSettings()
   if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() }) : null
   const key = apiKey()
@@ -998,8 +998,8 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     } else {
       const model = chatModel()
       if (!model) throw new Error(NO_MODEL())
-      // Asked in the conversation (the question is already in it), so it has the context.
-      const text = await model.chat(chatSystem(s), await chatContext(s, model), (t) => send('chat:delta', { requestId: run.id, text: t }))
+      // A one-off, like the other cards: the contract and the review as it stands, not the conversation.
+      const text = await model.chat(chatSystem(s), [{ role: 'user', content: withState(reviewState(s), run.question) }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'chat.usage', s.id, { task: 'explain', ...u }))
       finish({ status: 'done', answer: text, raw: text })
     }
   })()
@@ -1064,16 +1064,26 @@ function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' 
   return entry
 }
 
+/** A card's question and answer, from the conversation, for a question that follows it up. */
+const followedIn = (c: ChatConversation) => (runId: string) => {
+  const q = c.entries.find((e) => e.runId === runId && e.role === 'user')
+  const a = c.entries.find((e) => e.runId === runId && e.role === 'assistant' && !e.failed)
+  return q && a ? `Question: ${q.content}\n\nAnswer:\n${a.content}` : undefined
+}
+
 /**
- * The conversation as it goes to the AI, compacted first if it has outgrown the budget: the
- * older messages are summarised by the same model, and the summary is kept for next time.
+ * A typed question's request: the thread (compacted first if it has outgrown the budget: the
+ * older messages summarised by the same model, the summary kept for next time), then the review
+ * as it stands and the question.
  */
-async function chatContext(s: ReviewSession, model: NonNullable<ReturnType<typeof chatModel>>): Promise<ChatMessage[]> {
+async function chatRequestFor(s: ReviewSession, model: NonNullable<ReturnType<typeof chatModel>>): Promise<ChatMessage[]> {
   const store = wsFor(s).store
   const c = store.chat(chatKey(s))
   const budget = HISTORY_BUDGET[loadSettings().aiProvider === 'vllm' ? 'vllm' : 'anthropic']
-  if (needsCompacting(c, budget)) {
-    const older = toSummarise(c)
+  // The question just added stays out of the summary.
+  const before: ChatConversation = { ...c, entries: c.entries.slice(0, -1) }
+  if (needsCompacting(before, budget)) {
+    const older = toSummarise(before)
     try {
       const text = await model.chat(SUMMARY_SYSTEM, summaryRequest(c, older), () => {})
       c.summary = { text: text.trim(), through: older[older.length - 1].id, at: new Date().toISOString() }
@@ -1085,7 +1095,7 @@ async function chatContext(s: ReviewSession, model: NonNullable<ReturnType<typeo
       wsFor(s).audit.append('system', 'chat.compact-failed', s.id, { error: e instanceof Error ? e.message : String(e) })
     }
   }
-  return contextFor(c, '', s.version)
+  return chatRequest(c, reviewState(s), followedIn(c))
 }
 
 ipcMain.handle('chat:get', (_e, sessionId: string) => {
@@ -1094,10 +1104,10 @@ ipcMain.handle('chat:get', (_e, sessionId: string) => {
 })
 
 /** A question typed into Ask AI: kept in the conversation, answered with it as context. */
-ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string) => {
+ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string, about?: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
-  addChat(s, { role: 'user', content: question.trim(), by: actor() })
+  addChat(s, { role: 'user', content: question.trim(), by: actor(), ...(about ? { about } : {}) })
   ws.audit.append(actor(), 'chat.question', s.id, { question })
   const model = chatModel()
   if (!model) {
@@ -1105,7 +1115,7 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requ
     return
   }
   try {
-    const text = await model.chat(chatSystem(s), await chatContext(s, model), (t) => send('chat:delta', { requestId, text: t }))
+    const text = await model.chat(chatSystem(s), await chatRequestFor(s, model), (t) => send('chat:delta', { requestId, text: t }), (u) => ws.audit.append('system', 'chat.usage', s.id, { ...u }))
     addChat(s, { role: 'assistant', content: text })
   } catch (e) {
     addChat(s, { role: 'assistant', content: `Sorry, that failed: ${e instanceof Error ? e.message : String(e)}`, failed: true })

@@ -1,11 +1,21 @@
 import type { ChatConversation, ChatEntry, ChatMessage } from '@shared/types'
 
 /**
- * What a contract's Ask AI conversation sends to the AI. Neither provider keeps a conversation
- * for us (each request carries the history), so the app manages its size: once the messages
- * since the last summary pass a budget, the older ones are summarised by the same model and
- * the summary goes first, followed by the newest messages verbatim. The contract itself is in
- * the system prompt on every request, as it now reads, so the history never needs to carry it.
+ * What goes to the AI from a contract's Ask AI. Neither provider keeps a conversation for us
+ * (each request carries what the AI needs), so every request is built the same way, most
+ * stable first so the providers' prompt caches can reuse it:
+ *
+ *   system:  instructions and the contract          the same for the whole review: cached
+ *   thread:  the typed conversation so far          only grows (until compacted): cached up to here
+ *   last:    the review as it stands, then the question or the card's task
+ *
+ * The AI cards are one-off tasks: they get the system prompt and the review state, never the
+ * thread, and their questions and answers are not part of the thread either. Their findings
+ * reach the conversation as part of the review state, and a question that follows up a card
+ * carries that card's answer with it.
+ *
+ * The thread is compacted once it passes a budget: the older messages are summarised by the
+ * same model, and the summary goes first, followed by the newest messages verbatim.
  */
 
 /** Rough token count: about four characters a token for English prose. */
@@ -16,16 +26,19 @@ export const HISTORY_BUDGET = { anthropic: 40_000, vllm: 6_000 } as const
 /** Messages always sent verbatim, however long: the last two exchanges. */
 export const KEEP = 4
 
-/** The messages since the summary that go to the AI as they were written. */
+/** The thread: typed questions and their answers (not the AI cards' one-off tasks, nor failures). */
+export const inThread = (e: ChatEntry) => !e.runId && !e.failed && !!e.content.trim()
+
+/** The thread since the summary, as it goes to the AI verbatim. */
 export function live(c: ChatConversation): ChatEntry[] {
   const from = c.summary ? c.entries.findIndex((e) => e.id === c.summary!.through) + 1 : 0
-  return c.entries.slice(from).filter((e) => !e.failed && e.content.trim())
+  return c.entries.slice(from).filter(inThread)
 }
 
-/** Whether the live messages (plus a question about to be asked) are over budget. */
-export function needsCompacting(c: ChatConversation, budget: number, question = ''): boolean {
+/** Whether the live thread is over budget. */
+export function needsCompacting(c: ChatConversation, budget: number): boolean {
   const kept = live(c)
-  return kept.length > KEEP && kept.reduce((n, e) => n + tokens(e.content), tokens(question)) > budget
+  return kept.length > KEEP && kept.reduce((n, e) => n + tokens(e.content), 0) > budget
 }
 
 /** The messages to summarise now (all but the newest few), or none. */
@@ -51,12 +64,21 @@ export function summaryRequest(c: ChatConversation, older: ChatEntry[]): ChatMes
   ]
 }
 
+/** The review as it stands, ahead of what is being asked. */
+export const withState = (state: string, ask: string) => `<review_state>\n${state}\n</review_state>\n\n${ask}`
+
+/** A typed question as the AI reads it: a note if the version changed, and the card answer it follows up. */
+function asked(e: ChatEntry, before: number | undefined, followed: (runId: string) => string | undefined): string {
+  const note = e.version && before !== undefined && e.version !== before ? `(Now looking at version ${e.version} of the contract.)\n\n` : ''
+  const card = e.about ? followed(e.about) : undefined
+  return note + (card ? `(Following up this check:)\n\n${card}\n\n` : '') + e.content
+}
+
 /**
- * The history for the AI: the summary (as an exchange, so the roles alternate), then the live
- * messages, then the new question. A message from a different version from the one before it
- * says so; consecutive messages from the same side (a failed answer left out) are joined.
+ * The thread for the AI: the summary (as an exchange, so the roles alternate), then the live
+ * messages; consecutive messages from one side (an unanswered question) are joined.
  */
-export function contextFor(c: ChatConversation, question: string, version?: number): ChatMessage[] {
+export function threadFor(c: ChatConversation, followed: (runId: string) => string | undefined): ChatMessage[] {
   const out: ChatMessage[] = []
   const push = (m: ChatMessage) => {
     const last = out[out.length - 1]
@@ -65,14 +87,29 @@ export function contextFor(c: ChatConversation, question: string, version?: numb
   }
   if (c.summary) {
     push({ role: 'user', content: `(Summary of our conversation about this contract so far.)\n\n${c.summary.text}` })
-    push({ role: 'assistant', content: 'Noted. I have the summary and the contract as it now reads.' })
+    push({ role: 'assistant', content: 'Noted. I have the summary and the contract.' })
   }
   let seen: number | undefined
   for (const e of live(c)) {
-    const note = e.role === 'user' && e.version && seen !== undefined && e.version !== seen ? `(Now looking at version ${e.version} of the contract.)\n\n` : ''
+    push({ role: e.role, content: e.role === 'user' ? asked(e, seen, followed) : e.content })
     if (e.version) seen = e.version
-    push({ role: e.role, content: note + e.content })
   }
-  if (question) push({ role: 'user', content: (version && seen !== undefined && version !== seen ? `(Now looking at version ${version} of the contract.)\n\n` : '') + question })
   return out
+}
+
+/**
+ * A typed question's request: the thread before it, then one message with the review state and
+ * the question (the newest entry). The state goes last so a change to it never invalidates the
+ * cached thread.
+ */
+export function chatRequest(c: ChatConversation, state: string, followed: (runId: string) => string | undefined): ChatMessage[] {
+  const question = c.entries[c.entries.length - 1]
+  const before: ChatConversation = { ...c, entries: c.entries.slice(0, -1) }
+  const thread = threadFor(before, followed)
+  const prev = [...live(before)].reverse().find((e) => e.version)?.version
+  thread.push({ role: 'user', content: withState(state, asked(question, prev, followed)) })
+  // An unanswered question before it (its answer failed): one user message.
+  const n = thread.length
+  if (n > 1 && thread[n - 2].role === 'user') thread.splice(n - 2, 2, { role: 'user', content: `${thread[n - 2].content}\n\n${thread[n - 1].content}` })
+  return thread
 }

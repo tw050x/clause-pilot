@@ -132,7 +132,12 @@ export class AnthropicProvider implements AiProvider {
     return this.structured(EmailSchema, EMAIL_SYSTEM, [{ type: 'text', text: userPrompt }], 'low')
   }
 
-  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void): Promise<string> {
+  /**
+   * Two cache breakpoints: after the system prompt (the instructions and the contract, the same
+   * all review) and at the end of the conversation before the newest message (it only grows, so
+   * the next request reuses this one's cached start and pays in full only for what's new).
+   */
+  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void): Promise<string> {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: 16000,
@@ -140,11 +145,16 @@ export class AnthropicProvider implements AiProvider {
       fallbacks: 'default',
       output_config: { effort: 'low' },
       system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-      messages: history.map((m) => ({ role: m.role, content: m.content }))
+      messages: history.map((m, i) => ({
+        role: m.role,
+        content: i === history.length - 2 ? [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }] : m.content
+      }))
     })
     stream.on('text', (t) => onDelta(t))
     const final = await stream.finalMessage()
     if (final.stop_reason === 'refusal') throw new AiRefusalError('The model declined this request.')
+    const u = final.usage
+    onUsage?.({ input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), cached: u.cache_read_input_tokens ?? 0, output: u.output_tokens })
     return final.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('')
   }
 }
@@ -255,13 +265,18 @@ export class VllmProvider implements AiProvider {
     return this.structured('change_review', ChangeSchema, DOCUMENT_SYSTEM, `${paragraphsBlock(input.contract)}\n\n${changeQuestion(input)}`)
   }
 
-  /** A chat reply, streamed as it's written (server-sent events). */
-  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void): Promise<string> {
+  /**
+   * A chat reply, streamed as it's written (server-sent events). The request starts with the
+   * same system prompt and conversation as the last one, so a server with prefix caching reuses
+   * that work; `cached` reports it when the server says (prompt_tokens_details.cached_tokens).
+   */
+  async chat(system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void): Promise<string> {
     const res = await this.post({
       messages: [{ role: 'system', content: system }, ...history.map((m) => ({ role: m.role, content: m.content }))] satisfies Msg[],
       temperature: 0.3,
       max_tokens: 2000,
-      stream: true
+      stream: true,
+      stream_options: { include_usage: true }
     })
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
@@ -279,7 +294,12 @@ export class VllmProvider implements AiProvider {
         const data = line.slice(5).trim()
         if (data === '[DONE]') return out
         try {
-          const delta = (JSON.parse(data) as { choices?: { delta?: { content?: string } }[] }).choices?.[0]?.delta?.content
+          const chunk = JSON.parse(data) as {
+            choices?: { delta?: { content?: string } }[]
+            usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null
+          }
+          if (chunk.usage) onUsage?.({ input: chunk.usage.prompt_tokens ?? 0, cached: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0, output: chunk.usage.completion_tokens ?? 0 })
+          const delta = chunk.choices?.[0]?.delta?.content
           if (delta) {
             out += delta
             onDelta(delta)
@@ -291,6 +311,13 @@ export class VllmProvider implements AiProvider {
     }
     return out
   }
+}
+
+/** Tokens a chat request used: all its input, how much of that came from the prompt cache, and its output. */
+export interface ChatUsage {
+  input: number
+  cached: number
+  output: number
 }
 
 /** No AI configured: every AI step says what's missing; everything else still works. */
