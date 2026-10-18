@@ -26,7 +26,6 @@ export function ContractView({
     onChanged()
   }
   const versions = reviews.filter((r) => r.contractId === contract.id).sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
-  const latest = versions[0]
 
   return (
     <div className="page">
@@ -81,7 +80,6 @@ export function ContractView({
                 <tr key={v.id} className="clickable version-row" onClick={() => onOpenReview(v.id)}>
                   <td>
                     <strong>Version {v.version}</strong>
-                    {v.id === latest?.id && <span className="pill intent" style={{ marginLeft: 6 }}>latest</span>}
                     {v.closed && <span className="pill neutral" style={{ marginLeft: 6 }}>closed</span>}
                   </td>
                   <td>{v.docName}</td>
