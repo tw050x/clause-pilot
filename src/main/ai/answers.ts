@@ -105,7 +105,7 @@ export function changesAnswer(results: { where: string; blockIds: string[]; revi
   })
 }
 
-/** The parts as Markdown: what Ask AI keeps as the chat's context, and the fallback for display. */
+/** The parts as Markdown: the answer as text (kept on the run), and the fallback for display. */
 export function answerMarkdown(parts: Part[]): string {
   return parts
     .map((p) => {

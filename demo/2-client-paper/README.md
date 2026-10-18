@@ -33,7 +33,7 @@ There is no second round.
 
    Nothing here is our wording, so almost every paragraph has a **grey bar** ("To read"). The right-hand column says *Not on our paper* and counts the paragraphs to read. When the file was opened, the app found the closest of our approved clauses for each paragraph, up to three, by keywords and on your machine. Nothing was sent anywhere.
 
-7. Select the whole agreement (click in it and press ⌘A). The **AI** section of the right-hand column, which says *Select text for options* until you select something, now offers cards. Press **Ask: Does the intent match?**. Each paragraph goes to the AI with its shortlist of our clauses; the question appears in **Ask AI** and the answer comes back there and on the card (go back to the **Review** tab to see it). Paragraphs it finds equivalent to one of ours turn **dashed green**.
+7. Select the whole agreement (click in it and press ⌘A). The **AI** section of the right-hand column, which says *Select text for options* until you select something, now offers cards. Press **Ask: Does the intent match?**. Each paragraph goes to the AI with its shortlist of our clauses; the answer comes back on the card. Paragraphs it finds equivalent to one of ours turn **dashed green**.
 
    Expect these to pass:
 

@@ -191,10 +191,7 @@ const AI_TASK_LIMIT_MS = 4 * 60_000
 /** A task saved as running whose answer can no longer arrive (the app closed while it ran) is marked failed, so it can be asked again. */
 function settleStaleRuns(s: ReviewSession) {
   const stale = (s.doc?.aiRuns ?? []).filter((r) => r.status === 'running' && !inFlight.has(r.id))
-  for (const r of stale) {
-    Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
-    addChat(s, { role: 'assistant', content: `Sorry, that failed: ${r.error}`, runId: r.id, failed: true })
-  }
+  for (const r of stale) Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
   if (stale.length) wsFor(s).store.saveSession(s)
 }
 
@@ -893,7 +890,7 @@ const prose = (d: DocReview) => (t: string) =>
     return b ? whereOf(d, b) : m
   })
 
-/** What each task asks, as posted to Ask AI. */
+/** What each task asks: the question the card records and sends. */
 function questionFor(kind: AiTaskKind, places: string, quote: string): string {
   const q = quote.length > 400 ? `${quote.slice(0, 400).trimEnd()}…` : quote
   const quoted = `\n\n> ${q.replace(/\n+/g, ' ')}`
@@ -932,7 +929,6 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
   d.aiRuns = [...(d.aiRuns ?? []), run]
   w.audit.append(actor(), 'ai.task-requested', s.id, { kind: task.kind, paragraphs: places })
   persist(s)
-  addChat(s, { role: 'user', content: run.question, by: actor(), runId: run.id })
   inFlight.add(run.id)
   const finish = (patch: Partial<AiTaskRun>) => {
     const r = d.aiRuns!.find((x) => x.id === run.id)!
@@ -940,7 +936,6 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { kind: AiTaskKind; block
     if (r.status !== 'running') return
     inFlight.delete(run.id)
     Object.assign(r, patch, { at: new Date().toISOString() })
-    addChat(s, patch.status === 'done' ? { role: 'assistant', content: r.answer ?? '', runId: run.id } : { role: 'assistant', content: `Sorry, that failed: ${r.error}`, runId: run.id, failed: true })
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { kind: task.kind, paragraphs: places, error: patch.error })
     persist(s)
   }
@@ -1064,13 +1059,6 @@ function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' 
   return entry
 }
 
-/** A card's question and answer, from the conversation, for a question that follows it up. */
-const followedIn = (c: ChatConversation) => (runId: string) => {
-  const q = c.entries.find((e) => e.runId === runId && e.role === 'user')
-  const a = c.entries.find((e) => e.runId === runId && e.role === 'assistant' && !e.failed)
-  return q && a ? `Question: ${q.content}\n\nAnswer:\n${a.content}` : undefined
-}
-
 /**
  * A typed question's request: the thread (compacted first if it has outgrown the budget: the
  * older messages summarised by the same model, the summary kept for next time), then the review
@@ -1095,7 +1083,7 @@ async function chatRequestFor(s: ReviewSession, model: NonNullable<ReturnType<ty
       wsFor(s).audit.append('system', 'chat.compact-failed', s.id, { error: e instanceof Error ? e.message : String(e) })
     }
   }
-  return chatRequest(c, reviewState(s), followedIn(c))
+  return chatRequest(c, reviewState(s))
 }
 
 ipcMain.handle('chat:get', (_e, sessionId: string) => {
@@ -1104,10 +1092,10 @@ ipcMain.handle('chat:get', (_e, sessionId: string) => {
 })
 
 /** A question typed into Ask AI: kept in the conversation, answered with it as context. */
-ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string, about?: string) => {
+ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requestId: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
-  addChat(s, { role: 'user', content: question.trim(), by: actor(), ...(about ? { about } : {}) })
+  addChat(s, { role: 'user', content: question.trim(), by: actor() })
   ws.audit.append(actor(), 'chat.question', s.id, { question })
   const model = chatModel()
   if (!model) {

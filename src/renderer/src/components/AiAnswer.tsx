@@ -9,8 +9,7 @@ import { Icon } from '../lib/icons'
 /**
  * An AI answer: its text, and a card per finding with a verdict, a link to the paragraphs it is
  * about, and what can be done (the suggested wording, shown as a redline against the paragraph
- * as it stands, to apply as our edit; a comment to add). Shown on the AI card in the review
- * column and in Ask AI.
+ * as it stands, to apply as our edit; a comment to add). Shown on the AI card in the review column.
  */
 export function AiAnswer({
   parts,

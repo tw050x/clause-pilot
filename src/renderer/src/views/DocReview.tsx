@@ -25,10 +25,6 @@ interface Props {
   contractTitle?: string
   onOpenReview: (id: string) => void
   onNominationsChanged: () => void
-  /** An AI card was used: show Ask AI with its question (the task is already running). */
-  onAskAi: (runId: string, question: string) => void
-  /** Highlight this text again (from a link in Ask AI). */
-  reselect?: { blockIds: string[]; quote: string; flash?: string[] } | null
 }
 
 type Draft = { blockId: string; quote?: string; replyTo?: string }
@@ -49,7 +45,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, onAskAi, reselect }: Props) {
+export function DocReview({ session, panel, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -254,17 +250,8 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
           onChange={onChange}
           run={async (kind) => {
             if (!highlight) return
-            // The task starts; its question goes to Ask AI, and the answer arrives as session updates.
-            let asked: { runId: string; question: string } | null = null
-            const ok = await act(
-              window.api.ai.run(session.id, { kind, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => {
-                const q = r.session.doc?.aiRuns?.find((x) => x.id === r.runId)?.question
-                if (q) asked = { runId: r.runId, question: q }
-                return r.session
-              })
-            )
-            const a = asked as { runId: string; question: string } | null
-            if (ok && a) onAskAi(a.runId, a.question)
+            // The task starts; its answer arrives on the card as session updates. Several can run at once.
+            await act(window.api.ai.run(session.id, { kind, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
           }}
         />
       )}
@@ -325,7 +312,6 @@ export function DocReview({ session, panel, onChange, alert, onOpenSecurity, acc
       <DocEditor
         key={session.id}
         session={session}
-        reselect={reselect}
         act={act}
         onFocusBlock={onFocusBlock}
         onSelectChanges={onSelectChanges}
@@ -928,9 +914,10 @@ const AI_TASKS: { kind: AiTaskKind; title: string; detail: string }[] = [
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
 
 /**
- * The AI section: a card for each task that fits the highlighted text. Using a card asks the AI
- * (the question goes to Ask AI too), and the answer, written from the server's response, comes
- * back onto the card, with the response as returned.
+ * The AI section: a card for each task that fits the highlighted text. Using a card asks the AI,
+ * and the answer, written from the server's response, comes back onto the card, with the
+ * response as returned. The cards run independently, so several can be asked at once; their
+ * answers stay here (Ask AI sees their findings as part of the review, not as messages).
  */
 function AiSection({
   session,
@@ -996,9 +983,10 @@ function AiCard({
 }) {
   const [raw, setRaw] = useState(false)
   const running = result?.status === 'running'
+  const stream = useStream(running ? result!.id : undefined)
   return (
     <div className={`ai-card ${result ? 'has-result' : ''}`}>
-      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title={result ? 'Ask again: the question and the answer also appear in Ask AI' : 'Asks the AI: the question and the answer also appear in Ask AI'}>
+      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title={result ? 'Ask again' : 'Ask the AI'}>
         <Icon name="sparkle" size={14} />
         <span className="ai-card-text">
           <strong>{title}</strong>
@@ -1020,7 +1008,28 @@ function AiCard({
           {raw && <pre className="ai-raw">{typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw, null, 2)}</pre>}
         </div>
       )}
+      {running && (stream.text || stream.thinking) && (
+        <div className="ai-card-body">{stream.text ? <Markdown text={stream.text} /> : <span className="faint dr-small">Thinking…</span>}</div>
+      )}
       {result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
   )
+}
+
+/** A card's answer as it streams in (Explain), and whether the model is thinking first. */
+function useStream(runId: string | undefined) {
+  const [text, setText] = useState('')
+  const [thinking, setThinking] = useState(false)
+  useEffect(() => {
+    setText('')
+    setThinking(false)
+    if (!runId) return
+    const offDelta = window.api.chat.onDelta((d) => d.requestId === runId && setText((t) => t + d.text))
+    const offThinking = window.api.chat.onThinking((d) => d.requestId === runId && setThinking(true))
+    return () => {
+      offDelta()
+      offThinking()
+    }
+  }, [runId])
+  return { text, thinking }
 }

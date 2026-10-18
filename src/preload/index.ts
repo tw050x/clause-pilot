@@ -71,7 +71,7 @@ const api: Api = {
   redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
   chat: {
     get: (id) => invoke('chat:get', id),
-    send: (id, question, requestId, about) => invoke('chat:send', id, question, requestId, about),
+    send: (id, question, requestId) => invoke('chat:send', id, question, requestId),
     clear: (id) => invoke('chat:clear', id),
     onDelta: on('chat:delta'),
     onThinking: on('chat:thinking'),

@@ -92,7 +92,7 @@ export interface Api {
   chat: {
     get(id: string): Promise<ChatConversation>
     /** Ask a question (following up an AI card's answer: its run id); the question and the answer are added to the conversation (the answer streams as deltas). */
-    send(id: string, question: string, requestId: string, about?: string): Promise<void>
+    send(id: string, question: string, requestId: string): Promise<void>
     clear(id: string): Promise<void>
     onDelta(cb: (d: { requestId: string; text: string }) => void): Unsub
     /** A reasoning model started thinking before it answers (the thinking isn't shown). */
