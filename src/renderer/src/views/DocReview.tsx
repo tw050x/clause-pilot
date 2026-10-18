@@ -1045,11 +1045,25 @@ function AiCard({
   onChange: (s: ReviewSession) => void
 }) {
   const [raw, setRaw] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const running = result?.status === 'running'
   const stream = useStream(running ? result!.id : undefined)
+  // Asking again costs another request and replaces the answer on the card: confirm it first.
+  const ask = () => (result?.status === 'done' ? setConfirming(true) : onRun())
   return (
     <div className={`ai-card ${result ? 'has-result' : ''}`}>
-      <button className="ai-card-head" disabled={disabled || running} onClick={onRun} title={result ? 'Ask again' : 'Ask the AI'}>
+      {confirming && result && (
+        <AskAgain
+          title={title}
+          result={result}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false)
+            onRun()
+          }}
+        />
+      )}
+      <button className="ai-card-head" disabled={disabled || running} onClick={ask} title={result ? 'Ask again' : 'Ask the AI'}>
         <Icon name="sparkle" size={14} />
         <span className="ai-card-text">
           <strong>{title}</strong>
@@ -1076,6 +1090,47 @@ function AiCard({
       )}
       {result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
+  )
+}
+
+/**
+ * Confirm asking a question again, in the middle of the window: it sends new requests to the AI
+ * (which cost money) and the new answer replaces the one on the card. Cancel has the focus, so
+ * Enter or Escape straight away does nothing.
+ */
+function AskAgain({ title, result, onCancel, onConfirm }: { title: string; result: AiTaskRun; onCancel: () => void; onConfirm: () => void }) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    cancel.current?.focus()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [onCancel])
+  const when = new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return createPortal(
+    <div className="modal-back" onClick={onCancel}>
+      <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="ask-again-title" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <Icon name="sparkle" size={15} />
+          <h3 id="ask-again-title">Ask “{title.replace(/^Ask:\s*/, '')}” again?</h3>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginTop: 0 }}>
+            This text already has an answer, from {result.by} on {when}.
+          </p>
+          <p style={{ marginBottom: 0 }}>Asking again sends new requests to the AI, which costs money, and the new answer replaces this one on the card. The earlier answer stays in the review’s record.</p>
+        </div>
+        <div className="modal-foot">
+          <button ref={cancel} className="btn" onClick={onCancel}>
+            Keep this answer
+          </button>
+          <button className="btn primary" onClick={onConfirm}>
+            Ask again
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 

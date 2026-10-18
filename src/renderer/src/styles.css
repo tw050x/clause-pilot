@@ -882,3 +882,7 @@ del.us-del ins.th-ins { color: inherit; }
 .ai-more-item { display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; border: none; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; }
 .ai-more-item:hover, .ai-more-item:focus-visible { background: var(--surface-2); outline: none; }
 .ai-more-item .faint { font-size: 12px; }
+.modal.confirm-modal { width: min(440px, calc(100vw - 48px)); }
+.confirm-modal .modal-head h3 { margin: 0; font-size: 15px; }
+.confirm-modal .modal-head svg { color: var(--processing); }
+.confirm-modal .modal-body { font-size: 13.5px; line-height: 1.5; }
