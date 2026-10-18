@@ -725,13 +725,24 @@ del.us-del ins.th-ins { color: inherit; }
 .hist-item.undone .hist-items { opacity: 0.6; }
 
 /* ProseMirror document */
-.ed-host { min-height: 100%; position: relative; max-width: 860px; margin: 0 auto; }
+.ed-frame { position: relative; max-width: 860px; margin: 0 auto; min-height: 100%; }
+.ed-host { min-height: 100%; position: relative; }
+/* The left gutter (the page's 72px margin, left of the paragraphs' bars): labels and markers over the page. */
+.ed-gutter-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+/* A run of paragraphs that read exactly as ours: one label, kept in view while the run scrolls past. */
+.ed-unchanged-run { position: absolute; left: 0; width: 61px; display: flex; flex-direction: column; align-items: flex-end; }
+.ed-unchanged { position: sticky; top: 10px; margin-top: 3px; padding: 0 3px; border-radius: 4px; font: 500 9.5px/1.6 system-ui, sans-serif; letter-spacing: -0.01em; color: var(--exact); background: color-mix(in srgb, var(--exact) 10%, var(--surface)); white-space: nowrap; pointer-events: auto; cursor: default; }
+/* A highlight with AI answers: a marker on the bar at its first paragraph; click to select it again. */
+.ed-ai-mark { position: absolute; left: 64px; width: 20px; height: 20px; margin-top: 2px; display: grid; place-items: center; padding: 0; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; }
+.ed-ai-mark:hover { background: var(--processing-tint); }
 .ed-host .ed-doc { white-space: pre-wrap; }
 .ed-doc .ed-p { position: relative; margin: 0 0 10px; padding-left: 12px; border-left: 4px solid transparent; }
 .ed-doc .ed-p.chg-theirs { border-left-color: color-mix(in srgb, #1d4ed8 45%, transparent); }
 .ed-doc .ed-p.chg-ours { border-left-color: color-mix(in srgb, var(--rejected) 60%, transparent); }
 .ed-doc .ed-p.chg-untracked { border-left-style: dashed; }
 .ed-doc .ed-p.gone { display: none; }
+/* The same bar as the next paragraph: one bar, running on through the gap between them. */
+.ed-doc .ed-p.bar-joins { margin-bottom: 0; padding-bottom: 10px; }
 .ed-doc .ed-p.tagged::before { content: attr(data-tag); display: table; margin-bottom: 2px; font: 600 10.5px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--review); border: 1px dashed var(--review); border-radius: 4px; padding: 0 5px; }
 .ed-doc .dr-label { margin-right: 8px; font-weight: 700; user-select: none; }
 .ed-doc del { cursor: default; }

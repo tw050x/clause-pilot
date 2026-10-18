@@ -9,7 +9,8 @@ import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/type
 import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { aiSame, changeKey, commentResolved, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
-import { CommentIcon } from '../lib/icons'
+import { CommentIcon, Icon } from '../lib/icons'
+import { DEFAULTS, questionIdOf } from '@shared/questions'
 
 /**
  * The contract as one editable column, like Word with Track Changes on, built on ProseMirror.
@@ -151,6 +152,102 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   cb.current = { act, onFocusBlock, onComment, onSelectChanges, onShowComments }
   /** The gutter's comment button, level with the selection; `left` (from the wrapper) when there's room beside the page for its label to run outward. */
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string; left?: number } | null>(null)
+  /** Paragraphs that read exactly as our approved wording or as we last sent them (from the decorations). */
+  const exact = useRef(new Set<string>())
+  /** Reports the selection to the review (set up with the editor). */
+  const reportRef = useRef<((v: EditorView) => void) | null>(null)
+  /** The left gutter: runs of exactly matching paragraphs, and the highlights with AI answers, where they are on the page. */
+  const [gutter, setGutter] = useState<{ runs: { top: number; height: number }[]; ai: { top: number; blockIds: string[]; quote: string; titles: string[] }[] }>({ runs: [], ai: [] })
+  const measuring = useRef(0)
+  const measure = () => {
+    cancelAnimationFrame(measuring.current)
+    measuring.current = requestAnimationFrame(() => {
+      const h = host.current
+      if (!h) return
+      const top0 = h.getBoundingClientRect().top
+      const paras = [...h.querySelectorAll<HTMLElement>('p[data-block]')].filter((p) => p.offsetParent !== null)
+      const box = (p: HTMLElement) => {
+        const r = p.getBoundingClientRect()
+        return { top: r.top - top0, bottom: r.bottom - top0 }
+      }
+      // Consecutive exactly matching paragraphs: one run each.
+      const runs: { top: number; height: number }[] = []
+      let run: { top: number; bottom: number } | null = null
+      for (const p of paras) {
+        if (exact.current.has(p.dataset.block!)) {
+          const b = box(p)
+          run = run ? { top: run.top, bottom: b.bottom } : b
+        } else if (run) {
+          runs.push({ top: run.top, height: run.bottom - run.top })
+          run = null
+        }
+      }
+      if (run) runs.push({ top: run.top, height: run.bottom - run.top })
+      // Each highlight with answers: at its first paragraph on the page.
+      const order = new Map(paras.map((p, i) => [p.dataset.block!, i]))
+      const groups = new Map<string, { blockIds: string[]; quote: string; titles: string[]; asked: Set<string> }>()
+      for (const r of model.current.aiRuns ?? []) {
+        if (r.status !== 'done') continue
+        const key = [...r.blockIds].sort().join(',')
+        const g = groups.get(key) ?? { blockIds: r.blockIds, quote: r.quote, titles: [], asked: new Set<string>() }
+        // Each question once, by its title (runs from before questions had titles: the built-in's).
+        const q = questionIdOf(r)
+        if (!g.asked.has(q)) {
+          g.asked.add(q)
+          g.titles.push(r.title ?? DEFAULTS.find((x) => x.id === q)?.title ?? r.question.split('\n')[0])
+        }
+        g.quote = r.quote
+        groups.set(key, g)
+      }
+      const ai = [...groups.values()].flatMap((g) => {
+        const first = g.blockIds.filter((id) => order.has(id)).sort((a, b) => order.get(a)! - order.get(b)!)[0]
+        return first ? [{ blockIds: g.blockIds, quote: g.quote, titles: g.titles, top: box(paras[order.get(first)!]).top }] : []
+      })
+      setGutter({ runs, ai })
+    })
+  }
+
+  /**
+   * Highlight some text again (an AI answer's marker in the gutter): find it in its paragraphs as
+   * they now read, select it, bring it into view, and report it like any highlight, so the review
+   * column shows the answers for it.
+   */
+  const selectText = (blockIds: string[], quote: string) => {
+    const v = view.current
+    if (!v) return
+    const { state } = v
+    // The paragraphs' text joined as the selection reads it (a space between paragraphs), with the
+    // document position of each character.
+    let flat = ''
+    const posOf: number[] = []
+    state.doc.forEach((node, offset) => {
+      if (!blockIds.includes(node.attrs.id)) return
+      if (flat) {
+        flat += ' '
+        posOf.push(-1)
+      }
+      node.forEach((child, at) => {
+        if (!child.isText) return
+        for (let k = 0; k < child.text!.length; k++) posOf.push(offset + 1 + at + k)
+        flat += child.text
+      })
+    })
+    const norm = (t: string) => t.replace(/\s/g, ' ')
+    let i = quote.trim() ? norm(flat).indexOf(norm(quote)) : -1
+    let len = quote.length
+    // Changed since (or no quote): the paragraphs as they are.
+    if (i < 0) {
+      i = 0
+      len = flat.length
+    }
+    const from = posOf.slice(i).find((p) => p >= 0)
+    const to = posOf.slice(0, i + len).reverse().find((p) => p >= 0)
+    if (from === undefined || to === undefined) return
+    v.focus()
+    v.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to + 1)))
+    window.setTimeout(() => reportRef.current?.(v), 0)
+  }
+
   /** A paragraph's comments, theirs and ours (for the gutter button's label). */
   const commentsOn = (blockId: string) => {
     const d = model.current
@@ -232,6 +329,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const blocks = blocksById()
       const decos: Decoration[] = []
       const f = focused.current
+      // Each paragraph's bar (its colour and style), so a run of the same bar is drawn as one.
+      const bars: { offset: number; size: number; bar: string; cls: string; tag: string; gone: boolean }[] = []
+      const exactNow = new Set<string>()
       state.doc.forEach((node, offset) => {
         const b = blocks.get(node.attrs.id)
         if (!b) return
@@ -249,14 +349,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         // word for word, or exactly what we sent last round.
         const checked = !open && !edited && (decided || isCleared(d, b))
         const tag = b.untracked && open ? (b.untracked === 'sent' ? 'not tracked' : b.standard ? 'not our standard' : 'not in our template') : ''
-        decos.push(
-          Decoration.node(offset, offset + node.nodeSize, {
-            // The AI found it means the same as our approved wording: dashed green until you decide it.
-            // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
-            class: `${(open || needsReading(d, b)) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : needsReading(d, b) && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`,
-            ...(tag ? { 'data-tag': tag } : {})
-          })
-        )
+        // The AI found it means the same as our approved wording: dashed green until you decide it.
+        // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
+        const bar = `${(open || needsReading(d, b)) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : needsReading(d, b) && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''}`.replace(/\s+/g, ' ').trim()
+        bars.push({ offset, size: node.nodeSize, bar, cls: `${bar} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`, tag, gone })
+        // Exactly our approved wording, or exactly what we sent last round: "Unchanged" in the gutter.
+        // (Not one a reviewer marked as checked: that's a judgement, not a match.)
+        if (!open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))) exactNow.add(b.id)
         // The number as it now reads: clauses we add are numbered, and the ones after move up.
         const label = labelOf(d, b)
         if (label) {
@@ -322,6 +421,17 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         for (const r of anchors)
           decos.push(Decoration.inline(start + r.from, start + r.to, { class: `ed-anchor ${r.ours ? 'ours' : 'theirs'}`, 'data-anchor': b.id }))
       })
+      // A bar that runs on into the next paragraph's (the same bar, nothing hidden between) is drawn
+      // as one: the gap between the two paragraphs is part of the first one's bar.
+      const shown = bars.filter((x) => !x.gone)
+      for (const [n, x] of shown.entries()) {
+        const joins = !!x.bar && shown[n + 1]?.bar === x.bar
+        decos.push(Decoration.node(x.offset, x.offset + x.size, { class: `${x.cls}${joins ? ' bar-joins' : ''}`, ...(x.tag ? { 'data-tag': x.tag } : {}) }))
+      }
+      for (const x of bars) if (x.gone) decos.push(Decoration.node(x.offset, x.offset + x.size, { class: x.cls }))
+      exact.current = exactNow
+      measure()
+
       return DecorationSet.create(state.doc, decos)
     }
 
@@ -683,7 +793,13 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     })
     view.current = editor
     flashView = editor
+    reportRef.current = report
+    // The page reflows (the window, the columns, fonts): the gutter's labels move with it.
+    const resized = new ResizeObserver(() => measure())
+    resized.observe(host.current!)
     return () => {
+      resized.disconnect()
+      cancelAnimationFrame(measuring.current)
       // Leaving the review saves what's typed.
       for (const id of pending.current.keys()) save(id, `type:${id}`)
       editor.destroy()
@@ -696,6 +812,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   useEffect(() => {
     model.current = session.doc!
     sessionId.current = session.id
+    measure()
     const v = view.current
     if (!v) return
     const d = session.doc!
@@ -742,7 +859,32 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
 
   return (
     <>
-      <div ref={host} className="ed-host" />
+      <div className="ed-frame">
+        <div ref={host} className="ed-host" />
+        {/* The left gutter, beside the paragraphs' bars. */}
+        <div className="ed-gutter-layer">
+          {gutter.runs.map((r, i) => (
+            <div key={`u${i}`} className="ed-unchanged-run" style={{ top: r.top, height: r.height }}>
+              <span className="ed-unchanged" title="Reads exactly as our approved wording, or as we last sent it">
+                Unchanged
+              </span>
+            </div>
+          ))}
+          {gutter.ai.map((a) => (
+            <button
+              key={a.blockIds.join(',')}
+              className="ed-ai-mark"
+              style={{ top: a.top }}
+              title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
+              aria-label="Show the AI answers for this text"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => selectText(a.blockIds, a.quote)}
+            >
+              <SparkleIcon />
+            </button>
+          ))}
+        </div>
+      </div>
       {bubble && (
         <button
           className={`ed-gutter-btn ${bubble.left !== undefined ? 'out' : ''}`}
@@ -785,3 +927,5 @@ function anchorRanges(d: DocReview, b: DocBlock, text: string): { from: number; 
   for (const c of d.comments) if (c.blockId === b.id && !commentResolved(d, c)) find(c.quote, true)
   return out
 }
+
+const SparkleIcon = () => <Icon name="sparkle" size={12} stroke={2.2} />
