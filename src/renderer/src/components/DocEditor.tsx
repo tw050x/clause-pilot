@@ -157,6 +157,17 @@ const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
 
 /** The gutter's comment button's label, and about how wide the button is with it (icon, padding, ~7px a character). */
 const commentLabel = (n: number) => (n ? `${n} comment${n === 1 ? '' : 's'}` : 'Comment')
+/** A paragraph's state as its bar shows it, labelled in the left gutter once per run. */
+type GutterState = 'unchanged' | 'checked' | 'same' | 'decide' | 'edited' | 'read'
+const GUTTER: Record<GutterState, { label: string; tip: string }> = {
+  unchanged: { label: 'Unchanged', tip: 'Reads exactly as our approved wording, or as we last sent it. Nothing to check.' },
+  checked: { label: 'Checked', tip: 'Nothing left to check: their changes here are decided, or a reviewer marked it as checked.' },
+  same: { label: 'Same intent', tip: 'The AI found it means the same as our approved wording. It only advises: decide it yourself.' },
+  decide: { label: 'To decide', tip: 'Their changes, tracked or found by comparison: accept or reject them.' },
+  edited: { label: 'Edited', tip: 'Your edits: they go to them as tracked changes in the marked-up copy.' },
+  read: { label: 'To read', tip: 'Not our wording and nothing to accept or reject: read it, then mark it as checked.' }
+}
+
 /** What a paragraph's untracked-change tag means, for its tooltip. */
 const tagTip = (b: DocBlock) =>
   b.untracked === 'sent'
@@ -180,11 +191,12 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
   /** The gutter's comment button, level with the selection; `left` (from the wrapper) when there's room beside the page for its label to run outward. */
   const [bubble, setBubble] = useState<{ x: number; y: number; blockId: string; quote: string; left?: number } | null>(null)
   /** Paragraphs that read exactly as our approved wording or as we last sent them (from the decorations). */
-  const exact = useRef(new Set<string>())
+  /** Each shown paragraph's state, as its bar shows it: the gutter labels runs of the same state. */
+  const states = useRef(new Map<string, GutterState>())
   /** Reports the selection to the review (set up with the editor). */
   const reportRef = useRef<((v: EditorView) => void) | null>(null)
-  /** The left gutter: runs of exactly matching paragraphs, and the highlights with AI answers, where they are on the page. */
-  const [gutter, setGutter] = useState<{ runs: { top: number; height: number }[]; ai: { top: number; blockIds: string[]; quote: string; titles: string[] }[] }>({ runs: [], ai: [] })
+  /** The left gutter: runs of paragraphs in the same state, and the highlights with AI answers, where they are on the page. */
+  const [gutter, setGutter] = useState<{ runs: { top: number; height: number; state: GutterState }[]; ai: { top: number; blockIds: string[]; quote: string; titles: string[] }[] }>({ runs: [], ai: [] })
   const measuring = useRef(0)
   const measure = () => {
     cancelAnimationFrame(measuring.current)
@@ -197,19 +209,18 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         const r = p.getBoundingClientRect()
         return { top: r.top - top0, bottom: r.bottom - top0 }
       }
-      // Consecutive exactly matching paragraphs: one run each.
-      const runs: { top: number; height: number }[] = []
-      let run: { top: number; bottom: number } | null = null
-      for (const p of paras) {
-        if (exact.current.has(p.dataset.block!)) {
-          const b = box(p)
-          run = run ? { top: run.top, bottom: b.bottom } : b
-        } else if (run) {
-          runs.push({ top: run.top, height: run.bottom - run.top })
-          run = null
+      // Consecutive paragraphs in the same state: one run each, labelled once.
+      const runs: { top: number; height: number; state: GutterState }[] = []
+      const open: { top: number; bottom: number; state?: GutterState } = { top: 0, bottom: 0 }
+      for (const p of [...paras, null]) {
+        const state = p ? states.current.get(p.dataset.block!) : undefined
+        if (state && open.state === state) {
+          open.bottom = box(p!).bottom
+          continue
         }
+        if (open.state) runs.push({ top: open.top, height: open.bottom - open.top, state: open.state })
+        Object.assign(open, p && state ? { ...box(p), state } : { state: undefined })
       }
-      if (run) runs.push({ top: run.top, height: run.bottom - run.top })
       // Each highlight with answers: at its first paragraph on the page.
       const order = new Map(paras.map((p, i) => [p.dataset.block!, i]))
       const groups = new Map<string, { blockIds: string[]; quote: string; titles: string[]; asked: Set<string> }>()
@@ -386,7 +397,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
       const f = focused.current
       // Each paragraph's bar (its colour and style), so a run of the same bar is drawn as one.
       const bars: { offset: number; size: number; bar: string; cls: string; tag: string; gone: boolean }[] = []
-      const exactNow = new Set<string>()
+      const statesNow = new Map<string, GutterState>()
       state.doc.forEach((node, offset) => {
         const b = blocks.get(node.attrs.id)
         if (!b) return
@@ -410,7 +421,24 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         bars.push({ offset, size: node.nodeSize, bar, cls: `${bar} ${gone ? 'gone' : ''} ${tag ? 'tagged' : ''}`, tag, gone })
         // Exactly our approved wording, or exactly what we sent last round: "Unchanged" in the gutter.
         // (Not one a reviewer marked as checked: that's a judgement, not a match.)
-        if (!open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))) exactNow.add(b.id)
+        const exact = !open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))
+        // The label for its bar (your edits show over theirs, as the bar does).
+        const state: GutterState | null = gone
+          ? null
+          : bar.includes('chg-ours')
+            ? 'edited'
+            : bar.includes('chg-ai')
+              ? 'same'
+              : bar.includes('chg-theirs')
+                ? 'decide'
+                : bar.includes('chg-read')
+                  ? 'read'
+                  : exact
+                    ? 'unchanged'
+                    : bar.includes('chg-checked')
+                      ? 'checked'
+                      : null
+        if (state) statesNow.set(b.id, state)
         // Why an untracked change is shown as one: a tag above the paragraph, explained on hover.
         if (tag)
           decos.push(
@@ -502,7 +530,7 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         decos.push(Decoration.node(x.offset, x.offset + x.size, { class: `${x.cls}${joins ? ' bar-joins' : ''}` }))
       }
       for (const x of bars) if (x.gone) decos.push(Decoration.node(x.offset, x.offset + x.size, { class: x.cls }))
-      exact.current = exactNow
+      states.current = statesNow
       measure()
 
       return DecorationSet.create(state.doc, decos)
@@ -940,8 +968,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         <div className="ed-gutter-layer">
           {gutter.runs.map((r, i) => (
             <div key={`u${i}`} className="ed-unchanged-run" style={{ top: r.top, height: r.height }}>
-              <span className="ed-unchanged" title="Reads exactly as our approved wording, or as we last sent it">
-                Unchanged
+              <span className={`ed-unchanged ${r.state}`} data-tip={GUTTER[r.state].tip}>
+                {GUTTER[r.state].label}
               </span>
             </div>
           ))}
