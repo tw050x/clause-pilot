@@ -191,7 +191,7 @@ export function App() {
           </button>
         )}
       </header>
-      <div className="body">
+      <div className={`body ${navOpen ? '' : 'nav-closed'}`}>
         <NavDrawer
           open={navOpen}
           view={view}
