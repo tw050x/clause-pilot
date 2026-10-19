@@ -114,6 +114,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     runs: [],
     ai: []
   })
+  // The gutter as last measured, for handlers set up before it was (the page's own listeners).
+  const gutterNow = useRef(gutter)
+  gutterNow.current = gutter
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
   const measuring = useRef(0)
@@ -409,8 +412,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         // an AI marker it would cover.
         const line = [...fragment.querySelectorAll('.superdoc-line')].map((l) => l.getBoundingClientRect()).find((l) => y >= l.top && y <= l.bottom)
         let top = (line ? line.top + line.height / 2 : y) - base.top - 8
-        const marker = gutter.ai.find((m) => Math.abs(m.top + 2 - top) < 18)
-        if (marker) top = marker.top + 2 + 20
+        // An AI marker it would cover, or that it would sit just under: directly below it.
+        const marker = gutterNow.current.ai.find((m) => top > m.top + 2 - 16 && top < m.top + 2 + 16 + 24)
+        if (marker) top = marker.top + 2 + 16 + 3 // 3px between them
         setBubble({ top, left: r.right - base.left + 12, blockId: loaded.ids[nodeId(fragment)] ?? blockIds[0], quote: sel.quotedText })
       }
       cb.current.onFocusBlock(blockIds[0])
