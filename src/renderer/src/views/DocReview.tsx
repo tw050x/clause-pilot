@@ -1279,9 +1279,6 @@ function AiCard({
         {hasBody ? (
           <button className="ai-card-head" onClick={() => setOpen((v) => !v)} aria-expanded={open} title={open ? 'Close the answer' : 'Show the answer'}>
             {heading}
-            <span className={`ai-card-go ${open ? 'open' : ''}`}>
-              <Chevron size={11} />
-            </span>
           </button>
         ) : (
           <div className="ai-card-head">{heading}</div>
@@ -1289,6 +1286,14 @@ function AiCard({
         <button className="btn sm ai-card-ask" disabled={disabled || running} onClick={ask} title={result?.status === 'done' ? 'Ask again (asks you to confirm: it replaces this answer)' : 'Ask the AI'}>
           {running ? <span className="spinner sm" /> : 'Ask'}
         </button>
+        {/* Opens and closes the answer, as the header does (its place kept when there's no answer). */}
+        {hasBody ? (
+          <button className={`ai-card-go ${open ? 'open' : ''}`} onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={open ? 'Close the answer' : 'Show the answer'} title={open ? 'Close the answer' : 'Show the answer'}>
+            <Chevron size={11} />
+          </button>
+        ) : (
+          <span className="ai-card-go" aria-hidden="true" />
+        )}
       </div>
       {open && result?.status === 'done' && (
         <div className="ai-card-body">
