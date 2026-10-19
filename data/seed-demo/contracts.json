@@ -44,8 +44,8 @@
   {
     "id": "ct-demo-northwind",
     "accountId": "ac-demo-northwind",
-    "title": "Mutual NDA",
-    "contractType": "nda",
+    "title": "Logistics Services Agreement",
+    "contractType": "general",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
@@ -72,22 +72,22 @@
   {
     "id": "ct-demo-acme-2",
     "accountId": "ac-demo-acme",
-    "title": "Order form 2026",
-    "contractType": "order-form",
+    "title": "Analytics Platform Agreement",
+    "contractType": "general",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
     "id": "ct-demo-globex",
     "accountId": "ac-demo-globex",
-    "title": "Mutual NDA",
-    "contractType": "nda",
+    "title": "Payment Services Agreement",
+    "contractType": "general",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
     "id": "ct-demo-globex-2",
     "accountId": "ac-demo-globex",
-    "title": "Penetration testing services",
-    "contractType": "general",
+    "title": "Mutual NDA",
+    "contractType": "nda",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
@@ -113,6 +113,13 @@
     "accountId": "ac-demo-initech",
     "title": "Mutual NDA",
     "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-initech-3",
+    "accountId": "ac-demo-initech",
+    "title": "Burp Suite Professional order form",
+    "contractType": "order-form",
     "createdAt": "2026-10-01T09:00:00.000Z"
   }
 ]

@@ -499,12 +499,20 @@ ipcMain.handle('mode:set', async (_e, demo: boolean) => {
  * vLLM server, both API keys) so the AI has to be set up again. Your name and the other settings
  * are kept. The workspace starts again empty and the window reloads.
  */
-ipcMain.handle('workspace:clear', () => {
+ipcMain.handle('workspace:clear', async () => {
   const dir = workspaceDir()
   sessions.clear()
   sessionWs.clear()
   rmSync(dir, { recursive: true, force: true })
   Object.assign(ws, openWorkspace())
+  // Demo mode: the demo workspace starts again as new (its data and history); the AI settings,
+  // which are for the team's own workspace, are left alone.
+  if (demoMode()) {
+    await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+    ws.audit.append(actor(), 'workspace.cleared', null, { demo: true })
+    win?.webContents.reload()
+    return true
+  }
   // Back to the AI defaults: Claude, the default model, no vLLM server, no keys.
   const kept: Partial<StoredSettings> = loadSettings()
   for (const k of ['aiProvider', 'model', 'vllmUrl', 'vllmModel', 'demoUrl'] as const) delete kept[k]

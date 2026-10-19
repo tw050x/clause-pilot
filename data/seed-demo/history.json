@@ -32,15 +32,9 @@
     "contractId": "ct-demo-northwind",
     "rounds": [
       {
-        "file": "Northwind-Mutual-NDA-v1-redline.docx",
-        "original": "Northwind-Mutual-NDA-v0-we-sent.docx",
+        "file": "Northwind-Logistics-Services-Agreement.docx",
+        "theirs": true,
         "daysAgo": 62,
-        "decide": "all",
-        "closed": false
-      },
-      {
-        "file": "Northwind-Mutual-NDA-v2-response.docx",
-        "daysAgo": 47,
         "decide": "all",
         "closed": true
       }
@@ -76,7 +70,29 @@
     ]
   },
   {
+    "contractId": "ct-demo-acme-2",
+    "rounds": [
+      {
+        "file": "Acme-Analytics-Platform-Agreement.docx",
+        "theirs": true,
+        "daysAgo": 8,
+        "decide": "half"
+      }
+    ]
+  },
+  {
     "contractId": "ct-demo-globex",
+    "rounds": [
+      {
+        "file": "Globex-Payment-Services-Agreement.docx",
+        "theirs": true,
+        "daysAgo": 0,
+        "decide": "none"
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-globex-2",
     "rounds": [
       {
         "file": "Globex-Mutual-NDA-v1-redline.docx",

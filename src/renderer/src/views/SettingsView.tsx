@@ -193,7 +193,7 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
       </div>
 
       <h2 className="settings-h">Data</h2>
-      <ClearData />
+      <ClearData demo={!!settings.demoMode} />
     </div>
   )
 }
@@ -202,7 +202,7 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
  * Start again with an empty workspace. Two steps, in the page rather than a native dialog:
  * the button asks, and the second button does it.
  */
-function ClearData() {
+function ClearData({ demo }: { demo: boolean }) {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   return (
@@ -210,14 +210,22 @@ function ClearData() {
       {!asking ? (
         <div>
           <button className="btn danger-outline" onClick={() => setAsking(true)}>
-            Clear all data…
+            {demo ? 'Reset the demo…' : 'Clear all data…'}
           </button>
         </div>
       ) : (
         <div className="banner danger clear-confirm">
           <div>
-            <strong>Delete everything in this workspace?</strong> All accounts, contracts and reviews, the clauses, playbook and precedents, approvals, security alerts,
-            recorded AI answers and the audit log. The AI settings and API keys are reset too. This can’t be undone. Export the clauses and playbook first if you want to keep them.
+            {demo ? (
+              <>
+                <strong>Reset the demo workspace?</strong> It starts again as new: its clients, contracts and history as they first were, the quick starts not yet explored. What you’ve done in it is lost. Your own workspace and the AI settings aren’t touched.
+              </>
+            ) : (
+              <>
+                <strong>Delete everything in this workspace?</strong> All accounts, contracts and reviews, the clauses, playbook and precedents, approvals, security alerts,
+                recorded AI answers and the audit log. The AI settings and API keys are reset too. This can’t be undone. Export the clauses and playbook first if you want to keep them.
+              </>
+            )}
           </div>
           <div className="row-gap">
             <button

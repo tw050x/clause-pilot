@@ -58,6 +58,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     account: 'Kestrel Health Systems',
     contracts: [
       { key: 'kestrel', title: 'Confidentiality Agreement', type: 'nda' },
+      // Their paper, half read.
       { key: 'kestrel-data', title: 'Data Sharing Agreement', type: 'nda', history: [{ file: 'Kestrel-Data-Sharing-Agreement.docx', theirs: true, daysAgo: 4, decide: 'half' }] }
     ]
   },
@@ -66,6 +67,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     account: 'Harbourline Hosting',
     contracts: [
       { key: 'harbourline', title: 'Master Services Agreement', type: 'general' },
+      // Our NDA, agreed after two rounds last spring.
       { key: 'harbourline-nda', title: 'Mutual NDA', type: 'nda', history: nda('Harbourline', [210, 196]) }
     ]
   },
@@ -73,7 +75,9 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     key: 'northwind',
     account: 'Northwind Logistics',
     contracts: [
-      { key: 'northwind', title: 'Mutual NDA', type: 'nda', history: nda('Northwind', [62, 47]) },
+      // Their supplier agreement, decided and signed off.
+      { key: 'northwind', title: 'Logistics Services Agreement', type: 'general', history: [{ file: 'Northwind-Logistics-Services-Agreement.docx', theirs: true, daysAgo: 62, decide: 'all', closed: true }] },
+      // Their paper, arrived on Saturday, half read.
       { key: 'northwind-2', title: 'Partner Confidentiality Agreement', type: 'nda', history: [{ file: 'Northwind-Partner-Confidentiality-Agreement.docx', theirs: true, daysAgo: 2, decide: 'half' }] },
       { key: 'northwind-3', title: 'Burp Suite DAST order form', type: 'order-form' }
     ]
@@ -82,16 +86,19 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     key: 'acme',
     account: 'Acme Analytics',
     contracts: [
+      // Round 1 decided; their second draft arrived yesterday, not started.
       { key: 'acme', title: 'Mutual NDA', type: 'nda', history: nda('Acme', [12, 1], 'none', false) },
-      { key: 'acme-2', title: 'Order form 2026', type: 'order-form' }
+      // Their platform agreement, half decided.
+      { key: 'acme-2', title: 'Analytics Platform Agreement', type: 'general', history: [{ file: 'Acme-Analytics-Platform-Agreement.docx', theirs: true, daysAgo: 8, decide: 'half' }] }
     ]
   },
   {
     key: 'globex',
     account: 'Globex Retail',
     contracts: [
-      { key: 'globex', title: 'Mutual NDA', type: 'nda', history: nda('Globex', [34]) },
-      { key: 'globex-2', title: 'Penetration testing services', type: 'general' },
+      // Their payment services agreement, arrived this morning.
+      { key: 'globex', title: 'Payment Services Agreement', type: 'general', history: [{ file: 'Globex-Payment-Services-Agreement.docx', theirs: true, daysAgo: 0, decide: 'none' }] },
+      { key: 'globex-2', title: 'Mutual NDA', type: 'nda', history: nda('Globex', [34]) },
       { key: 'globex-3', title: 'Supplier NDA (2024)', type: 'nda', archived: true, history: nda('Globex', [420]) }
     ]
   },
@@ -99,8 +106,10 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     key: 'initech',
     account: 'Initech Software',
     contracts: [
+      // Their reseller agreement, on their paper, half read.
       { key: 'initech', title: 'Reseller Agreement', type: 'nda', history: [{ file: 'Initech-Reseller-Agreement.docx', theirs: true, daysAgo: 6, decide: 'half' }] },
-      { key: 'initech-2', title: 'Mutual NDA', type: 'nda', history: nda('Initech', [95], 'all', true) }
+      { key: 'initech-2', title: 'Mutual NDA', type: 'nda', history: nda('Initech', [95], 'all', true) },
+      { key: 'initech-3', title: 'Burp Suite Professional order form', type: 'order-form' }
     ]
   }
 ]

@@ -18,6 +18,7 @@ import { diffSegments } from '../../src/shared/diff'
 import { libraryFile, playbookFile } from '../../src/main/transfer'
 import { LIBRARY } from './library'
 import { PLAYBOOK } from './playbook'
+import JSZip from 'jszip'
 import { MSA_FILE, msaDocx } from './msa'
 import { writeDemoSeed } from './seed'
 import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
@@ -164,7 +165,8 @@ async function main() {
   const files = join(process.cwd(), 'data', 'demo-files')
   mkdirSync(files, { recursive: true })
   for (const v of VARIANTS) await writeDocx(rename(v.from, v.file, v.names), join(files, v.file))
-  console.log(`data/demo-files: ${VARIANTS.length} more contracts for the demo workspace's history`)
+  for (const v of SUPPLIERS) writeFileSync(join(files, v.file), await renameDocx(await msaDocx(), v.names))
+  console.log(`data/demo-files: ${VARIANTS.length + SUPPLIERS.length} more contracts for the demo workspace's history`)
   // The demo workspace's starting data, from the same library and playbook.
   writeDemoSeed()
 }
@@ -175,11 +177,28 @@ function rename(c: ContractFile, file: string, names: [string, string][]): Contr
   return { ...(JSON.parse(text) as ContractFile), file }
 }
 
-const NDA = (party: string, short: string, key: string) => {
+/** A Word file with words replaced throughout its parts (body, header, footer, comments). */
+async function renameDocx(bytes: Buffer, names: [string, string][]): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(bytes)
+  for (const f of Object.keys(zip.files).filter((x) => /^word\/.*\.xml$/.test(x) || x === 'docProps/core.xml')) {
+    const xml = await zip.file(f)!.async('string')
+    zip.file(f, names.reduce((t, [a, b]) => t.split(a).join(b), xml))
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+/**
+ * Our NDA as another client redlined it: their name, where they are, and their own asks (a
+ * longer term, a shorter non-solicit…), so no two read the same.
+ */
+const NDA = (party: string, short: string, key: string, place: string, asks: [string, string][] = []) => {
   const names: [string, string][] = [
     ['Brightwater Robotics Inc.', party],
     ['Brightwater Robotics', party],
-    ['Brightwater', short]
+    ['Brightwater', short],
+    ['a Delaware corporation whose principal office is at 200 Harbor Drive, Boston, Massachusetts', place],
+    ['Dana Whitfield', short === 'Harbourline' ? 'Sam Okafor' : short === 'Acme' ? 'Lena Brandt' : short === 'Globex' ? 'Marcus Reyes' : 'Priya Nair'],
+    ...asks
   ]
   return [
     { from: BRIGHTWATER_V0, file: `${key}-Mutual-NDA-v0-we-sent.docx`, names },
@@ -202,14 +221,45 @@ const PAPER = (party: string, short: string, key: string, title: string) => [
 ]
 /** Contracts for the demo workspace's history (see scripts/demo/seed.ts for whose they are). */
 export const VARIANTS = [
-  ...NDA('Harbourline Hosting Ltd', 'Harbourline', 'Harbourline'),
-  ...NDA('Northwind Logistics Ltd', 'Northwind', 'Northwind'),
-  ...NDA('Acme Analytics Ltd', 'Acme', 'Acme'),
-  ...NDA('Globex Retail Inc.', 'Globex', 'Globex'),
-  ...NDA('Initech Software Ltd', 'Initech', 'Initech'),
+  ...NDA('Harbourline Hosting Ltd', 'Harbourline', 'Harbourline', 'a company registered in England and Wales whose registered office is at Unit 4, Riverside Business Park, Bristol', [
+    ['five (5) years', 'four (4) years'],
+    ['a five-year term', 'a four-year term']
+  ]),
+  ...NDA('Acme Analytics Ltd', 'Acme', 'Acme', 'a company registered in England and Wales whose registered office is at 12 Canal Street, Manchester', [
+    ['twenty-four (24) months', 'twelve (12) months'],
+    ['five (5) years', 'three (3) years'],
+    ['a five-year term', 'a three-year term']
+  ]),
+  ...NDA('Globex Retail Inc.', 'Globex', 'Globex', 'an Illinois corporation whose principal office is at 233 South Wacker Drive, Chicago, Illinois', [
+    ['five (5) years', 'seven (7) years'],
+    ['a five-year term', 'a seven-year term']
+  ]),
+  ...NDA('Initech Software Ltd', 'Initech', 'Initech', 'a California corporation whose principal office is at 4120 Freidrich Lane, Austin, Texas', [['twenty-four (24) months', 'eighteen (18) months']]),
   ...PAPER('Kestrel Health Systems', 'Kestrel', 'Kestrel', 'Data Sharing Agreement'),
   ...PAPER('Initech Software Ltd', 'Initech', 'Initech', 'Reseller Agreement'),
   ...PAPER('Northwind Logistics Ltd', 'Northwind', 'Northwind', 'Partner Confidentiality Agreement')
+]
+
+/** The supplier's agreement (demo 3) as other suppliers' own: their name, what they supply, its title. */
+const supplier = (party: string, short: string, file: string, title: string, what: string, label: string, code: string, address: [string, string, string]): { file: string; names: [string, string][] } => ({
+  file,
+  names: [
+    ['(company number 08812345)', `(company number ${address[0]})`],
+    ['Unit 4, Riverside Business Park', address[1]],
+    ['Bristol BS1 6QR', address[2]],
+    ['Harbourline Hosting Ltd', party],
+    ['Harbourline', short],
+    ['HHL-MSA v3.2', code],
+    ['managed hosting and support services', what],
+    ['Managed hosting', label],
+    ['MASTER SERVICES AGREEMENT', title.toUpperCase()],
+    ['Master Services Agreement', title]
+  ]
+})
+export const SUPPLIERS = [
+  supplier('Northwind Logistics Ltd', 'Northwind', 'Northwind-Logistics-Services-Agreement.docx', 'Logistics Services Agreement', 'warehousing, fulfilment and delivery services', 'Warehousing', 'NWL-LSA v1.4', ['04417736', '1 Dockside Way', 'Felixstowe IP11 3TW']),
+  supplier('Acme Analytics Ltd', 'Acme', 'Acme-Analytics-Platform-Agreement.docx', 'Analytics Platform Agreement', 'analytics platform subscription and support services', 'Platform licence', 'ACA-APA v2.0', ['10233574', '12 Canal Street', 'Manchester M1 3HE']),
+  supplier('Globex Retail Inc.', 'Globex', 'Globex-Payment-Services-Agreement.docx', 'Payment Services Agreement', 'card payment processing and support services', 'Payment processing', 'GBX-PSA v5.1', ['09918203', '30 Finsbury Square', 'London EC2A 1AG'])
 ]
 
 main().catch((e) => {
