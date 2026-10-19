@@ -26,6 +26,8 @@ interface Props {
   bar: HTMLElement | null
   /** The foot of the review column: Accept / Reject for the selected changes, and Show key. */
   foot: HTMLElement | null
+  /** The head of the right sidebar, above its Review / Agent switch: what's being reviewed. */
+  head: HTMLElement | null
   onChange: (s: ReviewSession) => void
   alert: SecurityAlert | null
   onOpenSecurity: () => void
@@ -57,7 +59,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
+export function DocReview({ session, panel, bar, foot, head, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -150,58 +152,60 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
 
   // The paragraphs the selection is about (the selected text and changes, or the caret's paragraph).
   const textIds = [...new Set([...(highlight?.blockIds ?? []), ...(picked ?? []).map((x) => x.blockId), ...(!highlight && !picked?.length && block ? [block.id] : [])])]
-  const column = (
-    <div className="rc">
-      <section className="rc-section">
-        <div className="rc-title-row">
-          <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
-          <button
-            className="btn sm ghost"
-            title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
-            onClick={() => act(window.api.review.close(session.id, !session.closed))}
-          >
-            {session.closed ? 'Reopen' : 'Close review'}
+  // What's being reviewed and how it stands: above the column's Review / Agent switch (head).
+  const header = (
+    <section className="rc-section rc-head">
+      <div className="rc-title-row">
+        <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
+        <button
+          className="btn sm ghost"
+          title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
+          onClick={() => act(window.api.review.close(session.id, !session.closed))}
+        >
+          {session.closed ? 'Reopen' : 'Close review'}
+        </button>
+      </div>
+      {session.closed && (
+        <div className="banner info">
+          Closed by {session.closed.by} on {new Date(session.closed.at).toLocaleDateString()}. It’s kept, but hidden on the Reviews page.
+        </div>
+      )}
+      {session.original && (
+        <div className="banner info">The original we sent them, kept to compare their first draft with. There’s nothing to review in it.</div>
+      )}
+      {session.version !== undefined && (
+        <div className="faint rc-sub">
+          {session.original ? 'Original' : `Version ${session.version}`}
+          {session.previous && (
+            <>
+              {' '}
+              · after{' '}
+              <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
+                {session.previous.version === 0 ? 'the original we sent' : `version ${session.previous.version}`}
+              </button>
+            </>
+          )}{' '}
+          · {session.docName}
+        </div>
+      )}
+        <div className="rc-key-short">
+          <span>
+            {changed.length} to decide{toRead ? ` · ${toRead} to read` : ''} · {ourEdits} edited by you
+          </span>
+        </div>
+      {onHold && (
+        <div className="banner danger">
+          <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found.{' '}
+          <button className="link-btn" onClick={onOpenSecurity}>
+            Security
           </button>
         </div>
-        {session.closed && (
-          <div className="banner info">
-            Closed by {session.closed.by} on {new Date(session.closed.at).toLocaleDateString()}. It’s kept, but hidden on the Reviews page.
-          </div>
-        )}
-        {session.original && (
-          <div className="banner info">The original we sent them, kept to compare their first draft with. There’s nothing to review in it.</div>
-        )}
-        {session.version !== undefined && (
-          <div className="faint rc-sub">
-            {session.original ? 'Original' : `Version ${session.version}`}
-            {session.previous && (
-              <>
-                {' '}
-                · after{' '}
-                <button className="link" onClick={() => onOpenReview(session.previous!.sessionId)}>
-                  {session.previous.version === 0 ? 'the original we sent' : `version ${session.previous.version}`}
-                </button>
-              </>
-            )}{' '}
-            · {session.docName}
-          </div>
-        )}
-          <div className="rc-key-short">
-            <span>
-              {changed.length} to decide{toRead ? ` · ${toRead} to read` : ''} · {ourEdits} edited by you
-            </span>
-          </div>
-        {onHold && (
-          <div className="banner danger">
-            <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found.{' '}
-            <button className="link-btn" onClick={onOpenSecurity}>
-              Security
-            </button>
-          </div>
-        )}
-      </section>
-
-
+      )}
+    </section>
+  )
+  const column = (
+    <div className="rc">
+      {!head && header}
       {!showHistory && only ? (
         <>
           <section className="rc-section rc-only-head">
@@ -487,6 +491,7 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
             </div>,
           bar
         )}
+      {head && createPortal(header, head)}
       {/* At the foot of the review column: Accept / Reject for the selected changes, and the key. */}
       {foot &&
         createPortal(

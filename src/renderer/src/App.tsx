@@ -30,6 +30,7 @@ export function App() {
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [bottomBar, setBottomBar] = useState<HTMLDivElement | null>(null)
   const [reviewFoot, setReviewFoot] = useState<HTMLDivElement | null>(null)
+  const [reviewHead, setReviewHead] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -238,6 +239,7 @@ export function App() {
               panel={reviewPanel}
               bar={bottomBar}
               foot={reviewFoot}
+              head={reviewHead}
               onChange={setSession}
               onNominationsChanged={refreshNominations}
               alert={alerts.find((a) => a.sessionId === session.id) ?? null}
@@ -310,6 +312,8 @@ export function App() {
         <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
         </div>
         <aside className="rightbar" hidden={!reviewing}>
+          {/* What's being reviewed and how it stands, on either tab: rendered into by a portal. */}
+          <div className="rightbar-head" ref={setReviewHead} />
           <div className="rightbar-switch">
             <div className="seg full">
               <button className={rightTab === 'review' ? 'on' : ''} onClick={() => setRightTab('review')}>

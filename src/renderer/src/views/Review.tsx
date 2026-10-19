@@ -9,6 +9,8 @@ interface Props {
   bar: HTMLElement | null
   /** The foot of the review column, for Accept / Reject and the key. */
   foot: HTMLElement | null
+  /** The head of the right sidebar, above its Review / Agent switch. */
+  head: HTMLElement | null
   onChange: (s: ReviewSession) => void
   onNominationsChanged: () => void
   /** Debug mode (Settings): show raw AI responses. */
