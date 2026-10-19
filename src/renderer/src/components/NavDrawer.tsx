@@ -5,6 +5,8 @@ export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review'
 
 interface Props {
   open: boolean
+  /** Demo mode: the start page is the demo's (its quick start). */
+  demoMode?: boolean
   view: View
   setView: (v: View) => void
   session: ReviewSession | null
@@ -51,7 +53,7 @@ export function NavDrawer(p: Props) {
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
-      {item('home', 'home', 'Start')}
+      {item('home', 'home', p.demoMode ? 'Demo' : 'Start')}
       <div className="nav-section">Contracts</div>
       {/* The active client's contracts fill the space between the top items and Knowledge. */}
       <div className="nav-recent">

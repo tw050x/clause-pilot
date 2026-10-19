@@ -1205,13 +1205,14 @@ body.past-open .rightbar { z-index: 45; }
 .quickstart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .quickstart-head h2 { margin: 0; font-size: 17px; }
 .quickstart-lede { margin: 4px 0 14px; }
-.quickstart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.quickstart-card { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.quickstart-grid { display: flex; flex-direction: column; gap: 10px; }
+.quickstart-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .quickstart-card.done { background: var(--surface-2); }
-.quickstart-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-3); }
-.quickstart-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 10%, var(--surface)); }
+.quickstart-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.quickstart-n { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 10%, var(--surface)); }
 .quickstart-card.done .quickstart-n { color: var(--surface); background: var(--exact); }
-.quickstart-card h3 { margin: 4px 0 0; font-size: 14px; }
-.quickstart-detail { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); flex: 1; }
-.quickstart-who { margin: 2px 0 6px; font-size: 11.5px; }
-.quickstart-card .btn { align-self: flex-start; }
+.quickstart-card h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.quickstart-card h3 svg { color: var(--text-3); }
+.quickstart-detail { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.quickstart-who { margin: 0; font-size: 11.5px; }
+.quickstart-card .btn { flex-shrink: 0; }

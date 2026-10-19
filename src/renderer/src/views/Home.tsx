@@ -359,13 +359,14 @@ function QuickStart({ onOpenReview, onNavigate }: { onOpenReview: (id: string) =
       <div className="quickstart-grid">
         {QUICK_STARTS.map((q, i) => (
           <div key={q.id} className={`quickstart-card ${done[q.id] ? 'done' : ''}`}>
-            <div className="quickstart-top">
-              <span className="quickstart-n">{done[q.id] ? <Icon name="check" size={13} /> : i + 1}</span>
-              <Icon name={q.icon} size={15} />
+            <span className="quickstart-n">{done[q.id] ? <Icon name="check" size={13} /> : i + 1}</span>
+            <div className="quickstart-body">
+              <h3>
+                <Icon name={q.icon} size={14} /> {q.title}
+              </h3>
+              <p className="quickstart-detail">{q.detail}</p>
+              <p className="faint quickstart-who">{q.who}</p>
             </div>
-            <h3>{q.title}</h3>
-            <p className="quickstart-detail">{q.detail}</p>
-            <p className="faint quickstart-who">{q.who}</p>
             <button className={`btn ${done[q.id] ? '' : 'primary'}`} disabled={!!busy} onClick={() => start(q.id)}>
               {busy === q.id ? <span className="spinner sm" /> : done[q.id] ? 'Open' : 'Start'}
               {busy !== q.id && <Chevron size={11} />}

@@ -218,6 +218,7 @@ export function App() {
       <div className={`body ${navOpen ? '' : 'nav-closed'}`}>
         <NavDrawer
           open={navOpen}
+          demoMode={!!settings?.demoMode}
           view={view}
           setView={setView}
           session={session}
