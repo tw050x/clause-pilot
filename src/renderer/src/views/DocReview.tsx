@@ -1170,7 +1170,7 @@ function AiSection({
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
       {!offered.length && <p className="faint dr-small">No questions fit this text. Add questions on the Questions page.</p>}
       {cards.map((q) => (
-        <AiCard key={q.id} title={`Ask: ${q.title}`} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} debug={debug} />
+        <AiCard key={q.id} title={q.title} detail={detail(q)} result={latest(q)} disabled={onHold} onRun={() => run(q.id)} session={session} onChange={onChange} debug={debug} />
       ))}
       {more.length > 0 && <MoreQuestions questions={more} detail={detail} disabled={onHold} onPick={(q) => run(q.id)} />}
     </section>
@@ -1245,12 +1245,25 @@ function AiCard({
 }) {
   const [raw, setRaw] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // The answer is open until closed with the header; a new answer opens it again.
+  const [open, setOpen] = useState(true)
+  useEffect(() => setOpen(true), [result?.id])
   const running = result?.status === 'running'
   const stream = useStream(running ? result!.id : undefined)
   // Asking again costs another request and replaces the answer on the card: confirm it first.
   const ask = () => (result?.status === 'done' ? setConfirming(true) : onRun())
+  const hasBody = !!result && (result.status !== 'running' || !!stream.text || !!stream.thinking)
+  const heading = (
+    <>
+      <Icon name="sparkle" size={14} />
+      <span className="ai-card-text">
+        <strong>{title}</strong>
+        <span className="faint">{detail}</span>
+      </span>
+    </>
+  )
   return (
-    <div className={`ai-card ${result ? 'has-result' : ''}`}>
+    <div className={`ai-card ${result ? 'has-result' : ''} ${hasBody && !open ? 'closed' : ''}`}>
       {confirming && result && (
         <AskAgain
           title={title}
@@ -1262,15 +1275,22 @@ function AiCard({
           }}
         />
       )}
-      <button className="ai-card-head" disabled={disabled || running} onClick={ask} title={result ? 'Ask again' : 'Ask the AI'}>
-        <Icon name="sparkle" size={14} />
-        <span className="ai-card-text">
-          <strong>{title}</strong>
-          <span className="faint">{detail}</span>
-        </span>
-        <span className="ai-card-go">{running ? <span className="spinner sm" /> : <Chevron size={11} />}</span>
-      </button>
-      {result?.status === 'done' && (
+      <div className="ai-card-top">
+        {hasBody ? (
+          <button className="ai-card-head" onClick={() => setOpen((v) => !v)} aria-expanded={open} title={open ? 'Close the answer' : 'Show the answer'}>
+            {heading}
+            <span className={`ai-card-go ${open ? 'open' : ''}`}>
+              <Chevron size={11} />
+            </span>
+          </button>
+        ) : (
+          <div className="ai-card-head">{heading}</div>
+        )}
+        <button className="btn sm ai-card-ask" disabled={disabled || running} onClick={ask} title={result?.status === 'done' ? 'Ask again (asks you to confirm: it replaces this answer)' : 'Ask the AI'}>
+          {running ? <span className="spinner sm" /> : 'Ask'}
+        </button>
+      </div>
+      {open && result?.status === 'done' && (
         <div className="ai-card-body">
           {result.parts ? <AiAnswer parts={result.parts} session={session} onChange={onChange} onShow={flashParagraphs} /> : <Markdown text={result.answer ?? ''} />}
           <div className="ai-card-foot">
@@ -1286,10 +1306,10 @@ function AiCard({
           {debug && raw && <RawModal title={`Raw response: ${title}`} raw={result.raw ?? null} note={`As the server returned it, ${result.by} · ${new Date(result.at).toLocaleString()}.`} onClose={() => setRaw(false)} />}
         </div>
       )}
-      {running && (stream.text || stream.thinking) && (
+      {open && running && (stream.text || stream.thinking) && (
         <div className="ai-card-body">{stream.text ? <Markdown text={stream.text} /> : <span className="faint dr-small">Thinking…</span>}</div>
       )}
-      {result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
+      {open && result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
   )
 }

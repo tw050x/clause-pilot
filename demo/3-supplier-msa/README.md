@@ -48,7 +48,7 @@ The AI is optional here. Set it up in **Settings** to try the questions in step 
 
 8. Click **£1,450** in the table. It's one of their changes like any other: accept it or reject it.
 
-9. Optional, with the AI set up: select 4.1 (the liability cap) and press **Ask: Does it meet our playbook?**.
+9. Optional, with the AI set up: select 4.1 (the liability cap) and press **Ask** on *Does it meet our playbook?*.
 
 10. Type into the page. Click at the end of 3.1 and type *, within 30 days of the invoice date*. What you type is your tracked change, in your name, and after a moment 3.1 is labelled **Edited**.
 
