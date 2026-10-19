@@ -54,7 +54,7 @@ const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 
 /** Room made around a layered paragraph for its stages card: a little above, its buttons below. */
 const STAGES_TOP = 10
-const STAGES_BOTTOM = 34
+const STAGES_BOTTOM = 46
 /** How far the card reaches past the text, to take in the labels left of it and the markers right of it. */
 const CARD_LEFT = 90
 const CARD_RIGHT = 74
@@ -327,6 +327,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const cs = run ? getComputedStyle(run) : null
       const top = first.top - pad.top + 3
       const bottom = last.top + last.height + pad.bottom - 3
+      const gap = Math.max(6, Math.min(first.left - CARD_LEFT, w.clientWidth - (first.right + CARD_RIGHT)))
       return [
         {
           blockId: b.id,
@@ -334,11 +335,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           stages,
           top,
           height: bottom - top,
-          // (Never past the page area's left edge, where the sidebar is.)
-          left: Math.max(6, first.left - CARD_LEFT),
-          right: first.right + CARD_RIGHT,
+          // Centred in the page area, the same gap each side, wide enough for the labels and markers
+          // (and never past the page area's edge, where the sidebars are).
+          left: gap,
+          right: w.clientWidth - gap,
           textTop: first.top - top,
-          textLeft: first.left - Math.max(6, first.left - CARD_LEFT),
+          textLeft: first.left - gap,
           textWidth: first.right - first.left,
           font: { family: cs?.fontFamily ?? '', size: cs?.fontSize ?? '', lineHeight: el?.querySelector<HTMLElement>('.superdoc-line')?.style.lineHeight ?? '', align: el?.style.textAlign ?? '' }
         }
