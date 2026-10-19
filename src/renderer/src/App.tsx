@@ -333,6 +333,8 @@ export function App() {
         {/* The review's actions on the document as a whole, under it: rendered into by a portal. */}
         <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
         </div>
+        {/* Pages without the right sidebar keep its space, so every page has the same width. */}
+        {!reviewing && <div className="rightbar-space" aria-hidden="true" />}
         <aside className="rightbar" hidden={!reviewing}>
           {/* What's being reviewed and how it stands, on either tab: rendered into by a portal. */}
           <div className="rightbar-head" ref={setReviewHead} />
