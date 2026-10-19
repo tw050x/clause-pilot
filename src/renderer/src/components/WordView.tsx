@@ -31,8 +31,8 @@ interface Props {
   onComment: (blockId: string, quote: string) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
-  /** Show the contract as text instead: called when it can't be laid out. */
-  onShowText: () => void
+  /** Show the contract as text instead: called when it can't be laid out, with why. */
+  onShowText: (why: string) => void
 }
 
 type Loaded = {
@@ -388,7 +388,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         // It can't be laid out (SuperDoc failed on it): the review goes on as text.
         if (!cancelled) {
           console.warn('Word layout failed:', e)
-          cb.current.onShowText()
+          cb.current.onShowText(e instanceof Error ? e.message : String(e))
         }
         setLoading(false)
       }

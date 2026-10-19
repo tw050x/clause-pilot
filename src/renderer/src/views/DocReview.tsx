@@ -72,6 +72,8 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
   // The document as it looks in Word (pages, tables, headers). As text, paragraph by paragraph,
   // only when it can't be laid out (the reviewing is the same either way).
   const [layout, setLayout] = useState<'word' | 'text'>('word')
+  /** Why it couldn't be laid out (SuperDoc's message), shown with the text view. */
+  const [layoutError, setLayoutError] = useState('')
   useEffect(() => setLayout('word'), [session.id])
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
   const [highlight, setHighlight] = useState<Highlight | null>(null)
@@ -321,12 +323,18 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
             setPicked(null)
             setHighlight(null)
           }}
-          onShowText={() => setLayout('text')}
+          onShowText={(why) => {
+            setLayoutError(why)
+            setLayout('text')
+          }}
         />
       ) : (
       <>
       <div className="banner info wv-fallback">
-        <span>This document couldn’t be laid out as in Word, so it’s shown as text. Reviewing works the same.</span>
+        <span>
+          This document couldn’t be laid out as in Word, so it’s shown as text. Reviewing works the same.
+          {layoutError && <span className="faint dr-small"> ({layoutError})</span>}
+        </span>
         <button className="btn sm" onClick={() => setLayout('word')}>
           Try the Word layout again
         </button>

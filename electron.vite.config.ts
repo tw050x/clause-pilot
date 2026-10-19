@@ -11,6 +11,9 @@ export default defineConfig({
   },
   renderer: {
     resolve: { alias: { '@shared': resolve('src/shared') } },
-    plugins: [react()]
+    plugins: [react()],
+    // SuperDoc starts its document engine in a worker it finds next to its own files. Pre-bundled
+    // for the dev server, those files move and the worker can't be found: serve them as they are.
+    optimizeDeps: { exclude: ['superdoc', '@superdoc/docx-engine'] }
   }
 })
