@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
-import { listAfter } from '@shared/numbering'
+import { indentList, listAfter } from '@shared/numbering'
 import { groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
@@ -31,7 +31,7 @@ interface Props {
   onComment: (blockId: string, quote: string) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
-  /** Show the contract as text instead (when it can't be laid out). */
+  /** Show the contract as text instead: called when it can't be laid out. */
   onShowText: () => void
 }
 
@@ -54,8 +54,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onComment })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onComment }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onComment, onShowText })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onComment, onShowText }
+  /** The paragraph last clicked into (where the caret is). */
+  const caretIn = useRef<string | null>(null)
   /** The margin's comment button, level with a selection, to the right of the text. */
   const [bubble, setBubble] = useState<{ top: number; left: number; blockId: string; quote: string } | null>(null)
   /** Reviews that come back from saving our own typing: the page already shows them. */
@@ -63,7 +65,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const syncing = useRef(0)
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
-  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string })[] }>({
     bars: [],
@@ -197,6 +198,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         loaded.texts.set(prev, head)
         loaded.ids[nodeId] = r.id
         loaded.texts.set(nodeId, text)
+        // The caret went on into the new paragraph (Enter), so Tab numbers that one.
+        caretIn.current = r.id
         await apply(Promise.resolve(r.session))
         prev = nodeId
         continue
@@ -300,6 +303,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     if (change) await theirChange(loaded, change, blockId, picked)
     // Text a comment is on, not in a change: its comments, as clicking a highlight does in the text view.
     if (!picked.length && blockId && clicked?.closest('[data-comment-ids]')) return cb.current.onShowComments(blockId)
+    caretIn.current = blockId ?? null
     cb.current.onFocusBlock(blockId ?? null)
     cb.current.onSelectChanges(picked.length ? picked : null)
   }
@@ -358,6 +362,20 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         }
         // SuperDoc paints pages as it lays them out, after it's ready: measure as they change.
         new MutationObserver(remeasure).observe(host, { childList: true, subtree: true })
+        // Tab / Shift-Tab in a numbered paragraph of ours: its level, as in the text view (the page
+        // is laid out again with the new numbers). Elsewhere Tab does nothing: it never leaves the page.
+        host.addEventListener(
+          'keydown',
+          (e) => {
+            if (e.key !== 'Tab') return
+            e.preventDefault()
+            e.stopPropagation()
+            const b = model.current.blocks.find((x) => x.id === caretIn.current)
+            const list = b && indentList(model.current, b, e.shiftKey ? -1 : 1)
+            if (b && list) void cb.current.act(window.api.doc.setList(session.id, b.id, list))
+          },
+          true
+        )
         // After SuperDoc has settled the selection the click or drag made.
         host.addEventListener('pointerup', (e) => {
           const target = e.target as Element
@@ -365,10 +383,13 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           window.setTimeout(() => void report(loaded, target, y), 120)
         })
         setLoading(false)
-        setError(null)
         remeasure()
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        // It can't be laid out (SuperDoc failed on it): the review goes on as text.
+        if (!cancelled) {
+          console.warn('Word layout failed:', e)
+          cb.current.onShowText()
+        }
         setLoading(false)
       }
     }, current.current ? 150 : 0)
@@ -413,16 +434,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   return (
     <div className="wv-wrap" ref={wrap}>
       {loading && <div className="wv-loading">Laying out the document…</div>}
-      {error && (
-        <div className="banner danger" style={{ margin: 16 }}>
-          <span>
-            This document couldn’t be laid out as in Word ({error}). Everything else works: review it as text.
-          </span>
-          <button className="btn sm" onClick={onShowText}>
-            Show as text
-          </button>
-        </div>
-      )}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {gutter.bars.map((b, i) => (

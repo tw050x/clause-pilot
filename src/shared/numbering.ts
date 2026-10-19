@@ -129,3 +129,24 @@ export function whereOf(d: DocReview, b: DocBlock): string {
   if (l) return /^\d/.test(l) ? `§${l.replace(/\.$/, '')}` : /^[A-Z][a-z]+ \d/.test(l) ? l.replace(/\.$/, '') : `Item ${l}`
   return b.ours ? 'New paragraph' : b.kind === 'heading' ? 'Heading' : 'Paragraph'
 }
+
+/**
+ * Tab / Shift-Tab on a numbered paragraph of ours: its numbering one level down (by 1) or up (-1).
+ * Undefined: no change (not one of ours, not numbered, or already at the top level).
+ */
+export function indentList(d: DocReview, b: DocBlock, by: 1 | -1): ListStyle | undefined {
+  if (!b.ours || !b.list) return undefined
+  if (b.list.kind === 'dec') {
+    const depth = b.list.depth + by
+    return depth >= 1 ? { kind: 'dec', depth } : undefined
+  }
+  if (by === 1) return { kind: 'roman', depth: 0, open: '(', close: ')' }
+  // A lettered item back up to the clause level it sits under ("(c)" under 2.3 → 2.4).
+  const at = d.blocks.indexOf(b)
+  const parent = d.blocks
+    .slice(0, at)
+    .reverse()
+    .map((x) => parseLabel(labelsOf(d).get(x.id) ?? x.label))
+    .find((p) => p?.kind === 'dec')
+  return parent?.kind === 'dec' ? { kind: 'dec', depth: parent.parts.length } : undefined
+}

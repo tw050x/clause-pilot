@@ -975,9 +975,8 @@ del.us-del ins.th-ins { color: inherit; }
 .wv-run { position: absolute; width: 60px; display: flex; flex-direction: column; align-items: flex-end; }
 .wv-run .ed-unchanged { pointer-events: auto; }
 .wv-ai { pointer-events: auto; }
-.bottombar-layout { margin-left: 8px; }
-.bottombar-layout button { padding: 4px 10px; font-size: 12.5px; }
 /* Comment highlights in our comment yellow, as in the text view (not SuperDoc's own colours). */
 .wv-wrap .superdoc-comment-highlight { background: color-mix(in srgb, #f5c542 28%, transparent) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }
 .wv-gutter .wv-comment { pointer-events: auto; }
 .wv-wrap .superdoc-text-run.wv-ai-preview { background: var(--processing-tint) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--processing) 55%, transparent); }
+.wv-fallback { margin: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -8,7 +8,7 @@
 
 After a call, their lawyers made four tracked changes, one of them inside the table, and left a comment.
 
-This demo shows the **Word layout**: the contract is reviewed as it looks in Word, pages and all, not as plain text.
+This demo shows a contract reviewed as it looks in Word, pages and all, however it's formatted.
 
 ## In this folder
 
@@ -33,7 +33,7 @@ The AI is optional here. Set it up in **Settings** to try the questions in step 
 
 4. On the contract page, press **Upload first draft** and choose `Harbourline-Master-Services-Agreement.docx`. The app asks **Where did this draft start?** and suggests **Theirs**, since little of it is our wording. Keep it and press **Open review**.
 
-5. The contract opens in **Word layout**, as Word shows it:
+5. The contract opens as Word shows it:
    - **Header:** their logo and title.
    - **Address blocks:** line by line.
    - **Numbering:** clauses numbered by Word, with hanging indents, and (a)/(b) items under 2.2.
@@ -53,5 +53,3 @@ The AI is optional here. Set it up in **Settings** to try the questions in step 
 10. Type into the page. Click at the end of 3.1 and type *, within 30 days of the invoice date*. What you type is your tracked change, in your name, and after a moment 3.1 is labelled **Edited**.
 
 11. Press **Marked-up copy**. It's their own file, with your decisions and edits as tracked changes in your name, ready to save and send.
-
-**Edit text**, in the bottom bar, shows the same review as text, paragraph by paragraph, if you prefer to work that way.

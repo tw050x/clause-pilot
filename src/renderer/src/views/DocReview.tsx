@@ -69,23 +69,10 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
   const [showKey, setShowKey] = useState(false)
-  // The document as it looks in Word (pages, tables, headers), or as text to edit in place.
-  // Remembered on this machine (a convenience only).
-  const [layout, setLayoutState] = useState<'word' | 'text'>(() => {
-    try {
-      return localStorage.getItem('cp.layout') === 'text' ? 'text' : 'word'
-    } catch {
-      return 'word'
-    }
-  })
-  const setLayout = (v: 'word' | 'text') => {
-    setLayoutState(v)
-    try {
-      localStorage.setItem('cp.layout', v)
-    } catch {
-      /* not stored: still works for this session */
-    }
-  }
+  // The document as it looks in Word (pages, tables, headers). As text, paragraph by paragraph,
+  // only when it can't be laid out (the reviewing is the same either way).
+  const [layout, setLayout] = useState<'word' | 'text'>('word')
+  useEffect(() => setLayout('word'), [session.id])
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
   const [highlight, setHighlight] = useState<Highlight | null>(null)
   const highlighted = !!highlight
@@ -337,6 +324,13 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
           onShowText={() => setLayout('text')}
         />
       ) : (
+      <>
+      <div className="banner info wv-fallback">
+        <span>This document couldn’t be laid out as in Word, so it’s shown as text. Reviewing works the same.</span>
+        <button className="btn sm" onClick={() => setLayout('word')}>
+          Try the Word layout again
+        </button>
+      </div>
       <DocEditor
         key={session.id}
         session={session}
@@ -354,6 +348,7 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
           setDraft({ blockId, quote })
         }}
       />
+      </>
       )}
       {panel && createPortal(column, panel)}
       {showKey && panel?.parentElement &&
@@ -381,14 +376,7 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
         <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
           <Icon name="mail" size={14} /> Draft response
         </button>
-        <div className="seg bottombar-layout" role="group" aria-label="How the document is shown">
-          <button className={layout === 'word' ? 'on' : ''} onClick={() => setLayout('word')} title="As it looks in Word: pages, tables, headers and footers">
-            Word layout
-          </button>
-          <button className={layout === 'text' ? 'on' : ''} onClick={() => setLayout('text')} title="As text you can edit in place (your edits become tracked changes)">
-            Edit text
-          </button>
-        </div>
+
             </div>
             <div className="bottombar-group bottombar-decide">
               <div className="bottombar-group" ref={setDecideSlot} />

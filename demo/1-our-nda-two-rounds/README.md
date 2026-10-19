@@ -42,11 +42,11 @@ This demo shows the app on our own paper. Most of the document is our approved w
    |---|---|---|
    | 1.3 | Reworded our exclusions, with the same meaning | Tracked change and a comment |
    | 2.1 | Added "Affiliates" to who may see the information | Tracked change and a comment |
-   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Dashed bar; the review column says *without Track Changes* |
+   | 2.2 | Reworded our standard of care **without Track Changes**, with the same meaning | Shown as their redline anyway, with a dashed bar; the review column says *without Track Changes* |
    | 2.4 | Inserted a residuals clause | Tracked insertion and a comment |
    | 3.3 | Deleted our "No warranty" clause | Tracked deletion |
    | 4.1 | Changed the survival period from three years to five | Tracked change and a comment |
-   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Dashed bar; the review column says *without Track Changes* |
+   | 5.4 | Removed "such consent not to be unreasonably withheld" **without Track Changes** | Shown as their redline anyway, with a dashed bar; the review column says *without Track Changes* |
    | 5.8, 5.9 | Changed the governing law and the courts to New York | Tracked changes and a comment |
    | 5.10 | Inserted a non-solicitation clause | Tracked insertion |
 
@@ -54,12 +54,12 @@ This demo shows the app on our own paper. Most of the document is our approved w
 9. Decide each change. Select some text (a word, a paragraph or several paragraphs), and the right-hand column lists the changes in the selection. **Accept** and **Reject** appear in the bar along the bottom of the window, under the right-hand column, and decide all of them at once. Clicking inside a change selects the whole change. To match the client's round-2 reply, decide as follows:
    - **Accept** 1.3, 2.1 and 2.2.
    - **Reject** 2.4, 3.3, 5.4, 5.8, 5.9 and 5.10.
-   - **Reject** 4.1. Then click into 4.1, select **three (3)** and type **four (4)**. Your wording appears in red.
+   - **Reject** 4.1. Then click into 4.1, select **three (3)** and type **four (4)**. Your wording appears as your tracked change, in your name.
 10. Add comments. Select text, press the comment button that appears in the margin, and type in the right-hand column:
     - On 2.4: *We cannot accept a residuals clause.*
     - On 4.1: *We can meet you at four years.*
     - On 5.8: *English law is our standard for NDAs.*
-    Their comments are highlighted in yellow on the words they're about, and yours get an amber underline. Click highlighted text to see its comments. Once you've dealt with one of their comments, press ✓ on it to **resolve** it: it stays, greyed out, and its text is no longer highlighted.
+    Comments are highlighted in yellow on the words they're about. Click highlighted text to see its comments. Once you've dealt with one of their comments, press **Resolve** on it: it stays in the right-hand column, greyed out, and its text is no longer highlighted.
 11. Optional: press **History** to see each action, with a preview. You can undo any of them and redo it again.
 12. Press **Marked-up copy**. The preview shows their Word file with your decisions applied, your edits as tracked changes in your name, and your comments. Press **Save .docx…** to keep it.
 13. Press **Draft response**. The email lists what you rejected and why (your comments), your four-year proposal ("four (4)" in place of "three (3)"), the restored assignment wording, and the changes you accepted.
@@ -78,7 +78,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
     | 5.8 | Accepted English law | Green, with their comment "English law is fine." |
     | 2.3 | Removed "and reasonable assistance to seek a protective order" | Tracked change and a comment |
     | 2.4 | Put back a narrower residuals clause | Tracked insertion and a comment |
-    | 5.4 | Quietly put their strict assignment wording back | Dashed bar, *without Track Changes*, with what we proposed last round |
+    | 5.4 | Quietly put their strict assignment wording back | Shown as their redline, with a dashed bar and *without Track Changes*, next to what we proposed last round |
     | 5.9 | Made the English courts' jurisdiction non-exclusive | Tracked change and a comment |
     | 5.10 | Added an anti-bribery clause | Tracked insertion and a comment |
 

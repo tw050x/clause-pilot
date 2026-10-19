@@ -6,7 +6,7 @@ import { history, undo, redo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
 import type { DocBlock, DocReview, ListStyle, ReviewSession } from '@shared/types'
-import { labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
+import { indentList, labelOf, labelsOf, listAfter, parseLabel } from '@shared/numbering'
 import { aiSame, changeKey, commentResolved, groupOf, hasOpenChanges, isCleared, marksFor, needsReading, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import type { Mark } from '@shared/diff'
 import { CommentIcon, Icon } from '../lib/icons'
@@ -627,21 +627,9 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
     /** Tab / Shift-Tab on a numbered paragraph of ours: one level down or up. */
     const indent = (by: 1 | -1) => (state: EditorState) => {
       const b = blocksById().get(state.selection.$from.parent.attrs.id)
-      if (!b?.ours || !b.list) return true // Tab never leaves the document
-      if (b.list.kind === 'dec') {
-        const depth = b.list.depth + by
-        if (depth >= 1) setList(b.id, { kind: 'dec', depth })
-      } else if (by === -1) {
-        // A lettered item back up to the clause level it sits under ("(c)" under 2.3 → 2.4).
-        const at = model.current.blocks.indexOf(b)
-        const parent = model.current.blocks
-          .slice(0, at)
-          .reverse()
-          .map((x) => parseLabel(labelsOf(model.current).get(x.id) ?? x.label))
-          .find((p) => p?.kind === 'dec')
-        if (parent?.kind === 'dec') setList(b.id, { kind: 'dec', depth: parent.parts.length })
-      } else setList(b.id, { kind: 'roman', depth: 0, open: '(', close: ')' })
-      return true
+      const list = b && indentList(model.current, b, by)
+      if (b && list) setList(b.id, list)
+      return true // Tab never leaves the document
     }
 
     const editor = new EditorView(host.current!, {
