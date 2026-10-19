@@ -3,7 +3,7 @@ import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { indentList, listAfter } from '@shared/numbering'
-import { commentResolved, groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { changeKey, commentResolved, groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
@@ -507,6 +507,135 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const c = gutter.cards.find((c) => y >= c.top && y <= c.top + c.height && x >= c.left && x <= c.right)
     const id = c?.blockId ?? null
     if (id !== hovered) setHovered(id)
+    // A change under the pointer (on the page, or in a stage shown over a paragraph): what it is.
+    const target = e.target as HTMLElement
+    const onPage = current.current?.host.contains(target) ? target.closest<HTMLElement>('[data-track-change-id]') : null
+    const inStage = target.closest<HTMLElement>('[data-stage-seg]')
+    const key = onPage ? `p:${onPage.dataset.trackChangeId}` : inStage ? `s:${inStage.dataset.stageSeg}` : null
+    if (key === tip?.key) return
+    setTip(key ? ((onPage ? explainPage(onPage) : explainStage(inStage!)) ?? null) : null)
+  }
+
+  /**
+   * The tooltip for a change: who made it and what it does, when and where it stands (to decide,
+   * your edit, or removed by your decision), and the comment on it, if any.
+   */
+  type Tip = { key: string; x: number; y: number; title: string; quote: string; meta: string; note?: string }
+  const [tip, setTip] = useState<Tip | null>(null)
+  useEffect(() => setTip(null), [session])
+  const short = (t: string) => {
+    const x = tidy(t)
+    return x.length > 110 ? `${x.slice(0, 107)}…` : x
+  }
+  const day = (t?: string) => (t ? new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+  const placeTip = (el: Element) => {
+    const w = wrap.current!
+    const base = w.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    return { x: Math.max(8, Math.min(r.left - base.left, w.clientWidth - 340)), y: r.bottom - base.top + w.scrollTop + 6 }
+  }
+  const explainPage = (ch: HTMLElement): Tip | null => {
+    const loaded = current.current
+    if (!loaded || !wrap.current) return null
+    const id = ch.dataset.trackChangeId!
+    const changeOf = (r: Element | undefined) => r?.closest<HTMLElement>('[data-track-change-id]') ?? null
+    const frag = ch.closest('[data-source-node-id]')
+    const runs = frag ? [...frag.querySelectorAll<HTMLElement>('.superdoc-text-run')] : [ch]
+    const kind = ch.dataset.trackChangeKind
+    const author = ch.dataset.trackChangeAuthor ?? ''
+    // The change: the runs either side of this one by the same hand, of the same kind (one change
+    // may be written in several pieces).
+    const like = (r: Element | undefined, k = kind) => {
+      const x = changeOf(r)
+      return !!x && x.dataset.trackChangeKind === k && x.dataset.trackChangeAuthor === author
+    }
+    const span = (from: number, k = kind) => {
+      let a = from
+      let z = from
+      while (a > 0 && like(runs[a - 1], k)) a--
+      while (z < runs.length - 1 && like(runs[z + 1], k)) z++
+      return runs.slice(a, z + 1)
+    }
+    // Their text, a space where a line wraps.
+    const join = (rs: HTMLElement[]) =>
+      rs.reduce((t, r, k) => {
+        const x = r.textContent ?? ''
+        const wrapped = k > 0 && r.closest('.superdoc-line') !== rs[k - 1].closest('.superdoc-line') && !/\s$/.test(t) && !/^\s/.test(x)
+        return t + (wrapped ? ' ' : '') + x
+      }, '')
+    const at0 = runs.indexOf(ch.matches('.superdoc-text-run') ? ch : (ch.querySelector('.superdoc-text-run') as HTMLElement) ?? ch)
+    const mine = at0 >= 0 ? span(at0) : [ch]
+    const text = join(mine)
+    const blockId = frag ? loaded.ids[nodeId(frag)] : undefined
+    const b = model.current.blocks.find((x) => x.id === blockId)
+    // Their reason: the comment on this text.
+    const ids = (ch.closest<HTMLElement>('[data-comment-ids]')?.dataset.commentIds ?? '').split(',').map((x) => x.split(/[:|]/).pop())
+    const c = (b?.comments ?? []).find((x) => ids.includes(x.id) && !commentResolved(model.current, x))
+    const note = c ? `${c.author}: “${short(c.text)}”` : undefined
+    const at = placeTip(mine[0])
+    if (author.startsWith('clausepilot:removed')) {
+      const [, how, who] = author.split('|')
+      return {
+        key: `p:${id}`,
+        ...at,
+        title: how === 'rejected' ? `You rejected ${who || 'their'}${who ? '’s' : ''} insertion` : `You accepted ${who || 'their'}${who ? '’s' : ''} deletion`,
+        quote: `“${short(text)}”`,
+        meta: 'Faded here, so its comments and AI answers keep their text. The copy you send leaves it out.',
+        note
+      }
+    }
+    const who = author === reviewer ? 'You' : author || 'They'
+    // A deletion beside an insertion by the same hand: one replacement.
+    const other = kind === 'delete' ? 'insert' : 'delete'
+    const i0 = runs.indexOf(mine[0])
+    const i1 = runs.indexOf(mine[mine.length - 1])
+    const side = like(runs[i1 + 1], other) ? i1 + 1 : like(runs[i0 - 1], other) ? i0 - 1 : -1
+    const pair = side >= 0
+    const pairText = pair ? join(span(side, other)) : ''
+    const [was, now] = kind === 'delete' ? [text, pairText] : [pairText, text]
+    const when = ch.dataset.trackChangeDate ? day(ch.dataset.trackChangeDate) : author === reviewer ? '' : 'Made without Track Changes (found by comparison)'
+    // Found by comparing with our approved wording: a difference from it, not a change they tracked.
+    if (author !== reviewer && b?.untracked === 'template')
+      return {
+        key: `p:${id}`,
+        ...at,
+        title: pair ? 'Differs from our approved wording' : kind === 'delete' ? 'In our approved wording, not in theirs' : 'In theirs, not in our approved wording',
+        quote: pair ? `Ours: “${short(was)}” · Theirs: “${short(now)}”` : `“${short(text)}”`,
+        meta: [b.standard ? `Compared with our approved “${b.standard}”` : 'Compared with our standard wording', 'To decide: click it to accept or reject'].join(' · '),
+        note
+      }
+    return {
+      key: `p:${id}`,
+      ...at,
+      title: pair ? `${who} replaced` : kind === 'delete' ? `${who} deleted` : `${who} added`,
+      quote: pair ? `“${short(was)}” → “${short(now)}”` : `“${short(text)}”`,
+      meta: [when, author === reviewer ? 'Your edit: it goes to them as your tracked change' : 'To decide: click it to accept or reject'].filter(Boolean).join(' · '),
+      note
+    }
+  }
+  const explainStage = (el: HTMLElement): Tip | null => {
+    const [blockId, k, i] = (el.dataset.stageSeg ?? '').split('|')
+    const card = gutter.cards.find((c) => c.blockId === blockId)
+    const st = card?.stages[Number(k)]
+    const seg = st?.segments[Number(i)]
+    if (!st || !seg || seg.op === 'same') return null
+    // A deletion beside an insertion: one replacement.
+    const prev = st.segments[Number(i) - 1]
+    const next = st.segments[Number(i) + 1]
+    const pair = seg.op === 'del' && next?.op === 'ins' ? next : seg.op === 'ins' && prev?.op === 'del' ? prev : null
+    const [was, now] = seg.op === 'del' ? [seg.text, pair?.text ?? ''] : [pair?.text ?? '', seg.text]
+    const who = st.key === 'yours' ? 'You' : seg.author || 'They'
+    const decided = st.key === 'theirs' ? model.current.resolved?.[changeKey(blockId, Number(i))] : undefined
+    return {
+      key: `s:${el.dataset.stageSeg}`,
+      ...placeTip(el),
+      title: pair ? `${who} replaced` : seg.op === 'del' ? `${who} deleted` : `${who} added`,
+      quote: pair ? `“${short(was)}” → “${short(now)}”` : `“${short(seg.text)}”`,
+      meta:
+        st.key === 'yours'
+          ? 'Your change to their version'
+          : [day(seg.date), decided === 'accepted' ? 'You accepted it' : decided === 'rejected' ? 'You rejected it' : 'To decide'].filter(Boolean).join(' · ')
+    }
   }
 
   // The stages card's sides: the same padding outside the labels left of the paragraph and the
@@ -776,11 +905,22 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       className="wv-wrap"
       ref={wrap}
       onMouseMove={hoverAt}
-      onMouseLeave={() => setHovered(null)}
+      onMouseLeave={() => {
+        setHovered(null)
+        setTip(null)
+      }}
     >
       {loading && <div className="wv-loading">Laying out the document…</div>}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
+        {tip && (
+          <div className="wv-tip" style={{ left: tip.x, top: tip.y }}>
+            <div className="wv-tip-title">{tip.title}</div>
+            <div className="wv-tip-quote">{tip.quote}</div>
+            {tip.meta && <div className="wv-tip-meta">{tip.meta}</div>}
+            {tip.note && <div className="wv-tip-note">{tip.note}</div>}
+          </div>
+        )}
         {gutter.cards
           .filter((c) => c.blockId === hovered || stageShown(c.blockId))
           .map((c) => {
@@ -817,7 +957,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
                     {c.label && <strong>{c.label} </strong>}
                     {!st.segments.some((x) => x.text.trim()) && <em className="wv-st-none">Not in the draft: they added this paragraph.</em>}
                     {st.segments.map((x, i) => (
-                      <span key={i} className={x.op === 'ins' ? `wv-st-ins ${st.key}` : x.op === 'del' ? `wv-st-del ${st.key}` : undefined}>
+                      <span
+                        key={i}
+                        className={x.op === 'ins' ? `wv-st-ins ${st.key}` : x.op === 'del' ? `wv-st-del ${st.key}` : undefined}
+                        data-stage-seg={x.op === 'same' ? undefined : `${c.blockId}|${shown}|${i}`}
+                      >
                         {x.text}
                       </span>
                     ))}

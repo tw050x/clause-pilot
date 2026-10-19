@@ -1042,8 +1042,8 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 /* Text a decision removed (their deletion accepted, their insertion rejected): still on the page,
    faded and struck through in grey, so its comments and AI answers have their text. The copy
    that's sent has it removed. (Low specificity for the background, so a selection tint shows.) */
-.wv-wrap .superdoc-text-run.superdoc-text-run[data-track-change-author="clausepilot:removed"] { opacity: 0.4; color: var(--text) !important; text-decoration-line: line-through !important; text-decoration-color: var(--text-3) !important; text-decoration-style: solid !important; border-color: transparent !important; }
-.wv-wrap :where(.superdoc-text-run[data-track-change-author="clausepilot:removed"]) { background-color: transparent !important; }
+.wv-wrap .superdoc-text-run.superdoc-text-run[data-track-change-author^="clausepilot:removed"] { opacity: 0.4; color: var(--text) !important; text-decoration-line: line-through !important; text-decoration-color: var(--text-3) !important; text-decoration-style: solid !important; border-color: transparent !important; }
+.wv-wrap :where(.superdoc-text-run[data-track-change-author^="clausepilot:removed"]) { background-color: transparent !important; }
 /* A layered paragraph's stages card: shown while the pointer is over it, in the room made around
    it; its buttons show one stage at a time over the paragraph. */
 .wv-stages { position: absolute; pointer-events: none; }
@@ -1051,7 +1051,7 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-stages-bar button { height: 22px; padding: 0 10px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: inherit; font-size: 11px; font-weight: 500; cursor: pointer; }
 .wv-stages-bar button:hover { border-color: var(--border-strong); color: var(--text); }
 .wv-stages-bar button.on { background: var(--text); border-color: var(--text); color: var(--surface); }
-.wv-stage-text { position: absolute; left: var(--text-left, 90px); background: #fff; color: #000; white-space: pre-wrap; box-shadow: 0 0 0 6px #fff; }
+.wv-stage-text { pointer-events: auto; position: absolute; left: var(--text-left, 90px); background: #fff; color: #000; white-space: pre-wrap; box-shadow: 0 0 0 6px #fff; }
 /* Pointer gone, a stage still chosen: the stage stays, the card and its buttons go. */
 
 .wv-stages.idle .wv-stages-bar { display: none; }
@@ -1061,3 +1061,9 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-st-ins.yours, .wv-st-del.yours { color: #b42318; }
 .wv-sizer { position: absolute; left: -10000px; top: 0; visibility: hidden; white-space: pre-wrap; }
 .wv-st-none { color: var(--text-3); font-family: var(--font, inherit); font-size: 12.5px; }
+/* A change's tooltip: who, what, when and where it stands. */
+.wv-tip { position: absolute; z-index: 5; max-width: 330px; padding: 8px 10px; border-radius: 8px; background: #1c2128; color: #fff; font: 12px/1.45 system-ui, sans-serif; box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25); pointer-events: none; }
+.wv-tip-title { font-weight: 600; }
+.wv-tip-quote { margin-top: 2px; color: #e6e8eb; }
+.wv-tip-meta { margin-top: 4px; color: #a8b0ba; font-size: 11px; }
+.wv-tip-note { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.15); color: #e6e8eb; font-style: italic; }

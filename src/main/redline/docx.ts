@@ -96,7 +96,7 @@ export async function buildDocRedline(
       const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
       // Their removal accepted: shown faded, as text that's gone.
       const accepted = d.resolved?.[changeKey(b.id, 0)] === 'accepted'
-      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + b.text, { kind: 'del', author: accepted ? REMOVED : opts.theirName || 'Counterparty' })
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + b.text, { kind: 'del', author: accepted ? removedBy('accepted', opts.theirName || 'Counterparty') : opts.theirName || 'Counterparty' })
       if (p) added.set(b.id, p)
     }
   for (const b of d.blocks) {
@@ -267,13 +267,18 @@ function visibleText(p: Element): string {
  * comments and AI answers still have their text; the copy that's sent has it removed.
  */
 export const REMOVED = 'clausepilot:removed'
+/** The author written for removed text: REMOVED, the decision ("accepted" their deletion, "rejected" their insertion) and whose change it was. */
+const removedBy = (how: 'accepted' | 'rejected', who: string) => `${REMOVED}|${how}|${who}`
+const isRemoved = (el: Element) => (el.getAttributeNS(W, 'author') ?? '').startsWith(REMOVED)
 
 /** Text a decision removes: gone, or (for showing) kept as a deletion by REMOVED. */
 function remove(el: Element, show: boolean) {
   if (!show) return void el.parentNode!.removeChild(el)
+  const how = el.localName === 'del' ? 'accepted' : 'rejected'
+  const who = el.getAttributeNS(W, 'author') ?? ''
   const del = el.localName === 'del' ? el : rename(el, 'del')
   for (const t of Array.from(del.getElementsByTagNameNS(W, 't'))) rename(t, 'delText')
-  del.setAttributeNS(W, 'w:author', REMOVED)
+  del.setAttributeNS(W, 'w:author', removedBy(how, who))
 }
 
 function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject', show = false): boolean {
@@ -282,14 +287,14 @@ function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject', show = 
     for (const name of ['ins', 'del', 'rPrChange', 'pPrChange'] as const) {
       for (const el of Array.from(p.getElementsByTagNameNS(W, name))) {
         // (Not text already removed here, kept for showing.)
-        if (!el.parentNode || el.getAttributeNS(W, 'author') === REMOVED) continue
+        if (!el.parentNode || isRemoved(el)) continue
         changed = true
         const inProps = el.parentNode && (el.parentNode as Element).localName === 'rPr'
         // Paragraph-mark changes and formatting changes are markers: drop them either way
         // (rejecting a formatting change would need the old properties restored; keep theirs).
         if (inProps || name === 'rPrChange' || name === 'pPrChange') {
           // (A deleted paragraph's mark, for showing: kept, so the paragraph stays its own.)
-          if (show && inProps && name === 'del' && how === 'accept') el.setAttributeNS(W, 'w:author', REMOVED)
+          if (show && inProps && name === 'del' && how === 'accept') el.setAttributeNS(W, 'w:author', removedBy('accepted', el.getAttributeNS(W, 'author') ?? ''))
           else el.parentNode.removeChild(el)
           continue
         }
@@ -299,7 +304,7 @@ function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject', show = 
       }
     }
     if (how === 'reject') {
-      for (const t of Array.from(p.getElementsByTagNameNS(W, 'delText'))) if ((t.parentNode?.parentNode as Element | null)?.getAttributeNS(W, 'author') !== REMOVED) rename(t, 't')
+      for (const t of Array.from(p.getElementsByTagNameNS(W, 'delText'))) if (!(t.parentNode?.parentNode && isRemoved(t.parentNode.parentNode as Element))) rename(t, 't')
     }
   }
   return changed
@@ -446,7 +451,9 @@ class Markup {
   }
 
   private track(kind: 'ins' | 'del', author = this.author): Element {
-    return this.el(kind, { id: String(this.revId++), author, date: this.date })
+    // Dated only if ours: one written in their name (for showing) was found by comparison, and
+    // when they made it isn't known.
+    return this.el(kind, author === this.author ? { id: String(this.revId++), author, date: this.date } : { id: String(this.revId++), author })
   }
 
   /**
