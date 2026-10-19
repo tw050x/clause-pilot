@@ -148,7 +148,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     })
     // Two highlights in one paragraph: their markers one under the other, not on top of each other.
     ai.sort((x, y) => x.top - y.top)
-    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 24) ai[i] = { ...ai[i], top: ai[i - 1].top + 24 }
+    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 28) ai[i] = { ...ai[i], top: ai[i - 1].top + 28 }
     setGutter({ bars, runs, ai })
   }
 
@@ -245,25 +245,35 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     for (const el of loaded.host.querySelectorAll('.wv-ai-preview')) el.classList.remove('wv-ai-preview')
     if (!a) return
     const want = new Set(a.blockIds)
-    const runs = [...loaded.host.querySelectorAll('[data-source-node-id]')]
+    // The paragraphs' text runs in order, deleted words included.
+    const all = [...loaded.host.querySelectorAll('[data-source-node-id]')]
       .filter((x) => want.has(loaded.ids[nodeId(x)]))
-      .flatMap((x) => [...x.querySelectorAll('.superdoc-text-run')].filter((r) => !r.closest('[data-track-change-kind="delete"]')))
-    let text = ''
-    const spans = runs.map((r) => {
-      const from = text.length
-      text += r.textContent ?? ''
-      return { r, from, to: text.length }
-    })
-    // Find the words in the runs' text, ignoring whitespace (paragraph breaks, Word's numbers' tabs).
-    const solid: number[] = []
-    for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i])) solid.push(i)
-    const hay = solid.map((i) => text[i]).join('')
-    const needle = a.quote.replace(/\s+/g, '')
-    const at = needle ? hay.indexOf(needle) : -1
-    if (at < 0) return
-    const from = solid[at]
-    const to = solid[at + needle.length - 1] + 1
-    for (const x of spans) if (x.from < to && x.to > from) x.r.classList.add('wv-ai-preview')
+      .flatMap((x) => [...x.querySelectorAll('.superdoc-text-run')])
+    const deleted = (r: Element) => !!r.closest('[data-track-change-kind="delete"]')
+    // Find the words: in the text as it reads (deletions out), or failing that with them in;
+    // whitespace aside (paragraph breaks, Word's numbers' tabs).
+    const find = (runs: Element[]) => {
+      let text = ''
+      const spans = runs.map((r) => {
+        const from = text.length
+        text += r.textContent ?? ''
+        return { r, from, to: text.length }
+      })
+      const solid: number[] = []
+      for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i])) solid.push(i)
+      const needle = a.quote.replace(/\s+/g, '')
+      const at = needle ? solid.map((i) => text[i]).join('').indexOf(needle) : -1
+      if (at < 0) return null
+      const from = solid[at]
+      const to = solid[at + needle.length - 1] + 1
+      return spans.filter((x) => x.from < to && x.to > from).map((x) => x.r)
+    }
+    const hit = find(all.filter((r) => !deleted(r))) ?? find(all)
+    if (!hit?.length) return
+    // Everything from the first word to the last, deletions between them too: one tint, one colour.
+    const first = all.indexOf(hit[0])
+    const last = all.indexOf(hit[hit.length - 1])
+    for (const r of all.slice(first, last + 1)) r.classList.add('wv-ai-preview')
   }
 
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
@@ -472,7 +482,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         {gutter.ai.map((a, i) => (
           <button
             key={`a${i}`}
-            className="ed-ai-mark wv-ai"
+            className="wv-ai"
             style={{ top: a.top, left: a.right + 12 }}
             title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
             aria-label="Show the AI answers for this text"
@@ -484,7 +494,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             onMouseEnter={() => preview(a)}
             onMouseLeave={() => preview(null)}
           >
-            <Icon name="sparkle" size={12} stroke={2.2} />
+            <Icon name="sparkle" size={13} stroke={2.2} />
+            <span>{a.titles.length === 1 ? '1 Ask' : `${a.titles.length} Asks`}</span>
           </button>
         ))}
       </div>

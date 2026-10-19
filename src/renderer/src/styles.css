@@ -981,5 +981,13 @@ del.us-del ins.th-ins { color: inherit; }
 /* Comment highlights in our comment yellow, as in the text view (not SuperDoc's own colours). */
 .wv-wrap .superdoc-comment-highlight { background: color-mix(in srgb, #f5c542 28%, transparent) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }
 .wv-gutter .wv-comment { pointer-events: auto; }
-.wv-wrap .superdoc-text-run.wv-ai-preview { background: var(--processing-tint) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--processing) 55%, transparent); }
+/* Hovering an AI marker: its words in one tint and the text colour only, whatever else marks them
+   (redlines, comment highlights); a deleted word keeps a plain strike so it still reads as one. */
+.wv-wrap .superdoc-text-run.wv-ai-preview,
+.wv-wrap .superdoc-text-run.wv-ai-preview * { background: var(--processing-tint) !important; color: #1c2128 !important; text-decoration: none !important; border-color: transparent !important; box-shadow: none !important; outline: none !important; background-image: none !important; }
+.wv-wrap .superdoc-text-run.wv-ai-preview::before, .wv-wrap .superdoc-text-run.wv-ai-preview::after { display: none !important; }
+.wv-wrap .superdoc-text-run.wv-ai-preview[data-track-change-kind="delete"] { text-decoration: line-through !important; text-decoration-color: #1c2128 !important; }
 .wv-fallback { margin: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The AI marker in the right margin: "2 Asks", like the comment button. */
+.wv-ai { position: absolute; height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px 0 7px; margin-top: -2px; font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; z-index: 3; }
+.wv-ai:hover { background: var(--processing-tint); }
