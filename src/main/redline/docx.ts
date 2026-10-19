@@ -83,6 +83,17 @@ export async function buildDocRedline(
     if (picks.size && resolveSome(parasOf(b), segmentsOf(b), picks)) stats.acceptedChanges += picks.size
   }
   const added = new Map<string, Element>()
+  // For showing: paragraphs they removed without tracking (and we haven't put back) aren't in their
+  // file; they go back in where they were, as their tracked deletion, so the page shows what went.
+  if (opts.stampIds)
+    for (const b of d.blocks) {
+      if (!(b.untracked && b.kind === 'deleted') || parasOf(b).length || d.edits[b.id] !== undefined) continue
+      const at = d.blocks.indexOf(b)
+      const prev = d.blocks.slice(0, at).reverse().map((x) => (added.has(x.id) ? [added.get(x.id)!] : parasOf(x))).find((p) => p.length)
+      const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + b.text, { kind: 'del', author: opts.theirName || 'Counterparty' })
+      if (p) added.set(b.id, p)
+    }
   for (const b of d.blocks) {
     const edit = d.edits[b.id]
     if (edit === undefined) continue
@@ -119,7 +130,8 @@ export async function buildDocRedline(
       const at = d.blocks.indexOf(b)
       const prev = d.blocks.slice(0, at).reverse().map(parasOf).find((p) => p.length)
       const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
-      m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + edit)
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + edit)
+      if (p) added.set(b.id, p)
       stats.reinstated++
       continue
     }
@@ -530,7 +542,14 @@ class Markup {
   }
 
   /** A whole new paragraph as our tracked insertion, after `after` (or before `before`), styled like its neighbour. */
-  insertParagraph(after: Element | null, before: Element | null, text: string, opts: { styleFrom?: Element; ilvl?: number } = {}): Element | null {
+  insertParagraph(
+    after: Element | null,
+    before: Element | null,
+    text: string,
+    /** kind 'del' (for showing only): a paragraph they removed, as their tracked deletion in `author`'s name. */
+    opts: { styleFrom?: Element; ilvl?: number; kind?: 'ins' | 'del'; author?: string } = {}
+  ): Element | null {
+    const kind = opts.kind ?? 'ins'
     const near = after ?? before
     if (!near) return null
     const p = this.el('p')
@@ -545,15 +564,15 @@ class Markup {
     if (ilvl) ilvl.setAttributeNS(W, 'w:val', String(Math.max(0, opts.ilvl!)))
     // The paragraph mark itself is inserted too, so rejecting the change removes the whole paragraph.
     const rPr = this.el('rPr')
-    rPr.appendChild(this.track('ins'))
+    rPr.appendChild(this.track(kind, opts.author))
     ppr.appendChild(rPr)
     p.appendChild(ppr)
     const run = this.el('r')
-    const t = this.el('t')
+    const t = this.el(kind === 'del' ? 'delText' : 't')
     t.setAttribute('xml:space', 'preserve')
     t.appendChild(this.doc.createTextNode(text))
     run.appendChild(t)
-    const ins = this.track('ins')
+    const ins = this.track(kind, opts.author)
     ins.appendChild(run)
     p.appendChild(ins)
     if (after) after.parentNode!.insertBefore(p, after.nextSibling)
