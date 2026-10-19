@@ -857,7 +857,7 @@ table.t td:has(> .row-action) { padding-top: 4px; padding-bottom: 4px; }
 .key-rows { display: flex; flex-direction: column; gap: 9px; }
 .key-row { display: grid; grid-template-columns: 4px 84px 1fr; align-items: start; gap: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
 .key-row:has(.key-sample) { grid-template-columns: 130px 1fr; }
-.key-bar { display: block; width: 4px; height: 18px; border-radius: 1px; background: var(--border-strong); }
+.key-bar { position: relative; overflow: hidden; display: block; width: 4px; height: 18px; border-radius: 1px; background: var(--border-strong); }
 .key-bar.chg-checked { background: var(--exact); }
 .key-bar.chg-theirs { background: color-mix(in srgb, #1d4ed8 45%, transparent); }
 .key-bar.chg-ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }
@@ -1014,8 +1014,8 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-bar.chg-ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }
 .wv-bar.chg-checked { background: var(--exact); }
 .wv-bar.chg-read { background: var(--border-strong); }
-.wv-bar.chg-ai { background: repeating-linear-gradient(to bottom, var(--exact) 0 4px, transparent 4px 7px); }
-.wv-bar.chg-untracked.chg-theirs:not(.chg-ours) { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
+.wv-bar.chg-ai:not(.todo) { background: repeating-linear-gradient(to bottom, var(--exact) 0 4px, transparent 4px 7px); }
+.wv-bar.chg-untracked.chg-theirs:not(.chg-ours):not(.todo) { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
 .wv-run { position: absolute; width: 60px; display: flex; flex-direction: column; align-items: flex-end; }
 .wv-run .ed-unchanged { pointer-events: auto; }
 .wv-ai { pointer-events: auto; }
@@ -1088,3 +1088,16 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 /* New draft only: inserted text reads as plain text, not marked. */
 .wv-wrap.final [data-track-change-kind], .wv-wrap.final [data-track-change-kind] * { text-decoration: none !important; border-color: transparent !important; color: inherit !important; }
 .wv-wrap.final :where([data-track-change-kind], [data-track-change-kind] *) { background-color: transparent !important; }
+/* Something still to do in the paragraph: angled stripes sliding up its bar, like a loading bar,
+   over the bar's own colour (solid, not dashed, while there's something to do). */
+.wv-bar.todo { width: 5px; }
+.wv-bar.todo.chg-ai { background: var(--exact); }
+.wv-bar.todo::after, .key-bar.todo::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background-image: linear-gradient(-45deg, rgba(255, 255, 255, 0.6) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.6) 50%, rgba(255, 255, 255, 0.6) 75%, transparent 75%);
+  background-size: 8px 8px;
+  animation: wv-todo 0.9s linear infinite;
+}
+@keyframes wv-todo { from { background-position: 0 0; } to { background-position: 0 -8px; } }
+@media (prefers-reduced-motion: reduce) { .wv-bar.todo::after, .key-bar.todo::after { animation: none; } }
+.key-bar.todo.chg-ai { background: var(--exact); }

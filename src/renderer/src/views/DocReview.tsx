@@ -364,7 +364,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         <div className="key-rows">
           {(Object.keys(GUTTER) as GutterState[]).map((k) => (
             <div key={k} className="key-row">
-              <i className={`key-bar ${{ unchanged: 'chg-checked', checked: 'chg-checked', same: 'chg-ai', decide: 'chg-theirs', edited: 'chg-ours', read: 'chg-read' }[k]}`} />
+              <i className={`key-bar ${{ unchanged: 'chg-checked', checked: 'chg-checked', same: 'chg-ai todo', decide: 'chg-theirs todo', edited: 'chg-ours', read: 'chg-read todo' }[k]}`} />
               <span className={`ed-unchanged ${k} key-label`}>{GUTTER[k].label}</span>
               <span className="key-text">
                 {GUTTER[k].tip}
@@ -373,9 +373,9 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
             </div>
           ))}
           <div className="key-row">
-            <i className="key-bar chg-theirs chg-untracked" />
+            <i className="key-bar chg-ours todo" />
             <span className="key-label" />
-            <span className="key-text">A dashed bar: a change of theirs they didn’t track (found by comparison).</span>
+            <span className="key-text">Stripes moving up the bar: something still to do there (their changes to decide, even where you’ve edited it, text to read, or the AI’s finding to confirm).</span>
           </div>
         </div>
       </section>

@@ -3,7 +3,7 @@ import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { indentList, listAfter } from '@shared/numbering'
-import { changeKey, commentResolved, groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { changeKey, commentResolved, groupOf, hasOpenChanges, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
@@ -307,7 +307,10 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
       if (!places?.length) continue
       const marks = marksFor(d, b)
       const { bar, state } = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
-      for (const p of places) bars.push({ ...p, bar, blockId: b.id })
+      // Something still to do here (their changes to decide, even under an edit of ours; text to
+      // read; the AI's finding to confirm): its bar is animated.
+      const todo = hasOpenChanges(d, b) || state === 'read' || state === 'same'
+      for (const p of places) bars.push({ ...p, bar: todo ? `${bar} todo` : bar, blockId: b.id })
       const first = places[0]
       const last = places[places.length - 1]
       // A run is consecutive paragraphs in the same state on the same page.
