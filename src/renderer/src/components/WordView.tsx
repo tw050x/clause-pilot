@@ -579,14 +579,14 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         {gutter.notes.map((n) => (
           <button
             key={`n${n.blockId}`}
-            className="ed-gutter-btn out wv-comment"
-            style={{ top: n.top + 2, left: n.right + 12 }}
+            className="wv-ai wv-note"
+            style={{ top: n.top, left: n.right + 12 }}
             title={`${commentLabel(n.count)} on this paragraph: show them in the right-hand column`}
             aria-label={`Show ${commentLabel(n.count)}`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => cb.current.onOpenComments(n.blockId)}
           >
-            <CommentIcon size={10} />
+            <CommentIcon size={9} />
             <span>{n.count}</span>
           </button>
         ))}
@@ -607,7 +607,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           >
             <Icon name="sparkle" size={9} stroke={2.4} />
             <span>
-              {a.titles.length === 1 ? '1 Ask' : `${a.titles.length} Asks`}
+              {a.titles.length}
               {a.stale && <span className="wv-ai-stale"> · earlier</span>}
             </span>
           </button>

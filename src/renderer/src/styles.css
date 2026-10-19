@@ -1024,4 +1024,12 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-ai { position: absolute; height: 16px; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px 0 4px; margin-top: 2px; font: inherit; font-size: 10px; line-height: 1; font-weight: 500; white-space: nowrap; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; z-index: 3; }
 .wv-ai:hover { background: var(--processing-tint); }
 .wv-ai.stale { border-style: dashed; }
+/* Comments: the AI marker's pill, in black. */
+.wv-ai.wv-note { color: var(--text); border-color: color-mix(in srgb, var(--text) 45%, var(--border)); }
+.wv-ai.wv-note:hover { background: var(--surface-2, #f1f3f5); }
 .wv-ai-stale { color: var(--text-3); font-weight: 400; }
+.ai-card-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ai-card-state { display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+.ai-card-state.done { color: var(--exact); background: var(--exact-tint); }
+.ai-card-state.running { color: var(--processing); background: var(--processing-tint); }
+.ai-card-state.failed { color: var(--rejected); background: var(--rejected-tint); }

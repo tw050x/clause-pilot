@@ -1338,7 +1338,17 @@ function AiCard({
     <>
       <Icon name="sparkle" size={14} />
       <span className="ai-card-text">
-        <strong>{title}</strong>
+        <span className="ai-card-title">
+          <strong>{title}</strong>
+          {/* Whether it's been asked, seen with the answer closed too. */}
+          {result?.status === 'done' && (
+            <span className="ai-card-state done" title={`Answered for ${result.by}, ${new Date(result.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}>
+              Answered
+            </span>
+          )}
+          {running && <span className="ai-card-state running">Asking…</span>}
+          {result?.status === 'error' && <span className="ai-card-state failed">Failed</span>}
+        </span>
         <span className="faint">{detail}</span>
       </span>
     </>
