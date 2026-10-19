@@ -67,7 +67,7 @@ export async function buildDocRedline(
 
   for (const set of changeSets(d)) {
     if (statusOf(d, set) !== 'accepted') continue
-    for (const b of set.blocks) resolveTheirChanges(parasOf(b), 'accept')
+    for (const b of set.blocks) resolveTheirChanges(parasOf(b), 'accept', !!opts.stampIds)
     stats.acceptedChanges++
   }
   // Their individual changes we accepted or rejected (tracked ones; the rest are our edits).
@@ -80,7 +80,10 @@ export async function buildDocRedline(
       const r = d.resolved?.[changeKey(b.id, i)]
       if (r) picks.set(i, r)
     })
-    if (picks.size && resolveSome(parasOf(b), segmentsOf(b), picks)) stats.acceptedChanges += picks.size
+    // A paragraph they deleted, deletion accepted: all of it goes (its typed number too).
+    if (b.kind === 'deleted' && picks.get(0) === 'accepted') {
+      if (resolveTheirChanges(parasOf(b), 'accept', !!opts.stampIds)) stats.acceptedChanges++
+    } else if (picks.size && resolveSome(parasOf(b), segmentsOf(b), picks, !!opts.stampIds)) stats.acceptedChanges += picks.size
   }
   const added = new Map<string, Element>()
   // For showing: paragraphs they removed without tracking (and we haven't put back) aren't in their
@@ -91,7 +94,9 @@ export async function buildDocRedline(
       const at = d.blocks.indexOf(b)
       const prev = d.blocks.slice(0, at).reverse().map((x) => (added.has(x.id) ? [added.get(x.id)!] : parasOf(x))).find((p) => p.length)
       const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
-      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + b.text, { kind: 'del', author: opts.theirName || 'Counterparty' })
+      // Their removal accepted: shown faded, as text that's gone.
+      const accepted = d.resolved?.[changeKey(b.id, 0)] === 'accepted'
+      const p = m.insertParagraph(prev?.[prev.length - 1] ?? null, next?.[0] ?? null, (b.label ? `${b.label} ` : '') + b.text, { kind: 'del', author: accepted ? REMOVED : opts.theirName || 'Counterparty' })
       if (p) added.set(b.id, p)
     }
   for (const b of d.blocks) {
@@ -256,27 +261,45 @@ function visibleText(p: Element): string {
   return visiblePieces([p]).map((x) => x.text).join('')
 }
 
-function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject'): boolean {
+/**
+ * For showing only: the author given to text a decision removed (their deletion accepted, their
+ * insertion rejected). It stays on the page as a tracked deletion in this name, shown faded, so its
+ * comments and AI answers still have their text; the copy that's sent has it removed.
+ */
+export const REMOVED = 'clausepilot:removed'
+
+/** Text a decision removes: gone, or (for showing) kept as a deletion by REMOVED. */
+function remove(el: Element, show: boolean) {
+  if (!show) return void el.parentNode!.removeChild(el)
+  const del = el.localName === 'del' ? el : rename(el, 'del')
+  for (const t of Array.from(del.getElementsByTagNameNS(W, 't'))) rename(t, 'delText')
+  del.setAttributeNS(W, 'w:author', REMOVED)
+}
+
+function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject', show = false): boolean {
   let changed = false
   for (const p of paras) {
     for (const name of ['ins', 'del', 'rPrChange', 'pPrChange'] as const) {
       for (const el of Array.from(p.getElementsByTagNameNS(W, name))) {
-        if (!el.parentNode) continue
+        // (Not text already removed here, kept for showing.)
+        if (!el.parentNode || el.getAttributeNS(W, 'author') === REMOVED) continue
         changed = true
         const inProps = el.parentNode && (el.parentNode as Element).localName === 'rPr'
         // Paragraph-mark changes and formatting changes are markers: drop them either way
         // (rejecting a formatting change would need the old properties restored; keep theirs).
         if (inProps || name === 'rPrChange' || name === 'pPrChange') {
-          el.parentNode.removeChild(el)
+          // (A deleted paragraph's mark, for showing: kept, so the paragraph stays its own.)
+          if (show && inProps && name === 'del' && how === 'accept') el.setAttributeNS(W, 'w:author', REMOVED)
+          else el.parentNode.removeChild(el)
           continue
         }
         const keep = (name === 'ins') === (how === 'accept')
         if (keep) unwrap(el)
-        else el.parentNode.removeChild(el)
+        else remove(el, show)
       }
     }
     if (how === 'reject') {
-      for (const t of Array.from(p.getElementsByTagNameNS(W, 'delText'))) rename(t, 't')
+      for (const t of Array.from(p.getElementsByTagNameNS(W, 'delText'))) if ((t.parentNode?.parentNode as Element | null)?.getAttributeNS(W, 'author') !== REMOVED) rename(t, 't')
     }
   }
   return changed
@@ -286,7 +309,7 @@ function resolveTheirChanges(paras: Element[], how: 'accept' | 'reject'): boolea
  * Accept or reject particular tracked changes in paragraphs: segment `i` of the redline as read
  * is matched to the w:ins / w:del elements that make it up, in document order.
  */
-function resolveSome(paras: Element[], segments: { op: string; text: string }[], picks: Map<number, 'accepted' | 'rejected'>): boolean {
+function resolveSome(paras: Element[], segments: { op: string; text: string }[], picks: Map<number, 'accepted' | 'rejected'>, show = false): boolean {
   const runs: { op: 'ins' | 'del'; el: Element; text: string }[] = []
   for (const p of paras)
     for (const el of Array.from(p.getElementsByTagNameNS(W, '*')))
@@ -318,7 +341,7 @@ function resolveSome(paras: Element[], segments: { op: string; text: string }[],
       if (keep) {
         if (el.localName === 'del') for (const t of Array.from(el.getElementsByTagNameNS(W, 'delText'))) rename(t, 't')
         unwrap(el)
-      } else el.parentNode.removeChild(el)
+      } else remove(el, show)
       done = true
     }
   })

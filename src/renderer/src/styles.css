@@ -1039,3 +1039,8 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .ai-card-state.failed { color: var(--rejected); background: var(--rejected-tint); }
 .rc-only-head { display: flex; flex-direction: row; align-items: center; padding-bottom: 0; justify-content: space-between; gap: 8px; }
 .rc-only-head .rp-h { margin: 0; }
+/* Text a decision removed (their deletion accepted, their insertion rejected): still on the page,
+   faded and struck through in grey, so its comments and AI answers have their text. The copy
+   that's sent has it removed. (Low specificity for the background, so a selection tint shows.) */
+.wv-wrap .superdoc-text-run.superdoc-text-run[data-track-change-author="clausepilot:removed"] { opacity: 0.4; color: var(--text) !important; text-decoration-line: line-through !important; text-decoration-color: var(--text-3) !important; text-decoration-style: solid !important; border-color: transparent !important; }
+.wv-wrap :where(.superdoc-text-run[data-track-change-author="clausepilot:removed"]) { background-color: transparent !important; }
