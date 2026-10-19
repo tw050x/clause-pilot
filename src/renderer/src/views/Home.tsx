@@ -77,6 +77,8 @@ export function Home({
         </div>
       ) : null}
 
+      {settings?.demoMode && <QuickStart onOpenReview={onOpenReview} onNavigate={onNavigate} />}
+
       <InProgress onOpen={onOpenReview} />
 
       {adding === 'clause' && <AddClauseModal onClose={() => setAdding(null)} onAdded={refreshWs} />}
@@ -100,7 +102,7 @@ export function Home({
               cta: { label: 'Open Settings', onClick: () => onNavigate('settings') }
             },
             {
-              title: 'Add a clause to the library',
+              title: 'Add a clause',
               detail: 'Our approved wording for a topic (for example governing law). Contracts are compared with it: matching wording needs no reading, and the AI checks whether anything else means the same.',
               done: ws.library > 0,
               cta: { label: 'Add a clause', onClick: () => setAdding('clause') }
@@ -275,6 +277,103 @@ function ChooseAccount({ onChoose }: { onChoose: () => void }) {
           Choose account <Chevron />
         </button>
         </div>
+    </section>
+  )
+}
+
+type QuickStartId = 'round-1' | 'round-2' | 'client-paper' | 'approvals' | 'markup'
+
+/** Demo mode's things to explore, in order. */
+const QUICK_STARTS: { id: QuickStartId; title: string; detail: string; who: string; icon: string }[] = [
+  {
+    id: 'round-1',
+    title: 'Review a returned draft',
+    detail: 'Brightwater sent back our NDA with their changes. It’s compared with the original we sent: most of it is our approved wording; decide their tracked changes and find the ones they didn’t track.',
+    who: 'Brightwater Robotics · Mutual NDA, round 1',
+    icon: 'doc'
+  },
+  {
+    id: 'round-2',
+    title: 'Review their second draft',
+    detail: 'Their answer to what we sent back, compared with it: what they accepted, what they changed again, and anything new.',
+    who: 'Brightwater Robotics · Mutual NDA, round 2',
+    icon: 'history'
+  },
+  {
+    id: 'client-paper',
+    title: 'Review a contract on their paper',
+    detail: 'Kestrel’s own agreement, laid out differently from ours. Nothing is assumed to be ours: each part is compared with our clauses for meaning and checked against the playbook.',
+    who: 'Kestrel Health Systems · Confidentiality Agreement',
+    icon: 'file'
+  },
+  {
+    id: 'approvals',
+    title: 'Approve new clauses and positions',
+    detail: 'A colleague has nominated wording for Clauses and proposed a new playbook position. Approve them, and every contract is checked against them from then on.',
+    who: 'Approvals',
+    icon: 'inbox'
+  },
+  {
+    id: 'markup',
+    title: 'Send our response',
+    detail: 'A review with the decisions made. Produce the marked-up copy (their file with our changes tracked) and the cover email, built from what was decided.',
+    who: 'Harbourline Hosting · Master Services Agreement',
+    icon: 'mail'
+  }
+]
+
+/**
+ * Demo mode: things to explore, as cards. Starting one adds what it needs to the demo workspace
+ * (a draft opened as a review, items to approve) and takes you there; it's ticked, and opening it
+ * again goes back to what it added rather than adding it again.
+ */
+function QuickStart({ onOpenReview, onNavigate }: { onOpenReview: (id: string) => void; onNavigate: (v: View) => void }) {
+  const [done, setDone] = useState<Partial<Record<QuickStartId, { at: string; sessionId?: string }>>>({})
+  const [busy, setBusy] = useState<QuickStartId | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => void window.api.demo.quickstarts().then(setDone), [])
+  const start = async (id: QuickStartId) => {
+    setBusy(id)
+    setError(null)
+    try {
+      const to = await window.api.demo.quickstart(id)
+      setDone(await window.api.demo.quickstarts())
+      if (to.view === 'review' && to.sessionId) onOpenReview(to.sessionId)
+      else onNavigate('queue')
+    } catch (e) {
+      setError(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const count = QUICK_STARTS.filter((q) => done[q.id]).length
+  return (
+    <section className="quickstart">
+      <div className="quickstart-head">
+        <h2>Quick start</h2>
+        <span className="faint">
+          {count} of {QUICK_STARTS.length} explored
+        </span>
+      </div>
+      <p className="faint quickstart-lede">Things to try in the demo workspace. Each adds what it needs and takes you there.</p>
+      <div className="quickstart-grid">
+        {QUICK_STARTS.map((q, i) => (
+          <div key={q.id} className={`quickstart-card ${done[q.id] ? 'done' : ''}`}>
+            <div className="quickstart-top">
+              <span className="quickstart-n">{done[q.id] ? <Icon name="check" size={13} /> : i + 1}</span>
+              <Icon name={q.icon} size={15} />
+            </div>
+            <h3>{q.title}</h3>
+            <p className="quickstart-detail">{q.detail}</p>
+            <p className="faint quickstart-who">{q.who}</p>
+            <button className={`btn ${done[q.id] ? '' : 'primary'}`} disabled={!!busy} onClick={() => start(q.id)}>
+              {busy === q.id ? <span className="spinner sm" /> : done[q.id] ? 'Open' : 'Start'}
+              {busy !== q.id && <Chevron size={11} />}
+            </button>
+          </div>
+        ))}
+      </div>
+      {error && <p className="dr-small dr-err">{error}</p>}
     </section>
   )
 }

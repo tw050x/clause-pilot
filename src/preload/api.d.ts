@@ -90,6 +90,11 @@ export interface Api {
     /** Nominate an accepted change's wording for the pre-approved library. */
     nominate(id: string, setId: string, note: string): Promise<ReviewSession>
   }
+  /** Demo mode's quick starts: which are done, and starting one (adds what it needs; where to go next). */
+  demo: {
+    quickstarts(): Promise<Partial<Record<QuickStartId, { at: string; sessionId?: string }>>>
+    quickstart(id: QuickStartId): Promise<{ view: 'review' | 'queue'; sessionId?: string; accountId?: string }>
+  }
   /** The automated review: started from the review column, shown there as a timeline (as session updates). */
   pipeline: {
     /** The cap a run starts with, and what the AI is set to. */
@@ -154,6 +159,8 @@ export interface Api {
     export(sessionId: string): Promise<string | null>
   }
 }
+
+export type QuickStartId = 'round-1' | 'round-2' | 'client-paper' | 'approvals' | 'markup'
 
 declare global {
   interface Window {

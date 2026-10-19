@@ -72,6 +72,7 @@ const api: Api = {
     ask: (id, setIds) => invoke('doc:ask', id, setIds),
     nominate: (id, setId, note) => invoke('doc:nominate', id, setId, note)
   },
+  demo: { quickstarts: () => invoke('demo:quickstarts'), quickstart: (id) => invoke('demo:quickstart', id) },
   pipeline: { defaults: () => invoke('pipeline:defaults'), start: (id, budget) => invoke('pipeline:start', id, budget), continue: (id, budget) => invoke('pipeline:continue', id, budget), decide: (id, partId, outcome, feedback) => invoke('pipeline:decide', id, partId, outcome, feedback), stop: (id) => invoke('pipeline:stop', id) },
   redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
   chat: {

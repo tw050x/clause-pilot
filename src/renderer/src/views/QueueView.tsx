@@ -23,7 +23,7 @@ export function ApprovalsView({
   const pendingProps = proposals.filter((p) => p.status === 'pending')
   const done = [
     ...proposals.filter((p) => p.status !== 'pending').map((p) => ({ at: p.decidedAt ?? p.proposedAt, what: `Playbook: ${p.kind} "${(p.after ?? p.before)?.title}"`, status: p.status, by: p.decidedBy ?? '' })),
-    ...nominations.filter((n) => n.status !== 'pending').map((n) => ({ at: n.nominatedAt, what: `Library: ${n.text.slice(0, 90)}…`, status: n.status, by: '' }))
+    ...nominations.filter((n) => n.status !== 'pending').map((n) => ({ at: n.nominatedAt, what: `Clauses: ${n.text.slice(0, 90)}…`, status: n.status, by: '' }))
   ].sort((a, b) => b.at.localeCompare(a.at))
 
   return (
@@ -42,7 +42,7 @@ export function ApprovalsView({
       </div>
 
       <h3 className="approvals-h">
-        Library nominations <span className="faint">{pendingNoms.length}</span>
+        Clause nominations <span className="faint">{pendingNoms.length}</span>
       </h3>
       {!pendingNoms.length && <p className="faint">Nothing waiting. Nominate wording when you accept a change during a review.</p>}
       <div style={{ display: 'grid', gap: 12 }}>
@@ -159,7 +159,7 @@ function NominationCard({ n, onChange }: { n: Nomination; onChange: (n: Nominati
       </div>
       {n.note && <p className="muted">Reviewer note: {n.note}</p>}
       <div className="row-gap" style={{ marginTop: 10 }}>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Library title" />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Clause title" />
         <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category" />
         <button className="btn primary" onClick={async () => onChange(await window.api.kb.promote(n.id, title, category))}>
           <Icon name="check" /> Promote to pre-approved

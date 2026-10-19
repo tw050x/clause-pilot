@@ -96,7 +96,7 @@ export function NavDrawer(p: Props) {
       {item('contracts', 'doc', 'All contracts', undefined, !account)}
       {item('reviews', 'list', 'All reviews', undefined, !account)}
       <div className="nav-section">Knowledge</div>
-      {item('library', 'book', 'Library')}
+      {item('library', 'book', 'Clauses')}
       {item('playbook', 'scales', 'Playbook')}
       {item('questions', 'question', 'Questions')}
       {item('history', 'history', 'Precedents')}

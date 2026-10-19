@@ -42,7 +42,7 @@ export function LibraryView() {
   const match = matcher(q)
   return (
     <KnowledgePage
-      title="Library"
+      title="Clauses"
       lede="Wording we have already approved. A draft on our paper is compared with it: paragraphs that match word for word stay in the background, and the rest show as changes."
       count={library.length}
       q={q}
@@ -52,7 +52,7 @@ export function LibraryView() {
       {transfer.banner}
       {library.length === 0 && (
         <div className="empty-state">
-          No approved wording yet. Import a library file, or when you accept a change during a review, choose “Nominate this wording for the library” and approve it on the Approvals page. From then on, drafts are compared with it.
+          No approved wording yet. Import a clauses file, or when you accept a change during a review, nominate its wording for Clauses and approve it on the Approvals page. From then on, drafts are compared with it.
         </div>
       )}
       <div className="card" style={{ overflow: 'hidden' }}>

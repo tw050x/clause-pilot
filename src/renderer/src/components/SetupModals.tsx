@@ -56,7 +56,7 @@ export function AddClauseModal({ onClose, onAdded }: { onClose: () => void; onAd
     }
   }
   return (
-    <Modal title="Add a clause to the library" onClose={onClose}>
+    <Modal title="Add a clause" onClose={onClose}>
       <p className="faint" style={{ marginTop: 0 }}>
         Our approved wording for a topic. Contracts are compared with it: wording that matches it word for word needs no reading, and the AI checks whether anything else means the same.
       </p>
@@ -90,7 +90,7 @@ export function AddClauseModal({ onClose, onAdded }: { onClose: () => void; onAd
           Cancel
         </button>
         <button className="btn primary" disabled={busy || !title.trim() || !text.trim()} onClick={add}>
-          Add to the library
+          Add to Clauses
         </button>
       </div>
     </Modal>

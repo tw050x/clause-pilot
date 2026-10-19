@@ -209,7 +209,7 @@ export function App() {
             Demo mode
             <span className="tip" role="tooltip">
               {settings.demoMode
-                ? 'On: the demo workspace (PortSwigger’s library and playbook, and an account and contract for each demo), with the demo server answering as the AI. Turn off for your own workspace and AI.'
+                ? 'On: the demo workspace (PortSwigger’s clauses and playbook, and an account and contract for each demo), with the demo server answering as the AI. Turn off for your own workspace and AI.'
                 : 'Off: your own workspace, with the AI chosen in Settings. Turn on for the demo workspace and the demo server.'}
             </span>
           </button>

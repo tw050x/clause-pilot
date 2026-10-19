@@ -74,6 +74,16 @@ const workspaceDir = () => join(userDir, 'workspaces', demoMode() ? 'demo' : 'li
 function openWorkspace(): Workspace {
   const dir = workspaceDir()
   const store = new Store(dir, join(appRoot, demoMode() ? 'data/seed-demo' : 'data/seed-empty'))
+  // A demo workspace made before the seed grew: the demo's accounts and contracts it's missing.
+  if (demoMode()) {
+    const seed = <T,>(f: string): T[] => JSON.parse(readFileSync(join(appRoot, 'data/seed-demo', f), 'utf8'))
+    const accounts = store.accounts()
+    const missingA = seed<Account>('accounts.json').filter((a) => !accounts.some((x) => x.id === a.id))
+    if (missingA.length) store.saveAccounts([...accounts, ...missingA])
+    const contracts = store.contracts()
+    const missingC = seed<ContractRecord>('contracts.json').filter((c) => !contracts.some((x) => x.id === c.id))
+    if (missingC.length) store.saveContracts([...contracts, ...missingC])
+  }
   const recordings = new RecordingStore([join(dir, 'recordings')], join(dir, 'recordings'))
   return { dir, store, audit: new AuditLog(join(dir, 'audit.jsonl')), recordings }
 }
@@ -271,6 +281,135 @@ ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
   void ensureDemoServer()
   ws.audit.append(next.reviewerName, 'settings.changed', null, { ...patch })
   return settings()
+})
+
+// ---- demo quick starts ----------------------------------------------------------------------
+// In demo mode, the Start page offers things to explore. Starting one adds what it needs to the
+// demo workspace (a draft opened as a review, items waiting for approval) and is recorded, so it
+// isn't added again: starting it again just opens it.
+
+type QuickStartId = 'round-1' | 'round-2' | 'client-paper' | 'approvals' | 'markup'
+interface QuickStartDone {
+  at: string
+  /** The review it opened, if any. */
+  sessionId?: string
+}
+const quickStartFile = () => join(ws.dir, 'demo-quickstarts.json')
+const quickStarts = (): Partial<Record<QuickStartId, QuickStartDone>> => (existsSync(quickStartFile()) ? JSON.parse(readFileSync(quickStartFile(), 'utf8')) : {})
+const demoFile = (name: string) => join(appRoot, 'data/demo-files', name)
+const DEMO_FILES = {
+  v0: 'Brightwater-Mutual-NDA-v0-original-we-sent.docx',
+  v1: 'Brightwater-Mutual-NDA-v1-client-redline.docx',
+  v2: 'Brightwater-Mutual-NDA-v2-client-response.docx',
+  kestrel: 'Kestrel-Confidentiality-Agreement-client-paper.docx',
+  msa: 'Harbourline-Master-Services-Agreement.docx'
+}
+
+ipcMain.handle('demo:quickstarts', () => quickStarts())
+
+/** Start a quick start (or, if it's done, find what it opened): where the window goes next. */
+ipcMain.handle('demo:quickstart', async (_e, id: QuickStartId): Promise<{ view: 'review' | 'queue'; sessionId?: string; accountId?: string }> => {
+  if (!demoMode()) throw new Error('Quick starts are for demo mode.')
+  const done = quickStarts()
+  const record = (x: QuickStartDone) => writeFileSync(quickStartFile(), JSON.stringify({ ...quickStarts(), [id]: x }, null, 2))
+  const open = (sid: string) => {
+    const s = session(sid)
+    return { view: 'review' as const, sessionId: sid, accountId: s.accountId }
+  }
+  if (done[id]) return done[id]!.sessionId ? open(done[id]!.sessionId!) : { view: 'queue' }
+  const review = async (file: string, contractId: string, origin?: DraftOrigin) => {
+    const s = await startReview(ws, demoFile(file), contractId, origin)
+    persist(s)
+    return s
+  }
+  const ndaVersions = () => ws.store.versionsOf('ct-demo-brightwater')
+  // Round 1: their redline of our NDA, compared with the original we sent.
+  const round1 = async () => {
+    const v1 = ndaVersions().find((v) => v.version === 1)
+    return v1 ?? (await review(DEMO_FILES.v1, 'ct-demo-brightwater', { kind: 'original', path: demoFile(DEMO_FILES.v0) }))
+  }
+  let out: { view: 'review' | 'queue'; sessionId?: string; accountId?: string }
+  if (id === 'round-1') {
+    const s = await round1()
+    record({ at: new Date().toISOString(), sessionId: s.id })
+    out = open(s.id)
+  } else if (id === 'round-2') {
+    // Their next draft, compared with what we sent back (round 1 first, if it isn't there).
+    const r1 = await round1()
+    if (!done['round-1']) writeFileSync(quickStartFile(), JSON.stringify({ ...quickStarts(), 'round-1': { at: new Date().toISOString(), sessionId: r1.id } }, null, 2))
+    const s = ndaVersions().find((v) => v.version === 2) ?? (await review(DEMO_FILES.v2, 'ct-demo-brightwater'))
+    record({ at: new Date().toISOString(), sessionId: s.id })
+    out = open(s.id)
+  } else if (id === 'client-paper') {
+    const s = await review(DEMO_FILES.kestrel, 'ct-demo-kestrel', { kind: 'theirs' })
+    record({ at: new Date().toISOString(), sessionId: s.id })
+    out = open(s.id)
+  } else if (id === 'approvals') {
+    // A clause nominated for Clauses and a new playbook position, by a colleague, to approve.
+    const at = new Date().toISOString()
+    ws.store.saveNominations([
+      ...ws.store.nominations(),
+      {
+        id: uid('nom'),
+        text: 'Each party may disclose Confidential Information to its professional advisers, auditors and insurers who are bound by duties of confidentiality no less protective than those in this Agreement.',
+        category: 'Confidentiality',
+        contractType: 'nda',
+        fromDoc: DEMO_FILES.kestrel,
+        counterparty: 'Kestrel Health Systems',
+        nominatedBy: 'Priya Shah',
+        nominatedAt: at,
+        note: 'Agreed with Kestrel; clearer than our current wording on advisers. Worth adding to Clauses.',
+        status: 'pending'
+      }
+    ])
+    ws.store.savePlaybookProposals([
+      ...ws.store.playbookProposals(),
+      {
+        id: uid('pp'),
+        kind: 'add',
+        positionId: null,
+        before: null,
+        after: {
+          id: '',
+          title: 'Data protection',
+          appliesTo: ['nda', 'order-form'],
+          standard: 'Where personal data is shared, each party complies with UK GDPR and the Data Protection Act 2018, and personal data is shared only as the Purpose needs.',
+          acceptableFallback: 'A reference to applicable data protection law, with a data processing agreement to follow if personal data is processed.',
+          redFlags: ['No data protection wording where personal data will be shared', 'Personal data transferred outside the UK/EEA without safeguards']
+        },
+        reason: 'Health clients like Kestrel keep asking about personal data; we should have a standard position.',
+        proposedBy: 'Priya Shah',
+        proposedAt: at,
+        status: 'pending'
+      }
+    ])
+    ws.audit.append('Priya Shah', 'demo.quickstart-approvals', null, {})
+    record({ at })
+    out = { view: 'queue' }
+  } else {
+    // A review with decisions made, ready for the marked-up copy and the email.
+    const s = await review(DEMO_FILES.msa, 'ct-demo-harbourline', { kind: 'theirs' })
+    tracked(s, 'demo:markup', () => {
+      const d = s.doc!
+      let first = true
+      for (const b of d.blocks) {
+        segmentsOf(b).forEach((x, i) => {
+          if (x.op === 'same') return
+          d.resolved ??= {}
+          // Their first change rejected, the rest accepted.
+          d.resolved[changeKey(b.id, i)] = first ? 'rejected' : 'accepted'
+          first = false
+        })
+      }
+      const target = d.blocks.find((b) => /liab/i.test(b.text)) ?? d.blocks.find((b) => b.label)
+      if (target) d.comments.push({ id: uid('oc'), blockId: target.id, text: 'We can accept this if the cap is raised to 150% of the fees paid in the year.', by: actor(), at: new Date().toISOString() })
+    })
+    persist(s)
+    record({ at: new Date().toISOString(), sessionId: s.id })
+    out = open(s.id)
+  }
+  ws.audit.append(actor(), 'demo.quickstart', out.sessionId ?? null, { id })
+  return out
 })
 
 /**
