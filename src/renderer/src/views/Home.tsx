@@ -24,8 +24,8 @@ export function Home({
   const [settings, setSettings] = useState<Settings | null>(null)
   // Until the first review, the setup checklist is the way in: it explains what opening a contract involves.
   const needsFirstReview = !!ws && ws.reviews === 0
-  const aiReady = !!settings && (settings.aiProvider === 'vllm' ? !!(settings.vllmUrl && settings.vllmModel) : settings.hasApiKey)
-  const aiName = settings?.aiProvider === 'vllm' ? 'your vLLM server' : 'Anthropic’s API'
+  const aiReady = !!settings && (settings.aiProvider === 'vllm' ? !!(settings.vllmUrl && settings.vllmModel) : settings.aiProvider === 'demo' ? !!settings.demoUrl : settings.hasApiKey)
+  const aiName = settings?.aiProvider === 'vllm' ? 'your vLLM server' : settings?.aiProvider === 'demo' ? 'the demo server' : 'Anthropic’s API'
 
   useEffect(() => {
     window.api.workspace.summary().then(setWs)

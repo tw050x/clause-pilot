@@ -8,7 +8,7 @@ import type { Account, ContractRecord, ChatMessage, DraftOrigin, DraftProbe, Ema
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
-import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noAiProvider, vllmModels, type AiProvider, type ChatUsage } from './ai/provider'
+import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noAiProvider, vllmModels, type AiProvider, type ChatUsage, type VllmServer } from './ai/provider'
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
@@ -33,6 +33,9 @@ import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@sha
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_MODEL = 'claude-opus-5-5'
+/** The demo server (npm run demo:server): where it listens, and the model it says it is. */
+const DEMO_URL = 'http://127.0.0.1:4321'
+const DEMO_MODEL = 'clause-pilot-demo'
 const appRoot = process.env.CLAUSEPILOT_APP_ROOT ?? app.getAppPath()
 // Where reviews, workspaces, settings and the API key live. Running from source uses its own
 // folder so development never touches the installed app's data; CLAUSEPILOT_USER_DATA
@@ -79,6 +82,7 @@ function loadSettings(): StoredSettings {
     model: DEFAULT_MODEL,
     vllmUrl: '',
     vllmModel: '',
+    demoUrl: DEMO_URL,
     recordLiveResponses: true,
     securityReviewer: false,
     debug: false
@@ -95,13 +99,26 @@ function readKey(file: string): string | null {
 const apiKey = () => process.env.ANTHROPIC_API_KEY || readKey(keyFile)
 const vllmKey = () => process.env.VLLM_API_KEY || readKey(vllmKeyFile)
 
-/** The AI chosen in Settings: Claude, or a vLLM server (for example one on the local network). */
+/**
+ * The OpenAI-compatible server the AI steps use, for vLLM and for the demo server (demo mode: the
+ * demo server answers in place of a model); null if it isn't set up; undefined for Claude.
+ */
+function openAiServer(s = loadSettings()): VllmServer | null | undefined {
+  if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? { url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() } : null
+  if (s.aiProvider === 'demo') return s.demoUrl ? { url: s.demoUrl, model: DEMO_MODEL } : null
+  return undefined
+}
+
+/** The AI chosen in Settings: Claude, a vLLM server (for example one on the local network), or the demo server. */
 function provider(): AiProvider {
   const s = loadSettings()
   let ai: AiProvider
-  if (s.aiProvider === 'vllm') {
-    if (!s.vllmUrl || !s.vllmModel) return noAiProvider('No vLLM server set up. Add its address and model in Settings.')
-    ai = new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() })
+  const server = openAiServer(s)
+  if (server === null) return noAiProvider(s.aiProvider === 'demo' ? 'No demo server set up. Add its address in Settings.' : 'No vLLM server set up. Add its address and model in Settings.')
+  if (server) {
+    ai = new VllmProvider(server)
+    // (The demo server's answers aren't worth recording.)
+    if (s.aiProvider === 'demo') return ai
   } else {
     const key = apiKey()
     if (!key) return noAiProvider('No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
@@ -113,7 +130,8 @@ function provider(): AiProvider {
 /** The chat panel's model: the same AI, streaming. */
 function chatModel(): { chat: (system: string, history: ChatMessage[], onDelta: (t: string) => void, onUsage?: (u: ChatUsage) => void, onThinking?: () => void) => Promise<string> } | null {
   const s = loadSettings()
-  if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? new VllmProvider({ url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() }) : null
+  const server = openAiServer(s)
+  if (server !== undefined) return server ? new VllmProvider(server) : null
   const key = apiKey()
   return key ? new AnthropicProvider(key, s.model) : null
 }
@@ -247,7 +265,7 @@ ipcMain.handle('workspace:clear', () => {
   Object.assign(ws, openWorkspace())
   // Back to the AI defaults: Claude, the default model, no vLLM server, no keys.
   const kept: Partial<StoredSettings> = loadSettings()
-  for (const k of ['aiProvider', 'model', 'vllmUrl', 'vllmModel'] as const) delete kept[k]
+  for (const k of ['aiProvider', 'model', 'vllmUrl', 'vllmModel', 'demoUrl'] as const) delete kept[k]
   writeFileSync(settingsFile, JSON.stringify(kept, null, 2))
   rmSync(keyFile, { force: true })
   rmSync(vllmKeyFile, { force: true })
@@ -1122,7 +1140,8 @@ const pipelineDeps = (): PipelineDeps => ({
   actor,
   settings: () => {
     const st = loadSettings()
-    return st.aiProvider === 'vllm' ? { kind: 'vllm', model: st.vllmModel ?? '' } : { kind: 'anthropic', model: st.model }
+    const server = openAiServer(st)
+    return server !== undefined ? { kind: 'vllm', model: server?.model ?? '' } : { kind: 'anthropic', model: st.model }
   },
   uid: (p) => uid(p),
   knowledge: () => ({ library: ws.store.library(), playbook: ws.store.playbook(), questions: ws.store.questions() }),
@@ -1133,8 +1152,10 @@ const pipelineDeps = (): PipelineDeps => ({
 ipcMain.handle('pipeline:defaults', () => {
   const { kind, model } = pipelineDeps().settings()
   const ai = provider()
+  const p = loadSettings().aiProvider
   return {
     provider: kind,
+    name: p === 'demo' ? 'Demo server' : p === 'vllm' ? 'vLLM' : 'Claude',
     model,
     budget: kind === 'anthropic' ? { usd: DEFAULT_BUDGET.usd, tokens: DEFAULT_BUDGET.tokens * 4 } : { tokens: DEFAULT_BUDGET.tokens },
     ready: ai.kind !== 'none',
@@ -1285,7 +1306,10 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
 // ---- The Agent: one conversation per contract---------------------------------------------------
 
 const chatKey = (s: ReviewSession) => s.contractId ?? s.id
-const NO_MODEL = () => (loadSettings().aiProvider === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
+const NO_MODEL = () => {
+  const p = loadSettings().aiProvider
+  return p === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : p === 'demo' ? 'No demo server set up. Add its address in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.'
+}
 
 /** Add a message to the contract's conversation, and tell the window. */
 function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' | 'version'>): ChatEntry {
@@ -1306,7 +1330,7 @@ function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' 
 async function chatRequestFor(s: ReviewSession, model: NonNullable<ReturnType<typeof chatModel>>): Promise<ChatMessage[]> {
   const store = wsFor(s).store
   const c = store.chat(chatKey(s))
-  const budget = HISTORY_BUDGET[loadSettings().aiProvider === 'vllm' ? 'vllm' : 'anthropic']
+  const budget = HISTORY_BUDGET[loadSettings().aiProvider === 'claude' ? 'anthropic' : 'vllm']
   // The question just added stays out of the summary.
   const before: ChatConversation = { ...c, entries: c.entries.slice(0, -1) }
   if (needsCompacting(before, budget)) {
@@ -1343,7 +1367,7 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requ
   }
   // What Debug mode shows: who answered, how much was sent, and what came back.
   const conf = loadSettings()
-  const raw: Record<string, unknown> = { provider: conf.aiProvider, model: conf.aiProvider === 'vllm' ? conf.vllmModel : conf.model }
+  const raw: Record<string, unknown> = { provider: conf.aiProvider, model: conf.aiProvider === 'vllm' ? conf.vllmModel : conf.aiProvider === 'demo' ? DEMO_MODEL : conf.model }
   let streamed = ''
   try {
     const request = await chatRequestFor(s, model)

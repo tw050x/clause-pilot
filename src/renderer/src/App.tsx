@@ -188,7 +188,7 @@ export function App() {
             {aiLabel(settings)}
             <span className="tip" role="tooltip">
               {aiReady(settings)
-                ? `AI steps (questions on highlighted text, change review, the Agent) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : 'Claude'}, and only when you ask. Click to change.`
+                ? `AI steps (questions on highlighted text, change review, the Agent) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : settings.aiProvider === 'demo' ? `the demo server at ${settings.demoUrl}` : 'Claude'}, and only when you ask. Click to change.`
                 : 'No AI set up: reviewing, editing, the marked-up copy and the email all work, but the AI steps will say what’s missing. Click to set it up in Settings.'}
             </span>
           </button>
@@ -369,9 +369,19 @@ export function App() {
 }
 
 /** Is an AI set up for the AI steps? */
-const aiReady = (s: Settings) => (s.aiProvider === 'vllm' ? !!(s.vllmUrl && s.vllmModel) : s.hasApiKey)
+const aiReady = (s: Settings) => (s.aiProvider === 'vllm' ? !!(s.vllmUrl && s.vllmModel) : s.aiProvider === 'demo' ? !!s.demoUrl : s.hasApiKey)
 const aiLabel = (s: Settings) =>
-  s.aiProvider === 'vllm' ? (aiReady(s) ? `vLLM · ${s.vllmModel}` : 'vLLM · not set up') : aiReady(s) ? `Claude · ${s.model}` : 'Claude · no API key'
+  s.aiProvider === 'demo'
+    ? aiReady(s)
+      ? 'Demo server'
+      : 'Demo server · not set up'
+    : s.aiProvider === 'vllm'
+      ? aiReady(s)
+        ? `vLLM · ${s.vllmModel}`
+        : 'vLLM · not set up'
+      : aiReady(s)
+        ? `Claude · ${s.model}`
+        : 'Claude · no API key'
 
 /** Tracks the OS network state (Electron mirrors it to navigator.onLine). */
 function useOnline(): boolean {

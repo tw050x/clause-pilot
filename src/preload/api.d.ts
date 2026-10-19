@@ -91,7 +91,7 @@ export interface Api {
   /** The automated review: started from the review column, shown there as a timeline (as session updates). */
   pipeline: {
     /** The cap a run starts with, and what the AI is set to. */
-    defaults(): Promise<{ provider: 'anthropic' | 'vllm'; model: string; budget: { tokens: number; usd?: number }; ready: boolean; why?: string }>
+    defaults(): Promise<{ provider: 'anthropic' | 'vllm'; name: string; model: string; budget: { tokens: number; usd?: number }; ready: boolean; why?: string }>
     start(id: string, budget: { tokens: number; usd?: number }): Promise<ReviewSession>
     /** Go on with a paused run (after the estimate, the budget reached, or a failure), with a new budget if given. */
     continue(id: string, budget?: { tokens: number; usd?: number }): Promise<ReviewSession>

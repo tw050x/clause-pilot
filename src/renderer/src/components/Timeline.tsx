@@ -174,7 +174,7 @@ export function Timeline({
       {error && <p className="dr-small dr-err">{error}</p>}
       {defaults && (
         <p className="faint dr-small tl-model">
-          {claude ? 'Claude' : 'vLLM'} · {defaults.model}
+          {defaults.name} · {defaults.model}
         </p>
       )}
     </section>

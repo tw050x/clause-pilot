@@ -67,15 +67,22 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
           <button className={settings.aiProvider === 'vllm' ? 'on' : ''} onClick={() => save({ aiProvider: 'vllm' })}>
             vLLM
           </button>
+          <button className={settings.aiProvider === 'demo' ? 'on' : ''} onClick={() => save({ aiProvider: 'demo' })}>
+            Demo server
+          </button>
         </div>
         <span className="hint">
           {settings.aiProvider === 'vllm'
             ? 'Your own model on a vLLM server (OpenAI-compatible API), for example on your local network. Contract text is sent to that server.'
-            : 'Claude, through the Anthropic API. Contract text is sent to Anthropic.'}
+            : settings.aiProvider === 'demo'
+              ? 'Demo mode: the Clause Pilot demo server answers in place of a model, so demos run without an AI. Contract text is sent to the demo server.'
+              : 'Claude, through the Anthropic API. Contract text is sent to Anthropic.'}
         </span>
       </div>
 
-      {settings.aiProvider === 'claude' ? (
+      {settings.aiProvider === 'demo' ? (
+        <DemoServer settings={settings} save={save} />
+      ) : settings.aiProvider === 'claude' ? (
         <>
           <div className="field">
             <label>Anthropic API key</label>
@@ -236,6 +243,39 @@ function ClearData() {
         </div>
       )}
       <span className="hint">Resets the app to an empty workspace with no AI set up, for example to run the demos again from the start. Your name and the other settings are kept.</span>
+    </div>
+  )
+}
+
+/** Demo mode: the demo server's address, and Connect to check it's running. */
+function DemoServer({ settings, save }: { settings: Settings; save: (patch: Partial<Settings>) => Promise<void> }) {
+  const [url, setUrl] = useState(settings.demoUrl)
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const connect = async () => {
+    setTesting(true)
+    setTest(null)
+    try {
+      if (url.trim() !== settings.demoUrl) await save({ demoUrl: url.trim() })
+      const list = await window.api.ai.vllmModels(url.trim())
+      setTest({ ok: true, text: `Connected to the demo server${list[0] ? ` (${list[0]})` : ''}.` })
+    } catch (e) {
+      setTest({ ok: false, text: `${String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')} Is it running? Start it with: npm run demo:server` })
+    } finally {
+      setTesting(false)
+    }
+  }
+  return (
+    <div className="field">
+      <label>Demo server</label>
+      <div className="row-gap">
+        <input placeholder="http://127.0.0.1:4321" value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }} />
+        <button className="btn" disabled={!url.trim() || testing} onClick={connect}>
+          {testing ? 'Connecting…' : 'Connect'}
+        </button>
+      </div>
+      <span className="hint">Start it in the app’s folder with npm run demo:server (it listens on port 4321). It speaks the same API as a vLLM server.</span>
+      {test && <div className={`banner ${test.ok ? 'info' : 'danger'}`} style={{ marginTop: 6 }}>{test.text}</div>}
     </div>
   )
 }

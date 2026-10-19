@@ -689,8 +689,8 @@ export interface Settings {
   reviewerName: string
   /** Can resolve security alerts and release a review from security hold. */
   securityReviewer: boolean
-  /** Which AI answers the AI steps: Claude (Anthropic API) or a vLLM server. */
-  aiProvider: 'claude' | 'vllm'
+  /** Which AI answers the AI steps: Claude (Anthropic API), a vLLM server, or the demo server (demo mode). */
+  aiProvider: 'claude' | 'vllm' | 'demo'
   /** Claude model. */
   model: string
   hasApiKey: boolean
@@ -698,6 +698,8 @@ export interface Settings {
   vllmUrl: string
   /** Model name as the vLLM server serves it. */
   vllmModel: string
+  /** The demo server's address (demo mode: it answers in place of a model, over the same API as vLLM). */
+  demoUrl: string
   hasVllmKey: boolean
   recordLiveResponses: boolean
   /** Debug mode: shows what is normally hidden, such as each AI answer as the server returned it. */
