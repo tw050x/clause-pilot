@@ -162,6 +162,8 @@ export async function buildDocRedline(
     stats.replaced++
   }
   for (const c of d.comments) {
+    // For showing: a resolved thread isn't highlighted (as in Word); the review column still has it.
+    if (opts.stampIds && commentResolved(d, c)) continue
     const b = d.blocks.find((x) => x.id === c.blockId)
     const paras = b ? parasOf(b) : []
     if (!b || !paras.length) continue
@@ -170,6 +172,11 @@ export async function buildDocRedline(
   // Their comments we resolved (or reopened) here: Word's done flag on the comment in their file.
   const theirIds = new Set(d.blocks.flatMap((b) => (b.comments ?? []).map((c) => c.id)))
   for (const [id, r] of Object.entries(d.commentsDone ?? {})) if (theirIds.has(id)) m.markDone(Number(id), r.done)
+  if (opts.stampIds) {
+    const resolved = new Set(d.blocks.flatMap((b) => (b.comments ?? []).filter((c) => commentResolved(d, c)).map((c) => c.id)))
+    for (const tag of ['commentRangeStart', 'commentRangeEnd', 'commentReference'])
+      for (const el of Array.from(doc.getElementsByTagNameNS(W, tag))) if (resolved.has(el.getAttributeNS(W, 'id') ?? '')) el.parentNode?.removeChild(el)
+  }
   stats.commentedOnly = d.comments.filter((c) => d.edits[c.blockId] === undefined).length
   stats.comments = m.added
   if (m.added || m.marked) await m.saveComments()
