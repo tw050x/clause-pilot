@@ -107,7 +107,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[] }>({
     bars: [],
     runs: [],
     ai: []
@@ -154,7 +154,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     }
     for (const list of byBlock.values()) list.sort((a, b) => a.top - b.top)
     const d = model.current
-    const bars: (Placed & { bar: string })[] = []
+    const bars: (Placed & { bar: string; blockId: string })[] = []
     const runs: (Placed & { state: GutterState })[] = []
     const run: { top: number; left: number; bottom: number; state?: GutterState } = { top: 0, left: 0, bottom: 0 }
     const end = () => run.state && runs.push({ top: run.top, height: run.bottom - run.top, left: run.left, right: run.left, state: run.state })
@@ -163,7 +163,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       if (!places?.length) continue
       const marks = marksFor(d, b)
       const { bar, state } = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
-      for (const p of places) bars.push({ ...p, bar })
+      for (const p of places) bars.push({ ...p, bar, blockId: b.id })
       const first = places[0]
       const last = places[places.length - 1]
       // A run is consecutive paragraphs in the same state on the same page.
@@ -313,6 +313,76 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const first = groupOf(b, seg)[0] ?? seg
     if (!picked.some((p) => p.kind === 'theirs' && p.blockId === b.id && groupOf(b, p.seg).includes(first))) picked.push({ blockId: b.id, kind: 'theirs', seg: first })
   }
+
+  /**
+   * Select whole paragraphs from their bars: a click selects one, a drag from one bar up or down
+   * selects every paragraph it passes. The paragraphs are tinted while dragging; on release they
+   * become the page's selection, so the review column, the AI questions and the comment button
+   * follow it as they follow selected text.
+   */
+  const dragging = useRef<{ from: string; to: string } | null>(null)
+  const [lineSel, setLineSel] = useState<string[]>([])
+  const blocksBetween = (from: string, to: string) => {
+    const order = model.current.blocks.map((b) => b.id)
+    const [a, b] = [order.indexOf(from), order.indexOf(to)].sort((x, y) => x - y)
+    const placed = new Set(gutter.bars.map((x) => x.blockId))
+    return order.slice(a, b + 1).filter((id) => placed.has(id))
+  }
+  const barAt = (clientY: number) => {
+    const w = wrap.current
+    if (!w) return null
+    const y = clientY - w.getBoundingClientRect().top + w.scrollTop
+    const hit = gutter.bars.find((x) => y >= x.top - 6 && y <= x.top + x.height + 6)
+    if (hit) return hit.blockId
+    // Between bars: the nearest one.
+    return [...gutter.bars].sort((a, b) => Math.abs(a.top + a.height / 2 - y) - Math.abs(b.top + b.height / 2 - y))[0]?.blockId ?? null
+  }
+  const selectBlocks = async (ids: string[]) => {
+    const loaded = current.current
+    if (!loaded || !ids.length) return
+    const paraIds = (id: string) => Object.keys(loaded.ids).filter((k) => loaded.ids[k] === id)
+    const first = paraIds(ids[0])[0]
+    const last = paraIds(ids[ids.length - 1]).pop()
+    if (!first || !last) return
+    const texts = await pageTexts(loaded)
+    const capture = {
+      status: 'ready',
+      empty: false,
+      target: null,
+      selectionTarget: { kind: 'selection', start: { kind: 'text', blockId: first, offset: 0 }, end: { kind: 'text', blockId: last, offset: (texts.get(last) ?? '').length } },
+      activeMarks: [],
+      activeCommentIds: [],
+      activeChangeIds: [],
+      quotedText: ''
+    }
+    loaded.sd.ui?.selection.restore(capture as unknown as Parameters<NonNullable<typeof loaded.sd.ui>['selection']['restore']>[0])
+    // Once SuperDoc has the selection, it's reported like any other.
+    const el = loaded.host.querySelector(`[data-source-node-id="${last}"]`)
+    window.setTimeout(() => void report(loaded, el, el?.getBoundingClientRect().bottom ?? 0), 150)
+  }
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      if (!dragging.current) return
+      const to = barAt(e.clientY)
+      if (to && to !== dragging.current.to) {
+        dragging.current.to = to
+        setLineSel(blocksBetween(dragging.current.from, to))
+      }
+    }
+    const up = () => {
+      if (!dragging.current) return
+      const ids = blocksBetween(dragging.current.from, dragging.current.to)
+      dragging.current = null
+      setLineSel([])
+      void selectBlocks(ids)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+  })
 
   /**
    * What was clicked or selected on the page, as the review knows it. A selection: its paragraphs,
@@ -479,7 +549,23 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {gutter.bars.map((b, i) => (
-          <div key={`b${i}`} className={`wv-bar ${b.bar}`} style={{ top: b.top, height: b.height, left: b.left - 14 }} />
+          <div
+            key={`b${i}`}
+            className={`wv-bar ${b.bar} ${lineSel.includes(b.blockId) ? 'picked' : ''}`}
+            style={{ top: b.top, height: b.height, left: b.left - 14 }}
+            title="Click to select this paragraph; drag up or down to select several"
+            onPointerDown={(e) => {
+              e.preventDefault()
+              dragging.current = { from: b.blockId, to: b.blockId }
+              setLineSel([b.blockId])
+            }}
+          />
+        ))}
+        {/* The paragraphs being selected from their bars, tinted while dragging. */}
+        {gutter.bars
+          .filter((b) => lineSel.includes(b.blockId))
+          .map((b, i) => (
+            <div key={`s${i}`} className="wv-line-sel" style={{ top: b.top - 2, height: b.height + 4, left: b.left - 4, width: b.right - b.left + 8 }} />
         ))}
         {gutter.runs.map((r, i) => (
           <div key={`r${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>
