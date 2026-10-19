@@ -1026,7 +1026,7 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-ai.stale { border-style: dashed; }
 /* Comments: the AI marker's pill, in black. */
 .wv-ai.wv-note { color: var(--text); border-color: color-mix(in srgb, var(--text) 45%, var(--border)); }
-.wv-ai.wv-note:hover { background: var(--surface-2, #f1f3f5); }
+.wv-ai.wv-note:hover { background: #eceff2; border-color: var(--text); }
 .wv-ai-stale { color: var(--text-3); font-weight: 400; }
 .ai-card-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ai-card-state { display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }

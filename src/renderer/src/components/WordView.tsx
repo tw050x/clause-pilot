@@ -110,7 +110,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[] })[] }>({
     bars: [],
     runs: [],
     ai: [],
@@ -178,7 +178,14 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       }
     }
     end()
-    // Text with AI answers: a marker beside the first paragraph of each highlight.
+    // A marker level with the line its words start on (the page's line, not the paragraph's top),
+    // or with the paragraph's first line when the words aren't there any more.
+    const lineOf = (blockIds: string[], quote: string | undefined) => {
+      const hit = quote?.trim() ? textRuns(loaded, blockIds, quote, reviewer).hit : null
+      const el = hit?.[0]
+      return el ? at((el.closest('.superdoc-line') ?? el).getBoundingClientRect()).top : null
+    }
+    // Text with AI answers: a marker beside the first line of each highlight.
     const groups = new Map<string, { blockIds: string[]; quote: string; titles: Set<string> }>()
     for (const r of d.aiRuns ?? []) {
       if (r.status !== 'done' || !r.blockIds.length) continue
@@ -191,14 +198,20 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const p = g.blockIds.map((id) => byBlock.get(id)?.[0]).find(Boolean)
       // Asked of wording the paragraph no longer has (changed since): says so, and hovering it
       // shows the paragraph as a whole.
-      const stale = !textRuns(loaded, g.blockIds, g.quote, reviewer).hit?.length
-      return p ? [{ ...p, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale }] : []
+      const top = lineOf(g.blockIds, g.quote)
+      return p ? [{ ...p, top: top ?? p.top, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale: top === null }] : []
     })
-    // Paragraphs with comments still open: their count, always shown, beside the paragraph.
+    // Paragraphs with comments still open: their count, always shown, beside the first line one
+    // is on (a reply, where the comment it answers is).
     const notes = d.blocks.flatMap((b) => {
       const p = byBlock.get(b.id)?.[0]
       const count = openComments(b.id)
-      return p && count ? [{ ...p, blockId: b.id, count }] : []
+      if (!p || !count) return []
+      const theirs = (b.comments ?? []).filter((c) => !commentResolved(d, c))
+      const ours = d.comments.filter((c) => c.blockId === b.id && !commentResolved(d, c))
+      const quotes = [...theirs.map((c) => c.quote), ...ours.map((c) => c.quote ?? b.comments?.find((x) => x.id === c.replyTo)?.quote)]
+      const tops = quotes.map((q) => lineOf([b.id], q)).filter((t): t is number => t !== null)
+      return [{ ...p, top: tops.length ? Math.min(...tops) : p.top, blockId: b.id, count, quotes }]
     })
     // Markers in the right margin one under the other, not on top of each other (two highlights
     // in one paragraph; a comment marker under the AI markers beside it).
@@ -291,24 +304,29 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   }
 
   /**
-   * Tint the text an AI marker's answers are about (hovering the marker), as the text view does:
-   * the page's text runs in its paragraphs that the highlighted words cover.
+   * Tint the text a marker is about (hovering it), as the text view does: the page's text runs in
+   * its paragraphs that the highlighted words cover. Several quotes (a paragraph's comments) are
+   * each tinted.
    */
-  const preview = (a: { blockIds: string[]; quote: string } | null) => {
+  const preview = (a: { blockIds: string[]; quote?: string; quotes?: (string | undefined)[] } | null) => {
     const loaded = current.current
     if (!loaded) return
     for (const el of loaded.host.querySelectorAll('.wv-ai-preview')) el.classList.remove('wv-ai-preview')
     if (!a) return
-    const { all, hit } = textRuns(loaded, a.blockIds, a.quote, reviewer)
-    // Asked of wording the paragraph no longer has: the paragraph it was about, as a whole.
-    if (!hit?.length) {
-      for (const r of all) r.classList.add('wv-ai-preview')
-      return
+    let any = false
+    let all: Element[] = []
+    for (const quote of a.quotes ?? [a.quote]) {
+      const found = textRuns(loaded, a.blockIds, quote ?? '', reviewer)
+      all = found.all
+      if (!found.hit?.length) continue
+      // Everything from the first word to the last, deletions between them too: one tint, one colour.
+      const first = all.indexOf(found.hit[0])
+      const last = all.indexOf(found.hit[found.hit.length - 1])
+      for (const r of all.slice(first, last + 1)) r.classList.add('wv-ai-preview')
+      any = true
     }
-    // Everything from the first word to the last, deletions between them too: one tint, one colour.
-    const first = all.indexOf(hit[0])
-    const last = all.indexOf(hit[hit.length - 1])
-    for (const r of all.slice(first, last + 1)) r.classList.add('wv-ai-preview')
+    // Wording the paragraph no longer has (or none: a comment on the whole paragraph): the paragraph.
+    if (!any) for (const r of all) r.classList.add('wv-ai-preview')
   }
 
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
@@ -584,7 +602,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             title={`${commentLabel(n.count)} on this paragraph: show them in the right-hand column`}
             aria-label={`Show ${commentLabel(n.count)}`}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => cb.current.onOpenComments(n.blockId)}
+            onClick={() => {
+              preview(null)
+              cb.current.onOpenComments(n.blockId)
+            }}
+            onMouseEnter={() => preview({ blockIds: [n.blockId], quotes: n.quotes })}
+            onMouseLeave={() => preview(null)}
           >
             <CommentIcon size={9} />
             <span>{n.count}</span>
