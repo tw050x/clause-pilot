@@ -74,6 +74,25 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
   const [showKey, setShowKey] = useState(false)
+  /**
+   * Explain changes: hovering a change shows what it is. Off until turned on (it can get in the
+   * way), and off again at the next click or key press anywhere but its button.
+   */
+  const [explain, setExplain] = useState(false)
+  const explainBtn = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!explain) return
+    const off = (e: Event) => {
+      if (explainBtn.current?.contains(e.target as Node)) return
+      setExplain(false)
+    }
+    document.addEventListener('pointerdown', off, true)
+    document.addEventListener('keydown', off, true)
+    return () => {
+      document.removeEventListener('pointerdown', off, true)
+      document.removeEventListener('keydown', off, true)
+    }
+  }, [explain])
   /** Close review was pressed: asking first. */
   const [confirmClose, setConfirmClose] = useState(false)
   // The document as it looks in Word (pages, tables, headers). As text, paragraph by paragraph,
@@ -404,7 +423,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -479,6 +498,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {/* In the bar under the document: what you do with the review as a whole. */}
       {bar &&
         createPortal(
+          <>
             <div className="bottombar-group">
         <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
           <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
@@ -489,8 +509,19 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
           <Icon name="mail" size={14} /> Draft response
         </button>
-
-            </div>,
+            </div>
+            {layout === 'word' && (
+              <button
+                ref={explainBtn}
+                className={`btn sm bottombar-explain ${explain ? 'on' : ''}`}
+                aria-pressed={explain}
+                onClick={() => setExplain((v) => !v)}
+                title="Hover over a change to see what it is, who made it and where it stands. Turns off when you click or type."
+              >
+                <Icon name="question" size={14} /> Explain changes
+              </button>
+            )}
+          </>,
           bar
         )}
       {head && createPortal(header, head)}

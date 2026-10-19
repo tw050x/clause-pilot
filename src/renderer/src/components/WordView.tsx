@@ -30,6 +30,8 @@ interface Props {
   act: (p: Promise<ReviewSession>) => Promise<boolean>
   /** Show only a paragraph's comments (the comment marker beside it). */
   onOpenComments: (blockId: string) => void
+  /** Explain changes is on: hovering a change shows its tooltip. */
+  explain: boolean
   /** Show only the questions asked of some text (the AI marker beside it). */
   onOpenAi: (hl: Highlight) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
@@ -106,7 +108,7 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, explain, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -526,7 +528,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const c = gutter.cards.find((c) => y >= c.top && y <= c.top + c.height && x >= c.left && x <= c.right)
     const id = c?.blockId ?? null
     if (id !== hovered) setHovered(id)
-    // A change under the pointer (on the page, or in a stage shown over a paragraph): what it is.
+    // A change under the pointer (on the page, or in a stage shown over a paragraph): what it is
+    // (with Explain changes on).
+    if (!explain) return
     const target = e.target as HTMLElement
     const onPage = current.current?.host.contains(target) ? target.closest<HTMLElement>('[data-track-change-id]') : null
     const inStage = target.closest<HTMLElement>('[data-stage-seg]')
@@ -553,7 +557,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    */
   type Tip = { key: string; x: number; y: number; above: number; title: string; quote: string; meta: string; note?: string; els: Element[] }
   const [tip, setTip] = useState<Tip | null>(null)
-  useEffect(() => clearTip(), [session])
+  useEffect(() => clearTip(), [session, explain])
   const short = (t: string) => {
     const x = tidy(t)
     return x.length > 110 ? `${x.slice(0, 107)}…` : x
@@ -963,7 +967,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
 
   return (
     <div
-      className="wv-wrap"
+      className={`wv-wrap ${explain ? 'explaining' : ''}`}
       ref={wrap}
       onMouseMove={hoverAt}
       onMouseLeave={() => {
