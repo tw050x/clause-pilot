@@ -19,6 +19,7 @@ const P: Record<string, string> = {
   link: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
   mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
   next: 'M9 6l6 6-6 6',
+  prev: 'M15 6l-6 6 6 6',
   doc: 'M7 3h7l5 5v13H7zM10 12h6M10 16h6',
   copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
   bolt: 'M13 2L4 14h7l-1 8 9-12h-7z',

@@ -96,6 +96,27 @@ export function App() {
     setView('review')
   }, [])
 
+  // ---- where you've been: Back (in the bar under a review) returns to the page before ----
+  type Place = { view: View; contractPageId: string | null; sessionId: string | null }
+  const trail = useRef<Place[]>([])
+  const here: Place = { view, contractPageId: view === 'contract' ? contractPageId : null, sessionId: view === 'review' ? (session?.id ?? null) : null }
+  useEffect(() => {
+    const top = trail.current.at(-1)
+    if (top && top.view === here.view && top.contractPageId === here.contractPageId && top.sessionId === here.sessionId) return
+    trail.current = [...trail.current.slice(-49), here]
+  }, [here.view, here.contractPageId, here.sessionId])
+  const back = async () => {
+    trail.current.pop()
+    const to = trail.current.at(-1) ?? { view: 'home' as View, contractPageId: null, sessionId: null }
+    if (to.sessionId) {
+      const s = await window.api.review.get(to.sessionId).catch(() => null)
+      if (s) setSession(s)
+    }
+    if (to.contractPageId) setContractPageId(to.contractPageId)
+    setView(to.view)
+  }
+  const canGoBack = trail.current.length > 1
+
   // ---- active account (remembered) ----
   // The account last used, remembered per workspace (demo mode has its own).
   const accountKey = `clausepilot.activeAccount.${settings?.demoMode === false ? 'live' : 'demo'}`
@@ -331,7 +352,12 @@ export function App() {
           )}
         </main>
         {/* The review's actions on the document as a whole, under it: rendered into by a portal. */}
-        <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
+        <div className="bottombar" ref={setBottomBar} hidden={!reviewing}>
+          {/* The page before (the review's own buttons follow, through the portal). */}
+          <button className="btn sm bottombar-back" onClick={() => void back()} disabled={!canGoBack} title="Back to the page before">
+            <Icon name="prev" size={14} /> Back
+          </button>
+        </div>
         </div>
         {/* Pages without the right sidebar keep its space, so every page has the same width. */}
         {!reviewing && <div className="rightbar-space" aria-hidden="true" />}

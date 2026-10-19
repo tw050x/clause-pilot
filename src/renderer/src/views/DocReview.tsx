@@ -63,6 +63,13 @@ function useLibrary(): Map<string, LibraryClause> {
 export function DocReview({ session, panel, bar, foot, head, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
+  // The original we sent: their first draft, the review it leads to.
+  const [firstDraft, setFirstDraft] = useState<string | null>(null)
+  useEffect(() => {
+    setFirstDraft(null)
+    if (!session.original) return
+    void window.api.review.list().then((all) => setFirstDraft(all.find((r) => r.contractId === session.contractId && r.version === 1 && !r.original)?.id ?? null))
+  }, [session.id])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [emailOpen, setEmailOpen] = useState(false)
   const [redlineOpen, setRedlineOpen] = useState(false)
@@ -239,7 +246,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const header = (
     <section className="rc-section rc-head">
       <div className="rc-title-row">
-        <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
+        <div className="rc-title">{session.version !== undefined && contractTitle ? `${accountName} · ${contractTitle}` : session.docName}</div>
+        {!session.original && (
         <button
           className="btn sm rc-close"
           title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
@@ -247,6 +255,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         >
           {session.closed ? 'Reopen' : 'Close review'}
         </button>
+        )}
       </div>
       {session.closed && (
         <div className="banner info">
@@ -254,7 +263,16 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {session.original && (
-        <div className="banner info">The original we sent them, kept to compare their first draft with. There’s nothing to review in it.</div>
+        <div className="banner info" style={{ display: 'block' }}>
+          The original we sent them, kept to compare their drafts with. It’s ours, so there’s nothing to review in it.
+          {firstDraft && (
+            <div style={{ marginTop: 8 }}>
+              <button className="btn sm" onClick={() => onOpenReview(firstDraft)}>
+                Open their first draft <Icon name="next" size={12} />
+              </button>
+            </div>
+          )}
+        </div>
       )}
       {session.version !== undefined && (
         <div className="faint rc-sub">
@@ -271,11 +289,11 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           · {session.docName}
         </div>
       )}
-        <div className="rc-key-short">
+        {!session.original && <div className="rc-key-short">
           <span>
             {changed.length} to decide{toRead ? ` · ${toRead} to read` : ''} · {ourEdits} edited by you
           </span>
-        </div>
+        </div>}
       {onHold && (
         <div className="banner danger">
           <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found.{' '}
@@ -290,7 +308,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
     <div className="rc">
       {!head && header}
       {/* The review: the automated review's timeline (the History panel instead while it's open). */}
-      {showHistory ? (
+      {session.original ? null : showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : (
         <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} onMarkup={() => setRedlineOpen(true)} onEmail={() => setEmailOpen(true)} />
@@ -411,7 +429,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} reference={!!session.original} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -485,6 +503,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
     </div>
       {/* In the bar under the document: what you do with the review as a whole. */}
       {bar &&
+        !session.original &&
         createPortal(
           <>
             <div className="bottombar-group">
@@ -548,6 +567,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       )}
       {/* At the foot of the review column: Accept / Reject for the selected changes, and the key. */}
       {foot &&
+        !session.original &&
         createPortal(
           <>
             <div className="bottombar-group" ref={setDecideSlot} />

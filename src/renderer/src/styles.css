@@ -117,7 +117,10 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .bottombar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin: 8px 0 12px 12px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .bottombar[hidden] { display: none; }
 .bottombar-group { display: flex; align-items: center; gap: 8px; }
-.bottombar-group:first-child { flex: 1; min-width: 0; }
+.bottombar > div.bottombar-group:first-of-type { flex: 1; min-width: 0; }
+.bottombar-back { padding-right: 12px; margin-right: 2px; }
+/* The original we sent: nothing but Back, at the start of the bar. */
+.bottombar-back:only-child { margin-right: auto; }
 
 /* ---- right sidebar: review controls + chat ---- */
 /* Floats off the window edges as a card, like the left sidebar. */

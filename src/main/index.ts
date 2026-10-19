@@ -1470,6 +1470,7 @@ ipcMain.handle('pipeline:defaults', () => {
 ipcMain.handle('pipeline:start', (_e, sessionId: string, budget: { tokens: number; usd?: number }) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error('Not a document review.')
+  if (s.original) throw new Error('This is the original we sent: there’s nothing to review in it.')
   if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
   startPipeline(s, pipelineDeps(), budget)
   ws.audit.append(actor(), 'review.pipeline-started', s.id, { budget })

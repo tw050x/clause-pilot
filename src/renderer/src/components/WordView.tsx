@@ -40,6 +40,8 @@ interface Props {
   onShowComments: (blockId: string) => void
   /** Show the contract as text instead: called when it can't be laid out, with why. */
   onShowText: (why: string) => void
+  /** Only to look at (the original we sent): no bars or labels beside it, and no typing. */
+  reference?: boolean
 }
 
 type Loaded = {
@@ -110,7 +112,7 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, explain, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, explain, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText, reference }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -303,7 +305,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
     const runs: (Placed & { state: GutterState })[] = []
     const run: { top: number; left: number; bottom: number; state?: GutterState } = { top: 0, left: 0, bottom: 0 }
     const end = () => run.state && runs.push({ top: run.top, height: run.bottom - run.top, left: run.left, right: run.left, state: run.state })
-    for (const b of d.blocks) {
+    for (const b of reference ? [] : d.blocks) {
       const places = byBlock.get(b.id)
       if (!places?.length) continue
       const marks = marksFor(d, b)
@@ -929,7 +931,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
             selector: host,
             document: file,
             // Typing is suggesting: what you type is your tracked change, in your name.
-            documentMode: 'suggesting',
+            documentMode: reference ? 'viewing' : 'suggesting',
             user: { name: reviewer, email: '' },
             modules: { comments: false },
             // Nothing about the document leaves this computer.
