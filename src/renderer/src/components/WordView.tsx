@@ -531,6 +531,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const key = onPage ? `p:${onPage.dataset.trackChangeId}` : inStage ? `s:${inStage.dataset.stageSeg}` : null
     if (key === tip?.key) return
     const next = key ? ((onPage ? explainPage(onPage) : explainStage(inStage!)) ?? null) : null
+    if (next) Object.assign(next, placeTip(next.els.length ? next.els : [target]))
     // The change it's about, tinted while it shows.
     for (const el of tinted.current) el.classList.remove('wv-tip-hl')
     tinted.current = next?.els ?? []
@@ -548,7 +549,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    * The tooltip for a change: who made it and what it does, when and where it stands (to decide,
    * your edit, or removed by your decision), and the comment on it, if any.
    */
-  type Tip = { key: string; x: number; y: number; title: string; quote: string; meta: string; note?: string; els: Element[] }
+  type Tip = { key: string; x: number; y: number; above: number; title: string; quote: string; meta: string; note?: string; els: Element[] }
   const [tip, setTip] = useState<Tip | null>(null)
   useEffect(() => clearTip(), [session])
   const short = (t: string) => {
@@ -556,12 +557,35 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     return x.length > 110 ? `${x.slice(0, 107)}…` : x
   }
   const day = (t?: string) => (t ? new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '')
-  const placeTip = (el: Element) => {
+  /**
+   * Where a tooltip goes: never over what it's about. That's every line of the change (a change
+   * can wrap onto several, a replacement is two changes): under its last line, or (placed once
+   * the tooltip's height is known, below) over its first if there's no room under it on screen.
+   */
+  const placeTip = (els: Element | Element[]) => {
     const w = wrap.current!
     const base = w.getBoundingClientRect()
-    const r = el.getBoundingClientRect()
-    return { x: Math.max(8, Math.min(r.left - base.left, w.clientWidth - 340)), y: r.bottom - base.top + w.scrollTop + 6 }
+    const rects = ([] as Element[]).concat(els).flatMap((el) => [...el.getClientRects()]).filter((r) => r.height)
+    const top = Math.min(...rects.map((r) => r.top))
+    const bottom = Math.max(...rects.map((r) => r.bottom))
+    const left = rects.find((r) => r.top === top)?.left ?? rects[0]?.left ?? base.left
+    return { x: Math.max(8, Math.min(left - base.left, w.clientWidth - 340)), y: bottom - base.top + w.scrollTop + 6, above: top - base.top + w.scrollTop - 6 }
   }
+  const tipEl = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = tipEl.current
+    const w = wrap.current
+    if (!el || !w || !tip) return
+    // The visible part of the page: the nearest thing that scrolls it.
+    let sc: HTMLElement | null = w
+    while (sc && sc.scrollHeight <= sc.clientHeight + 2) sc = sc.parentElement
+    const view = (sc ?? w).getBoundingClientRect()
+    const base = w.getBoundingClientRect()
+    const h = el.offsetHeight
+    const under = base.top - w.scrollTop + tip.y + h
+    const over = base.top - w.scrollTop + tip.above - h
+    el.style.top = `${under > view.bottom && over >= view.top ? tip.above - h : tip.y}px`
+  }, [tip])
   const explainPage = (ch: HTMLElement): Tip | null => {
     const loaded = current.current
     if (!loaded || !wrap.current) return null
@@ -949,7 +973,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {tip && (
-          <div className="wv-tip" style={{ left: tip.x, top: tip.y }}>
+          <div className="wv-tip" ref={tipEl} style={{ left: tip.x, top: tip.y }}>
             <div className="wv-tip-title">{tip.title}</div>
             <div className="wv-tip-quote">{tip.quote}</div>
             {tip.meta && <div className="wv-tip-meta">{tip.meta}</div>}

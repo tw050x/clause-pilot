@@ -760,7 +760,7 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-doc .ed-p { position: relative; margin: 0 0 10px; padding-left: 12px; border-left: 4px solid transparent; }
 .ed-doc .ed-p.chg-theirs { border-left-color: color-mix(in srgb, #1d4ed8 45%, transparent); }
 .ed-doc .ed-p.chg-ours { border-left-color: color-mix(in srgb, var(--rejected) 60%, transparent); }
-.ed-doc .ed-p.chg-untracked { border-left-style: dashed; }
+.ed-doc .ed-p.chg-untracked:not(.chg-ours) { border-left-style: dashed; }
 .ed-doc .ed-p.gone { display: none; }
 /* The same bar as the next paragraph: one bar, running on through the gap between them. */
 .ed-doc .ed-p.bar-joins { margin-bottom: 0; padding-bottom: 10px; }
@@ -1007,7 +1007,7 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-bar.chg-checked { background: var(--exact); }
 .wv-bar.chg-read { background: var(--border-strong); }
 .wv-bar.chg-ai { background: repeating-linear-gradient(to bottom, var(--exact) 0 4px, transparent 4px 7px); }
-.wv-bar.chg-untracked.chg-theirs { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
+.wv-bar.chg-untracked.chg-theirs:not(.chg-ours) { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
 .wv-run { position: absolute; width: 60px; display: flex; flex-direction: column; align-items: flex-end; }
 .wv-run .ed-unchanged { pointer-events: auto; }
 .wv-ai { pointer-events: auto; }
