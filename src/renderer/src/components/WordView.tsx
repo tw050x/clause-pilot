@@ -50,6 +50,47 @@ type Placed = { top: number; height: number; left: number; right: number }
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
+/**
+ * The page's text runs in some review paragraphs (deleted words included), and those the words of
+ * `quote` are in: found in the text as it reads (deletions out), or failing that with them in,
+ * whitespace aside (paragraph breaks, Word's numbers' tabs). No hit: the paragraphs don't have
+ * those words any more.
+ */
+function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: string): { all: Element[]; hit: Element[] | null } {
+  const want = new Set(blockIds)
+  // The paragraphs' text runs in order, deleted words included.
+  const all = [...loaded.host.querySelectorAll('[data-source-node-id]')]
+    .filter((x) => want.has(loaded.ids[nodeId(x)]))
+    .flatMap((x) => [...x.querySelectorAll('.superdoc-text-run')])
+  const change = (r: Element) => r.closest('[data-track-change-kind]') as HTMLElement | null
+  const kind = (r: Element) => change(r)?.dataset.trackChangeKind
+  const ours = (r: Element) => change(r)?.dataset.trackChangeAuthor === reviewer
+  // Find the words, whitespace aside (paragraph breaks, Word's numbers' tabs).
+  const find = (runs: Element[]) => {
+    let text = ''
+    const spans = runs.map((r) => {
+      const from = text.length
+      text += r.textContent ?? ''
+      return { r, from, to: text.length }
+    })
+    const solid: number[] = []
+    for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i])) solid.push(i)
+    const needle = quote.replace(/\s+/g, '')
+    const at = needle ? solid.map((i) => text[i]).join('').indexOf(needle) : -1
+    if (at < 0) return null
+    const from = solid[at]
+    const to = solid[at + needle.length - 1] + 1
+    return spans.filter((x) => x.from < to && x.to > from).map((x) => x.r)
+  }
+  // In the paragraph as it reads now, as they proposed it (before our edits), or as it first read:
+  // a question may have been asked of any of them, and a redline interleaves them word by word.
+  const hit =
+    find(all.filter((r) => kind(r) !== 'delete')) ??
+    find(all.filter((r) => !(kind(r) === 'insert' && ours(r)) && !(kind(r) === 'delete' && !ours(r)))) ??
+    find(all.filter((r) => kind(r) !== 'insert'))
+  return { all, hit }
+}
+
 export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onComment, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -66,7 +107,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[] }>({
     bars: [],
     runs: [],
     ai: []
@@ -144,7 +185,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     }
     const ai = [...groups.values()].flatMap((g) => {
       const p = g.blockIds.map((id) => byBlock.get(id)?.[0]).find(Boolean)
-      return p ? [{ ...p, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles] }] : []
+      // Asked of wording the paragraph no longer has (changed since): says so, and hovering it
+      // shows the paragraph as a whole.
+      const stale = !textRuns(loaded, g.blockIds, g.quote, reviewer).hit?.length
+      return p ? [{ ...p, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale }] : []
     })
     // Two highlights in one paragraph: their markers one under the other, not on top of each other.
     ai.sort((x, y) => x.top - y.top)
@@ -244,32 +288,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     if (!loaded) return
     for (const el of loaded.host.querySelectorAll('.wv-ai-preview')) el.classList.remove('wv-ai-preview')
     if (!a) return
-    const want = new Set(a.blockIds)
-    // The paragraphs' text runs in order, deleted words included.
-    const all = [...loaded.host.querySelectorAll('[data-source-node-id]')]
-      .filter((x) => want.has(loaded.ids[nodeId(x)]))
-      .flatMap((x) => [...x.querySelectorAll('.superdoc-text-run')])
-    const deleted = (r: Element) => !!r.closest('[data-track-change-kind="delete"]')
-    // Find the words: in the text as it reads (deletions out), or failing that with them in;
-    // whitespace aside (paragraph breaks, Word's numbers' tabs).
-    const find = (runs: Element[]) => {
-      let text = ''
-      const spans = runs.map((r) => {
-        const from = text.length
-        text += r.textContent ?? ''
-        return { r, from, to: text.length }
-      })
-      const solid: number[] = []
-      for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i])) solid.push(i)
-      const needle = a.quote.replace(/\s+/g, '')
-      const at = needle ? solid.map((i) => text[i]).join('').indexOf(needle) : -1
-      if (at < 0) return null
-      const from = solid[at]
-      const to = solid[at + needle.length - 1] + 1
-      return spans.filter((x) => x.from < to && x.to > from).map((x) => x.r)
+    const { all, hit } = textRuns(loaded, a.blockIds, a.quote, reviewer)
+    // Asked of wording the paragraph no longer has: the paragraph it was about, as a whole.
+    if (!hit?.length) {
+      for (const r of all) r.classList.add('wv-ai-preview')
+      return
     }
-    const hit = find(all.filter((r) => !deleted(r))) ?? find(all)
-    if (!hit?.length) return
     // Everything from the first word to the last, deletions between them too: one tint, one colour.
     const first = all.indexOf(hit[0])
     const last = all.indexOf(hit[hit.length - 1])
@@ -482,9 +506,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         {gutter.ai.map((a, i) => (
           <button
             key={`a${i}`}
-            className="wv-ai"
+            className={`wv-ai ${a.stale ? 'stale' : ''}`}
             style={{ top: a.top, left: a.right + 12 }}
-            title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
+            title={`AI answers ${a.stale ? 'about this paragraph as it read before it changed' : 'for this text'} (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
             aria-label="Show the AI answers for this text"
             onClick={() => {
               preview(null)
@@ -495,7 +519,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             onMouseLeave={() => preview(null)}
           >
             <Icon name="sparkle" size={13} stroke={2.2} />
-            <span>{a.titles.length === 1 ? '1 Ask' : `${a.titles.length} Asks`}</span>
+            <span>
+              {a.titles.length === 1 ? '1 Ask' : `${a.titles.length} Asks`}
+              {a.stale && <span className="wv-ai-stale"> · earlier wording</span>}
+            </span>
           </button>
         ))}
       </div>

@@ -991,3 +991,5 @@ del.us-del ins.th-ins { color: inherit; }
 /* The AI marker in the right margin: "2 Asks", like the comment button. */
 .wv-ai { position: absolute; height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px 0 7px; margin-top: -2px; font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; z-index: 3; }
 .wv-ai:hover { background: var(--processing-tint); }
+.wv-ai.stale { border-style: dashed; }
+.wv-ai-stale { color: var(--text-3); font-weight: 400; }
