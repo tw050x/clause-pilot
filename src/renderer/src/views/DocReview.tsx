@@ -64,23 +64,8 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
   const [showHistory, setShowHistory] = useState(false)
   /** The right of the bottom bar, where the selection's Accept and Reject go. */
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
-  // The stats and the key to the bars take room at the top; they can be folded to one line.
-  // Remembered on this machine (a convenience only).
-  const [showKey, setShowKey] = useState(() => {
-    try {
-      return localStorage.getItem('cp.showKey') !== '0'
-    } catch {
-      return true
-    }
-  })
-  const toggleKey = (on: boolean) => {
-    setShowKey(on)
-    try {
-      localStorage.setItem('cp.showKey', on ? '1' : '0')
-    } catch {
-      /* not stored: still works for this session */
-    }
-  }
+  // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
+  const [showKey, setShowKey] = useState(false)
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
   const [highlight, setHighlight] = useState<Highlight | null>(null)
   const highlighted = !!highlight
@@ -175,76 +160,11 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
             · {session.docName}
           </div>
         )}
-        {showKey ? (
-          <>
-            <div className="rc-stats">
-              <span>
-                <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
-              </span>
-              {decided > 0 && (
-                <span>
-                  <i className="dot decided" /> {decided} of their changes accepted or rejected
-                </span>
-              )}
-              {untracked > 0 && (
-                <span>
-                  <i className="dot untracked" /> {untracked} of them without Track Changes
-                </span>
-              )}
-              {toRead > 0 && (
-                <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
-                  <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
-                </span>
-              )}
-              <span>
-                <i className="dot ours" /> {ourEdits} edited by you
-              </span>
-            </div>
-            <div className="rc-key" title="The bar beside each paragraph">
-              <span>
-                <i className="bar checked" /> Nothing to check ({cleared})
-              </span>
-              <span>
-                <i className="bar ai" /> Intent check passed, by AI ({aiOk})
-              </span>
-              <span>
-                <i className="bar theirs" /> To decide
-              </span>
-              <span>
-                <i className="bar ours" /> Your edits
-              </span>
-              <span>
-                <i className="bar none" /> To read (not our wording)
-              </span>
-            </div>
-            {d.baseline && (
-              <p className="faint rc-note">
-                {d.baseline.kind === 'sent'
-                  ? d.baseline.version === 0
-                    ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
-                    : `Compared with what we sent for version ${d.baseline.version}.`
-                  : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
-              </p>
-            )}
-            {!d.baseline && toRead > 0 && (
-              <p className="faint rc-note">
-                Their paper: paragraphs that aren’t word for word our approved wording need reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
-              </p>
-            )}
-            <button className="link-btn rc-key-toggle" onClick={() => toggleKey(false)}>
-              Hide key
-            </button>
-          </>
-        ) : (
           <div className="rc-key-short">
             <span>
               {changed.length} to decide{toRead ? ` · ${toRead} to read` : ''} · {ourEdits} edited by you
             </span>
-            <button className="link-btn rc-key-toggle" onClick={() => toggleKey(true)}>
-              Show key
-            </button>
           </div>
-        )}
         {onHold && (
           <div className="banner danger">
             <Icon name="shield" /> On security hold: text addressed to an AI reviewer was found.{' '}
@@ -299,6 +219,66 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
     </div>
   )
 
+  // The key: how this draft stands, what each bar means, and what it was compared with.
+  const KEY = (
+    <>
+            <div className="rc-stats">
+              <span>
+                <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
+              </span>
+              {decided > 0 && (
+                <span>
+                  <i className="dot decided" /> {decided} of their changes accepted or rejected
+                </span>
+              )}
+              {untracked > 0 && (
+                <span>
+                  <i className="dot untracked" /> {untracked} of them without Track Changes
+                </span>
+              )}
+              {toRead > 0 && (
+                <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
+                  <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
+                </span>
+              )}
+              <span>
+                <i className="dot ours" /> {ourEdits} edited by you
+              </span>
+            </div>
+            <div className="rc-key" title="The bar beside each paragraph">
+              <span>
+                <i className="bar checked" /> Unchanged or checked: nothing to check ({cleared})
+              </span>
+              <span>
+                <i className="bar ai" /> Same intent, by AI ({aiOk})
+              </span>
+              <span>
+                <i className="bar theirs" /> To decide
+              </span>
+              <span>
+                <i className="bar ours" /> Edited by you
+              </span>
+              <span>
+                <i className="bar none" /> To read (not our wording)
+              </span>
+            </div>
+            {d.baseline && (
+              <p className="faint rc-note">
+                {d.baseline.kind === 'sent'
+                  ? d.baseline.version === 0
+                    ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
+                    : `Compared with what we sent for version ${d.baseline.version}.`
+                  : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
+              </p>
+            )}
+            {!d.baseline && toRead > 0 && (
+              <p className="faint rc-note">
+                Their paper: paragraphs that aren’t word for word our approved wording need reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
+              </p>
+            )}
+    </>
+  )
+
   return (
     <div className="dr-main">
     <div className="ed-wrap">
@@ -328,6 +308,13 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
         }}
       />
       {panel && createPortal(column, panel)}
+      {showKey && panel?.parentElement &&
+        createPortal(
+          <KeyDialog onClose={() => setShowKey(false)}>
+            {KEY}
+          </KeyDialog>,
+          panel.parentElement
+        )}
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
@@ -347,10 +334,37 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
           <Icon name="mail" size={14} /> Draft response
         </button>
             </div>
-            <div className="bottombar-group bottombar-decide" ref={setDecideSlot} />
+            <div className="bottombar-group bottombar-decide">
+              <div className="bottombar-group" ref={setDecideSlot} />
+              <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
+                {showKey ? 'Hide key' : 'Show key'}
+              </button>
+            </div>
           </>,
           bar
         )}
+    </div>
+  )
+}
+
+/** The key, as a dialog over the review column. Escape, the close button or a click outside closes it. */
+function KeyDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [onClose])
+  return (
+    <div className="key-back" onClick={onClose}>
+      <div className="key-dialog" role="dialog" aria-modal="true" aria-labelledby="key-title" onClick={(e) => e.stopPropagation()}>
+        <div className="key-head">
+          <h3 id="key-title">Key</h3>
+          <button className="icon-btn" title="Close" aria-label="Close" onClick={onClose}>
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   )
 }

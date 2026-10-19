@@ -123,7 +123,7 @@ button.mode-pill:hover { filter: brightness(0.96); }
 
 /* ---- right sidebar: review controls + chat ---- */
 /* Floats off the window edges as a card, like the left sidebar. */
-.rightbar { width: var(--rightbar-w); flex-shrink: 0; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
+.rightbar { position: relative; width: var(--rightbar-w); flex-shrink: 0; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
 .rightbar[hidden] { display: none; }
 .rightbar-switch { padding: 12px 16px 4px; }
 .rightbar-body { flex: 1; min-height: 0; overflow-y: auto; }
@@ -836,7 +836,12 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-doc .ed-p.gone::after { display: none; }
 /* The review's stats and key, folded to one line. */
 .rc-key-short { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-2); }
-.rc-key-toggle { font-size: 12px; align-self: flex-start; }
+/* The key: a dialog over the review column, from the bottom bar. */
+.bottombar-key { margin-left: auto; }
+.key-back { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; padding: 12px 12px 4px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+.key-dialog { width: 100%; max-height: 100%; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16); }
+.key-head { display: flex; align-items: center; justify-content: space-between; }
+.key-head h3 { margin: 0; font-size: 14px; }
 
 /* The AI section: a card per task on the highlighted text, with the answer on the card. */
 .ai-section { gap: 8px; }
