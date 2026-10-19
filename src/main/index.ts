@@ -12,7 +12,7 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
 import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
 import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
@@ -1179,7 +1179,9 @@ ipcMain.handle('doc:view', async (_e, sessionId: string) => {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
   const original = s.sourceType === 'docx' ? await readFile(resolvePath(s.filePath)) : Buffer.alloc(0)
-  const { bytes, ids } = await buildDocRedline(s, actor(), original, { stampIds: true })
+  // Their changes found by comparison: in the name on their tracked changes, else the client's.
+  const theirName = authorsOf(s.doc.blocks.filter((b) => !b.untracked)).find((x) => x !== 'Unknown') ?? counterpartyName(s)
+  const { bytes, ids } = await buildDocRedline(s, actor(), original, { stampIds: true, theirName })
   return { bytes: new Uint8Array(bytes), ids }
 })
 

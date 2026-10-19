@@ -41,9 +41,10 @@ export async function buildDocRedline(
   /**
    * stampIds: for showing in the review (not for sending): each paragraph of a review paragraph
    * gets a Word paragraph id (w14:paraId), returned in `ids` with the review paragraph it is, so
-   * the document view can tell which paragraph on the page is which.
+   * the document view can tell which paragraph on the page is which. Their changes found by
+   * comparison are written in as their tracked changes (in `theirName`), so the page shows them.
    */
-  opts: { stampIds?: boolean } = {}
+  opts: { stampIds?: boolean; theirName?: string } = {}
 ): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[]; ids: Record<string, string> }> {
   const d = s.doc!
   const source = s.sourceType === 'docx' && d.blocks.some((b) => b.paras?.length) ? 'original' : 'generated'
@@ -61,6 +62,8 @@ export async function buildDocRedline(
   const m = new Markup(zip, doc, reviewer)
   await m.loadComments()
   const stats: RedlineStats = { source, replaced: 0, removed: 0, commentedOnly: 0, reinstated: 0, acceptedChanges: 0, comments: 0, unmatched: [] }
+  if (opts.stampIds)
+    for (const b of d.blocks) if (b.untracked && b.kind !== 'deleted' && b.segments?.length) m.showTheirs(parasOf(b), b.segments, opts.theirName || 'Counterparty')
 
   for (const set of changeSets(d)) {
     if (statusOf(d, set) !== 'accepted') continue
@@ -69,7 +72,9 @@ export async function buildDocRedline(
   }
   // Their individual changes we accepted or rejected (tracked ones; the rest are our edits).
   for (const b of d.blocks) {
-    if (b.untracked) continue
+    // Their changes found by comparison aren't tracked in their file, except in the copy for
+    // showing, where they were just written in.
+    if (b.untracked && !opts.stampIds) continue
     const picks = new Map<number, 'accepted' | 'rejected'>()
     segmentsOf(b).forEach((_x, i) => {
       const r = d.resolved?.[changeKey(b.id, i)]
@@ -396,8 +401,36 @@ class Markup {
     return e
   }
 
-  private track(kind: 'ins' | 'del'): Element {
-    return this.el(kind, { id: String(this.revId++), author: this.author, date: this.date })
+  private track(kind: 'ins' | 'del', author = this.author): Element {
+    return this.el(kind, { id: String(this.revId++), author, date: this.date })
+  }
+
+  /**
+   * For showing only: a change of theirs found by comparison (made without Track Changes), written
+   * into the paragraph as their tracked change in `who`'s name. The paragraph reads as they
+   * proposed it, so its text must be the segments' proposed text exactly; if it isn't, nothing is
+   * written (the review still shows the change beside it).
+   */
+  showTheirs(paras: Element[], segments: { op: 'same' | 'ins' | 'del'; text: string }[], who: string): boolean {
+    const visible = visiblePieces(paras).map((x) => x.text).join('')
+    const proposed = segments.filter((x) => x.op !== 'del').map((x) => x.text).join('')
+    // A typed clause number before it ("5.4 ") isn't part of the paragraph's text in the review.
+    if (!proposed || !visible.endsWith(proposed) || !NUMBER_PREFIX.test(visible.slice(0, visible.length - proposed.length) + 'x') && visible !== proposed) return false
+    const ops: ({ op: 'ins'; from: number; to: number } | { op: 'del'; at: number; text: string })[] = []
+    let at = visible.length - proposed.length
+    for (const x of segments) {
+      if (x.op === 'del') ops.push({ op: 'del', at, text: x.text })
+      else {
+        if (x.op === 'ins' && x.text) ops.push({ op: 'ins', from: at, to: at + x.text.length })
+        at += x.text.length
+      }
+    }
+    // From the end, so earlier positions stay valid.
+    for (const x of ops.reverse()) {
+      if (x.op === 'ins') this.wrapRange(paras, x.from, x.to, 'ins', who)
+      else if (x.text) this.insertAt(paras, x.at, x.text, 0, 'del', who)
+    }
+    return true
   }
 
   /**
@@ -435,6 +468,11 @@ class Markup {
   }
 
   private deleteRange(paras: Element[], a: number, b: number) {
+    this.wrapRange(paras, a, b, 'del')
+  }
+
+  /** Mark the text from `a` to `b` as a tracked deletion or insertion. */
+  private wrapRange(paras: Element[], a: number, b: number, kind: 'ins' | 'del', author = this.author) {
     this.splitAt(paras, a)
     this.splitAt(paras, b)
     // Give each text node in range its own run, then strike those runs. (Collect first: once a run
@@ -443,15 +481,16 @@ class Markup {
     // Numbers and paragraph gaps aren't text we can strike; they stay.
     const runs = visiblePieces(paras).filter((x) => x.run && x.start >= a && x.end <= b).map((x) => x.run as Element)
     for (const run of runs) {
-      const wrap = this.track('del')
+      const wrap = this.track(kind, author)
       run.parentNode!.insertBefore(wrap, run)
       wrap.appendChild(run)
       const t = firstText(run)
-      if (t && t.localName === 't') rename(t, 'delText')
+      if (kind === 'del' && t && t.localName === 't') rename(t, 'delText')
     }
   }
 
-  private insertAt(paras: Element[], at: number, text: string, prefix: number) {
+  /** New text at `at`, as a tracked insertion (or, for showing their removals, a tracked deletion). */
+  private insertAt(paras: Element[], at: number, text: string, prefix: number, kind: 'ins' | 'del' = 'ins', author = this.author) {
     this.splitAt(paras, at)
     const pieces = visiblePieces(paras).filter((x): x is Piece & { run: Element } => !!x.run)
     const before = pieces.filter((x) => x.end <= at).pop()
@@ -465,11 +504,11 @@ class Markup {
       for (const n of ['ins', 'del', 'rPrChange']) for (const x of Array.from(copy.getElementsByTagNameNS(W, n))) copy.removeChild(x)
       run.appendChild(copy)
     }
-    const t = this.el('t')
+    const t = this.el(kind === 'del' ? 'delText' : 't')
     t.setAttribute('xml:space', 'preserve')
     t.appendChild(this.doc.createTextNode(text))
     run.appendChild(t)
-    const ins = this.track('ins')
+    const ins = this.track(kind, author)
     ins.appendChild(run)
 
     // Right after a paragraph gap or number, the insertion belongs to the text that follows.
