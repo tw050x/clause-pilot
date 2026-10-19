@@ -14,7 +14,7 @@ import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, stateAt, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
-import { diffSegments } from '@shared/diff'
+import { diffSegments, type Mark } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
 import { Redline } from '../components/Redline'
 import { Markdown } from '../components/Markdown'
@@ -484,7 +484,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} past={pastView && pastBar ? { blocks: pastView.blocks, bar: pastBar, key: `${past?.blockId}:${past?.actionId}` } : null} onClosePast={() => setPast(null)} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -596,6 +596,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           bar
         )}
       {head && createPortal(header, head)}
+      {pastView && pastBar && <PastModal bar={pastBar} blocks={pastView.blocks} labels={new Map(d.blocks.map((b) => [b.id, b.label ?? '']))} onClose={() => setPast(null)} />}
       {confirmRestore && pastView && (
         <ConfirmRestore
           where={past ? whereOf(d, d.blocks.find((b) => b.id === past.blockId) ?? d.blocks[0]) : ''}
@@ -1635,6 +1636,57 @@ function AiCard({
       )}
       {open && result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
+  )
+}
+
+/**
+ * A paragraph (or the paragraphs an action spans) as it stood at a point in its history, in the
+ * middle of the window over a mask; the review column stays above the mask, so another history
+ * entry can be picked. A click on the mask, Back to now or Escape closes it. The text is set in
+ * the document's typeface.
+ */
+function PastModal({ bar, blocks, labels, onClose }: { bar: ReactNode; blocks: { blockId: string; marks: Mark[] }[]; labels: Map<string, string>; onClose: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('.confirm-modal') && onClose()
+    document.addEventListener('keydown', esc)
+    document.body.classList.add('past-open')
+    return () => {
+      document.removeEventListener('keydown', esc)
+      document.body.classList.remove('past-open')
+    }
+  }, [onClose])
+  const run = document.querySelector('.wv-host .superdoc-text-run')
+  const font = run ? getComputedStyle(run).fontFamily : undefined
+  // Centred in the window left of the review column (which stays above the mask).
+  const column = document.querySelector('.rightbar')?.getBoundingClientRect()
+  const right = column ? window.innerWidth - column.left : 0
+  return createPortal(
+    <div className="past-mask" style={{ paddingRight: right }} onClick={onClose}>
+      <div className="past-modal" role="dialog" aria-modal="true" style={{ width: `min(760px, calc(100vw - ${right + 60}px))` }} onClick={(e) => e.stopPropagation()}>
+        {bar}
+        <div className="past-body" style={{ fontFamily: font }}>
+          {blocks.map((pb) => (
+            <p key={pb.blockId} className="past-para">
+              {labels.get(pb.blockId) && <strong>{labels.get(pb.blockId)} </strong>}
+              {pb.marks.length ? (
+                pb.marks.map((m, i) => {
+                  const del = m.ours === 'del' || (m.theirs === 'del' && !m.ours)
+                  const ins = !del && (m.ours === 'ins' || m.theirs === 'ins')
+                  return (
+                    <span key={i} className={del ? `wv-st-del ${m.ours ? 'yours' : 'theirs'}` : ins ? `wv-st-ins ${m.ours ? 'yours' : 'theirs'}` : undefined}>
+                      {m.text}
+                    </span>
+                  )
+                })
+              ) : (
+                <em className="wv-st-none">Not there then.</em>
+              )}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
