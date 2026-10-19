@@ -813,6 +813,9 @@ del.us-del ins.th-ins { color: inherit; }
 .btn.row-action { background: var(--surface); border-color: var(--border-strong); color: var(--text-2); }
 .btn.row-action:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 .t tr.row-hidden td:last-child { opacity: 1; }
+/* Rows with a button: the text level with it, and the button not making the row taller. */
+table.t tr:has(.row-action) td { vertical-align: middle; }
+table.t td:has(> .row-action) { padding-top: 4px; padding-bottom: 4px; }
 
 
 /* Text a comment is anchored to, highlighted as in Word. */
