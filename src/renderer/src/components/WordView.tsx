@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
@@ -52,12 +52,14 @@ type Placed = { top: number; height: number; left: number; right: number }
 /** Paragraph ids in a page fragment's element. */
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 
-/** Room made around a layered paragraph for its stages card: a little above, its buttons below. */
-const STAGES_TOP = 10
-const STAGES_BOTTOM = 46
-/** How far the card reaches past the text, to take in the labels left of it and the markers right of it. */
-const CARD_LEFT = 90
-const CARD_RIGHT = 74
+/** The stages card's padding, the same on every side, around the paragraph, its labels and markers. */
+const CARD_PAD = 12
+/** Its buttons' height, and the gap between the paragraph and them. */
+const CARD_BUTTONS = 22
+const CARD_GAP = 12
+/** Room made around a layered paragraph for its stages card: its padding above, its buttons below. */
+const STAGES_TOP = CARD_PAD + 2
+const STAGES_BOTTOM = CARD_GAP + CARD_BUTTONS + CARD_PAD + 2
 
 /** A layered paragraph's stages card: where it is, and how its text is set (to show a stage in it). */
 type Card = Placed & { blockId: string; label: string; stages: Stage[]; textTop: number; textLeft: number; textWidth: number; font: { family: string; size: string; lineHeight: string; align: string } }
@@ -325,9 +327,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const el = [...loaded.host.querySelectorAll<HTMLElement>('[data-source-node-id]')].find((x) => loaded.ids[nodeId(x)] === b.id)
       const run = el?.querySelector('.superdoc-text-run')
       const cs = run ? getComputedStyle(run) : null
-      const top = first.top - pad.top + 3
-      const bottom = last.top + last.height + pad.bottom - 3
-      const gap = Math.max(6, Math.min(first.left - CARD_LEFT, w.clientWidth - (first.right + CARD_RIGHT)))
+      const top = first.top - CARD_PAD
+      const bottom = last.top + last.height + pad.bottom - 2
+      // Its sides are fitted to the labels and markers once they're drawn (see below).
+      const gap = Math.max(6, first.left - 90)
       return [
         {
           blockId: b.id,
@@ -335,10 +338,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           stages,
           top,
           height: bottom - top,
-          // Centred in the page area, the same gap each side, wide enough for the labels and markers
-          // (and never past the page area's edge, where the sidebars are).
           left: gap,
-          right: w.clientWidth - gap,
+          right: first.right + 74,
           textTop: first.top - top,
           textLeft: first.left - gap,
           textWidth: first.right - first.left,
@@ -502,6 +503,33 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const id = c?.blockId ?? null
     if (id !== hovered) setHovered(id)
   }
+
+  // The stages card's sides: the same padding outside the labels left of the paragraph and the
+  // markers right of it as above and below (never past the page area's edges).
+  useLayoutEffect(() => {
+    const w = wrap.current
+    if (!w) return
+    const base = w.getBoundingClientRect()
+    for (const el of w.querySelectorAll<HTMLElement>('.wv-stages')) {
+      const c = gutter.cards.find((x) => x.blockId === el.dataset.block)
+      if (!c) continue
+      const textLeft = c.left + c.textLeft
+      let lo = textLeft
+      let hi = textLeft + c.textWidth
+      for (const m of w.querySelectorAll<HTMLElement>('.wv-run .ed-unchanged, .wv-gutter > .wv-ai')) {
+        const r = m.getBoundingClientRect()
+        const y = r.top - base.top + w.scrollTop
+        if (y + r.height <= c.top || y >= c.top + c.height) continue
+        lo = Math.min(lo, r.left - base.left)
+        hi = Math.max(hi, r.right - base.left)
+      }
+      const left = Math.max(6, lo - CARD_PAD)
+      const right = Math.min(w.clientWidth - 6, hi + CARD_PAD)
+      el.style.left = `${left}px`
+      el.style.width = `${right - left}px`
+      el.style.setProperty('--text-left', `${textLeft - left}px`)
+    }
+  })
 
   const dragging = useRef<{ from: string; to: string } | null>(null)
   const [lineSel, setLineSel] = useState<string[]>([])
@@ -754,8 +782,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             const shown = stageOf[c.blockId] ?? 0
             const st = shown ? c.stages[shown - 1] : null
             return (
-              <div key={`c${c.blockId}`} className={`wv-stages ${c.blockId === hovered ? '' : 'idle'}`} style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
-                <div className="wv-stages-bar" style={{ left: c.textLeft - 8 }}>
+              <div key={`c${c.blockId}`} data-block={c.blockId} className={`wv-stages ${c.blockId === hovered ? '' : 'idle'}`} style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
+                <div className="wv-stages-bar" style={{ bottom: CARD_PAD, height: CARD_BUTTONS }}>
                   {['All changes', ...c.stages.map((x) => x.name)].map((name, k) => (
                     <button
                       key={name}
@@ -771,7 +799,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
                 {st && (
                   <div
                     className="wv-stage-text"
-                    style={{ top: c.textTop, height: c.height - c.textTop - STAGES_BOTTOM + 4, left: c.textLeft, width: c.textWidth, fontFamily: c.font.family, fontSize: c.font.size, lineHeight: c.font.lineHeight, textAlign: (c.font.align || 'left') as 'left' }}
+                    style={{ top: c.textTop, height: c.height - c.textTop - STAGES_BOTTOM + 4, width: c.textWidth, fontFamily: c.font.family, fontSize: c.font.size, lineHeight: c.font.lineHeight, textAlign: (c.font.align || 'left') as 'left' }}
                   >
                     {c.label && <strong>{c.label} </strong>}
                     {!st.segments.some((x) => x.text.trim()) && <em className="wv-st-none">Not in the draft: they added this paragraph.</em>}
