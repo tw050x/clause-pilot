@@ -686,7 +686,15 @@ ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: numb
     // isn't in their file as one: the marked-up copy writes our decision on it as our edit.)
     if (outcome) d.resolved[key] = outcome
     else delete d.resolved[key]
-    if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
+    if (edit !== undefined && outcome === 'rejected') {
+      // Rejecting a deletion of theirs our wording already puts back right there: our insertion of
+      // it goes as their text comes back (not the text twice).
+      const at = before.findIndex((m) => m.seg === seg && m.theirs === 'del')
+      let k = at + 1
+      while (k < before.length && before[k].theirs === 'ins' && before[k].ours === 'del') k++
+      const again = at >= 0 && before[k]?.ours === 'ins' && !before[k].theirs && tidy(before[k].text) === tidy(before[at].text) ? k : -1
+      d.edits[blockId] = textWithout(before, (m, i) => (m.seg === seg && !!m.theirs) || i === again)
+    }
     // Our wording that now matches the text as it stands isn't an edit any more.
     const plain = shownText(marksFor({ ...d, edits: {} }, b))
     if (d.edits[blockId] !== undefined && tidy(d.edits[blockId]) === tidy(plain) && !b.ours) delete d.edits[blockId]

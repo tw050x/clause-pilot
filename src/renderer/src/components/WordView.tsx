@@ -511,7 +511,9 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
   const theirChange = async (loaded: Loaded, id: string, blockId: string | undefined, picked: SelectedChange[], shown: string[] = []) => {
     const c = await Promise.resolve(loaded.sd.activeEditor?.doc?.trackChanges.get({ id })).catch(() => null)
-    if (!c || c.author === reviewer) return
+    // (Not ours alone. SuperDoc may pair a deletion of theirs with an insertion of ours beside it
+    // as one change in our name: it's still their change if its text is theirs.)
+    if (!c) return
     const at = (c as { navigationTarget?: { blockId?: string } }).navigationTarget?.blockId ?? ''
     const b = model.current.blocks.find((x) => x.id === (loaded.ids[at] ?? blockId))
     if (!b) return
