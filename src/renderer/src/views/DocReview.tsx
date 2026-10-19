@@ -74,6 +74,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
   const [showKey, setShowKey] = useState(false)
+  /** Close review was pressed: asking first. */
+  const [confirmClose, setConfirmClose] = useState(false)
   // The document as it looks in Word (pages, tables, headers). As text, paragraph by paragraph,
   // only when it can't be laid out (the reviewing is the same either way).
   const [layout, setLayout] = useState<'word' | 'text'>('word')
@@ -158,9 +160,9 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       <div className="rc-title-row">
         <div className="rc-title">{session.version ? `${accountName} · ${contractTitle}` : session.docName}</div>
         <button
-          className="btn sm ghost"
+          className="btn sm rc-close"
           title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
-          onClick={() => act(window.api.review.close(session.id, !session.closed))}
+          onClick={() => (session.closed ? act(window.api.review.close(session.id, false)) : setConfirmClose(true))}
         >
           {session.closed ? 'Reopen' : 'Close review'}
         </button>
@@ -492,6 +494,16 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           bar
         )}
       {head && createPortal(header, head)}
+      {confirmClose && (
+        <ConfirmClose
+          open={changed.length}
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={() => {
+            setConfirmClose(false)
+            void act(window.api.review.close(session.id, true))
+          }}
+        />
+      )}
       {/* At the foot of the review column: Accept / Reject for the selected changes, and the key. */}
       {foot &&
         createPortal(
@@ -1464,6 +1476,51 @@ function AiCard({
       )}
       {open && result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
+  )
+}
+
+/**
+ * Confirm closing the review: it's hidden on the Reviews page (nothing is deleted, and it can be
+ * reopened here). Says how many changes are still to decide. Cancel has the focus.
+ */
+function ConfirmClose({ open, onCancel, onConfirm }: { open: number; onCancel: () => void; onConfirm: () => void }) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    cancel.current?.focus()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [onCancel])
+  return createPortal(
+    <div className="modal-back" onClick={onCancel}>
+      <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="close-review-title" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <Icon name="check" size={15} />
+          <h3 id="close-review-title">Close this review?</h3>
+        </div>
+        <div className="modal-body">
+          {open > 0 && (
+            <p style={{ marginTop: 0 }}>
+              <strong>
+                It still has {open} change{open === 1 ? '' : 's'} to decide.
+              </strong>
+            </p>
+          )}
+          <p style={{ marginTop: open ? undefined : 0, marginBottom: 0 }}>
+            Closing marks it as done and hides it on the Reviews page. Nothing is deleted: you can open it from its contract and reopen it here at any time.
+          </p>
+        </div>
+        <div className="modal-foot">
+          <button ref={cancel} className="btn" onClick={onCancel}>
+            Keep it open
+          </button>
+          <button className="btn primary" onClick={onConfirm}>
+            Close review
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 

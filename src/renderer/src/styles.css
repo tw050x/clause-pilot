@@ -1077,3 +1077,5 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-tip-note { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.15); color: #e6e8eb; font-style: italic; }
 /* The change a tooltip is about. */
 .wv-wrap .superdoc-text-run.wv-tip-hl, .wv-wrap .wv-tip-hl { background-color: color-mix(in srgb, var(--processing) 22%, transparent) !important; border-radius: 2px; }
+.rc-close { font-weight: 600; border-color: var(--text-2); color: var(--text); }
+.rc-close:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
