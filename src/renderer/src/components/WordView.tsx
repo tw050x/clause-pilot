@@ -99,6 +99,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onComment, onShowText }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
+  /** A paragraph's comments, theirs and ours. */
+  const commentCount = (blockId: string) => (model.current.blocks.find((b) => b.id === blockId)?.comments?.length ?? 0) + model.current.comments.filter((c) => c.blockId === blockId).length
   /** The margin's comment button, level with a selection, to the right of the text. */
   const [bubble, setBubble] = useState<{ top: number; left: number; blockId: string; quote: string } | null>(null)
   /** Reviews that come back from saving our own typing: the page already shows them. */
@@ -578,15 +580,16 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           <button
             className="ed-gutter-btn out wv-comment"
             style={{ top: bubble.top, left: bubble.left }}
-            title="Comment on the selected text (in the right-hand column)"
+            title={`Comment on the selected text (in the right-hand column)${commentCount(bubble.blockId) ? `. This paragraph has ${commentLabel(commentCount(bubble.blockId))}.` : ''}`}
+            aria-label="Comment on the selected text"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               cb.current.onComment(bubble.blockId, bubble.quote)
               setBubble(null)
             }}
           >
-            <CommentIcon size={16} />
-            <span>{commentLabel((model.current.blocks.find((b) => b.id === bubble.blockId)?.comments?.length ?? 0) + model.current.comments.filter((c) => c.blockId === bubble.blockId).length)}</span>
+            <CommentIcon size={10} />
+            {commentCount(bubble.blockId) > 0 && <span>{commentCount(bubble.blockId)}</span>}
           </button>
         )}
         {gutter.ai.map((a, i) => (

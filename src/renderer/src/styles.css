@@ -1010,6 +1010,9 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 /* Comment highlights in our comment yellow, as in the text view (not SuperDoc's own colours). */
 .wv-wrap .superdoc-comment-highlight { background: color-mix(in srgb, #f5c542 28%, transparent) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }
 .wv-gutter .wv-comment { pointer-events: auto; }
+/* The comment button beside a selection: the size and shape of the AI markers ("1 Ask"). */
+.wv-gutter .ed-gutter-btn.wv-comment { height: 16px; min-width: 0; padding: 0 6px 0 4px; gap: 3px; font-size: 10px; line-height: 1; border-radius: 12px; }
+.wv-gutter .ed-gutter-btn.wv-comment svg { flex-shrink: 0; }
 /* Hovering an AI marker: its words in one tint and the text colour only, whatever else marks them
    (redlines, comment highlights); a deleted word keeps a plain strike so it still reads as one. */
 .wv-wrap .superdoc-text-run.wv-ai-preview,
