@@ -4,10 +4,10 @@ import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { listAfter } from '@shared/numbering'
 import { groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
-import { Icon } from '../lib/icons'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
-import { setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
+import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
+import { CommentIcon, Icon } from '../lib/icons'
 
 /**
  * The document as it looks in Word: the review as it stands (their file with our decisions,
@@ -27,6 +27,8 @@ interface Props {
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
   /** Apply a change to the review (the session it returns becomes the review). */
   act: (p: Promise<ReviewSession>) => Promise<boolean>
+  /** Comment on selected text (the margin button beside a selection). */
+  onComment: (blockId: string, quote: string) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
   /** Show the contract as text instead (when it can't be laid out). */
@@ -48,12 +50,14 @@ type Placed = { top: number; height: number; left: number }
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onComment, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onComment })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onComment }
+  /** The margin's comment button, level with a selection, to the right of the text. */
+  const [bubble, setBubble] = useState<{ top: number; left: number; blockId: string; quote: string } | null>(null)
   /** Reviews that come back from saving our own typing: the page already shows them. */
   const typed = useRef(new Set<ReviewSession>())
   const syncing = useRef(0)
@@ -225,13 +229,22 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    * its text (for the AI questions) and their changes in it. A click: its paragraph, and the change
    * of theirs it's in, if any (read from the page, since a click selects nothing in this view).
    */
-  const report = async (loaded: Loaded, clicked: Element | null) => {
+  const report = async (loaded: Loaded, clicked: Element | null, y: number) => {
     const sel = loaded.sd.ui?.selection.getSnapshot()
     const picked: SelectedChange[] = []
+    setBubble(null)
     if (sel && !sel.empty && sel.target && sel.quotedText.trim()) {
       const blockIds = [...new Set(sel.target.segments.map((x) => loaded.ids[x.blockId]).filter(Boolean))]
       for (const id of sel.activeChangeIds) await theirChange(loaded, id, blockIds[0], picked)
       if (!blockIds.length) return
+      // The comment button: level with where the selection ended, beside the text.
+      const w = wrap.current
+      const fragment = clicked?.closest('.superdoc-fragment[data-source-node-id]')
+      if (w && fragment) {
+        const base = w.getBoundingClientRect()
+        const r = fragment.getBoundingClientRect()
+        setBubble({ top: y - base.top - 15, left: r.right - base.left + 14, blockId: loaded.ids[nodeId(fragment)] ?? blockIds[0], quote: sel.quotedText })
+      }
       cb.current.onFocusBlock(blockIds[0])
       cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
       return
@@ -303,7 +316,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         // After SuperDoc has settled the selection the click or drag made.
         host.addEventListener('pointerup', (e) => {
           const target = e.target as Element
-          window.setTimeout(() => void report(loaded, target), 120)
+          const y = e.clientY
+          window.setTimeout(() => void report(loaded, target, y), 120)
         })
         setLoading(false)
         setError(null)
@@ -376,6 +390,21 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             </span>
           </div>
         ))}
+        {bubble && (
+          <button
+            className="ed-gutter-btn out wv-comment"
+            style={{ top: bubble.top, left: bubble.left }}
+            title="Comment on the selected text (in the right-hand column)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              cb.current.onComment(bubble.blockId, bubble.quote)
+              setBubble(null)
+            }}
+          >
+            <CommentIcon size={16} />
+            <span>{commentLabel((model.current.blocks.find((b) => b.id === bubble.blockId)?.comments?.length ?? 0) + model.current.comments.filter((c) => c.blockId === bubble.blockId).length)}</span>
+          </button>
+        )}
         {gutter.ai.map((a, i) => (
           <button
             key={`a${i}`}

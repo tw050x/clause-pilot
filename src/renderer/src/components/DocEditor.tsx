@@ -163,7 +163,7 @@ const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
   m.theirs && m.seg !== undefined ? { blockId: b.id, kind: 'theirs', seg: groupOf(b, m.seg)[0] } : m.ours ? { blockId: b.id, kind: 'ours', op: m.ours, text: m.text } : null
 
 /** The gutter's comment button's label, and about how wide the button is with it (icon, padding, ~7px a character). */
-const commentLabel = (n: number) => (n ? `${n} comment${n === 1 ? '' : 's'}` : 'Comment')
+export const commentLabel = (n: number) => (n ? `${n} comment${n === 1 ? '' : 's'}` : 'Comment')
 const labelledWidth = (n: number) => 40 + commentLabel(n).length * 7
 
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {

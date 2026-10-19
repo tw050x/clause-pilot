@@ -324,6 +324,10 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
       {layout === 'word' ? (
         <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
+          onComment={(blockId, quote) => {
+            setFocus(blockId)
+            setDraft({ blockId, quote })
+          }}
           onShowComments={(id) => {
             setFocus(id)
             setCommentsFor(id)
