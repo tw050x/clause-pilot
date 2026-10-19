@@ -11,6 +11,8 @@ interface Props {
   onNominationsChanged: () => void
   /** Debug mode (Settings): show raw AI responses. */
   debug: boolean
+  /** The reviewer's name (Settings). */
+  reviewer: string
   /** The security alert for this review, if text addressed to an AI reviewer was found. */
   alert: SecurityAlert | null
   onOpenSecurity: () => void

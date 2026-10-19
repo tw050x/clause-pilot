@@ -957,3 +957,25 @@ del.us-del ins.th-ins { color: inherit; }
 .recent-when { font-size: 12px; text-align: right; }
 /* Hovering an AI answer's marker: the text it's about. */
 .ed-doc .ed-ai-preview { background: color-mix(in srgb, var(--processing) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--processing) 30%, transparent); border-radius: 2px; }
+
+/* ---- the Word layout (SuperDoc) ---- */
+/* Pages on a grey desk, as in Word; our bars, labels and markers in the margin beside each paragraph. */
+.wv-wrap { position: relative; min-height: 100%; background: var(--surface-2); padding: 8px 0 24px; }
+.wv-stage { position: relative; }
+.wv-host.loading { position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none; }
+.wv-loading { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 12.5px; color: var(--text-3); }
+.wv-gutter { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.wv-bar { position: absolute; width: 4px; border-radius: 1px; }
+.wv-bar.chg-theirs { background: color-mix(in srgb, #1d4ed8 45%, transparent); }
+.wv-bar.chg-ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }
+.wv-bar.chg-checked { background: var(--exact); }
+.wv-bar.chg-read { background: var(--border-strong); }
+.wv-bar.chg-ai { background: repeating-linear-gradient(to bottom, var(--exact) 0 4px, transparent 4px 7px); }
+.wv-bar.chg-untracked.chg-theirs { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
+.wv-run { position: absolute; width: 60px; display: flex; flex-direction: column; align-items: flex-end; }
+.wv-run .ed-unchanged { pointer-events: auto; }
+.wv-ai { pointer-events: auto; }
+.bottombar-layout { margin-left: 8px; }
+.bottombar-layout button { padding: 4px 10px; font-size: 12.5px; }
+/* Comment highlights in our comment yellow, as in the text view (not SuperDoc's own colours). */
+.wv-wrap .superdoc-comment-highlight { background: color-mix(in srgb, #f5c542 28%, transparent) !important; box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }

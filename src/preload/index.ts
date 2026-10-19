@@ -57,6 +57,7 @@ const api: Api = {
     comment: (id, c) => invoke('doc:comment', id, c),
     uncomment: (id, commentId) => invoke('doc:uncomment', id, commentId),
     editComment: (id, commentId, text) => invoke('doc:editComment', id, commentId, text),
+    view: (id) => invoke('doc:view', id),
     resolveComment: (id, commentId, done) => invoke('doc:resolveComment', id, commentId, done),
     split: (id, blockId, head, tail, newId, list) => invoke('doc:split', id, blockId, head, tail, newId, list),
     setList: (id, blockId, list) => invoke('doc:setList', id, blockId, list),

@@ -244,6 +244,7 @@ export function App() {
               contractTitle={reviews.find((r) => r.id === session.id)?.contractTitle}
               onOpenReview={openSession}
               debug={!!settings?.debug}
+              reviewer={settings?.reviewerName ?? ''}
             />
           )}
           {view === 'review' && !session && <div className="empty">Open a contract to start a review.</div>}

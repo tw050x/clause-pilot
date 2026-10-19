@@ -62,6 +62,8 @@ export interface Api {
     uncomment(id: string, commentId: string): Promise<ReviewSession>
     /** Our comments and replies in this review only. */
     editComment(id: string, commentId: string, text: string): Promise<ReviewSession>
+    /** The review as it stands, as a Word file for the document view, and which review paragraph each Word paragraph id is. */
+    view(id: string): Promise<{ bytes: Uint8Array; ids: Record<string, string> }>
     /** Resolve a comment thread (theirs or ours), or reopen it. */
     resolveComment(id: string, commentId: string, done: boolean): Promise<ReviewSession>
     /** Enter: split a paragraph at the caret; the rest goes into a new paragraph of ours. */

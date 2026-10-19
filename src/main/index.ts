@@ -1170,6 +1170,19 @@ async function redline(sessionId: string) {
 }
 const savedRedlines = new Set<string>()
 
+/**
+ * The review as it stands, for the document view: their file with our decisions, edits and
+ * comments in it (as the marked-up copy has them), each paragraph stamped with an id that names
+ * the review paragraph it is. Nothing is recorded: it's only for showing.
+ */
+ipcMain.handle('doc:view', async (_e, sessionId: string) => {
+  const s = session(sessionId)
+  if (!s.doc) throw new Error(OLD_REVIEW)
+  const original = s.sourceType === 'docx' ? await readFile(resolvePath(s.filePath)) : Buffer.alloc(0)
+  const { bytes, ids } = await buildDocRedline(s, actor(), original, { stampIds: true })
+  return { bytes: new Uint8Array(bytes), ids }
+})
+
 ipcMain.handle('redline:preview', async (_e, sessionId: string) => {
   const { bytes, stats, comments, name } = await redline(sessionId)
   return { bytes: new Uint8Array(bytes), stats, comments, name }

@@ -7,6 +7,7 @@ import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
+import { WordView } from '../components/WordView'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
@@ -29,6 +30,8 @@ interface Props {
   contractTitle?: string
   onOpenReview: (id: string) => void
   onNominationsChanged: () => void
+  /** The reviewer's name (Settings): our changes and comments in the Word layout are theirs. */
+  reviewer: string
   /** Debug mode (Settings): show raw AI responses. */
   debug: boolean
 }
@@ -51,7 +54,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
+export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -66,6 +69,23 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
   const [showKey, setShowKey] = useState(false)
+  // The document as it looks in Word (pages, tables, headers), or as text to edit in place.
+  // Remembered on this machine (a convenience only).
+  const [layout, setLayoutState] = useState<'word' | 'text'>(() => {
+    try {
+      return localStorage.getItem('cp.layout') === 'text' ? 'text' : 'word'
+    } catch {
+      return 'word'
+    }
+  })
+  const setLayout = (v: 'word' | 'text') => {
+    setLayoutState(v)
+    try {
+      localStorage.setItem('cp.layout', v)
+    } catch {
+      /* not stored: still works for this session */
+    }
+  }
   /** Text you highlighted (not a caret placed in a change): the paragraph it starts in, and the text. */
   const [highlight, setHighlight] = useState<Highlight | null>(null)
   const highlighted = !!highlight
@@ -290,6 +310,9 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
           </button>
         </div>
       )}
+      {layout === 'word' ? (
+        <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges} />
+      ) : (
       <DocEditor
         key={session.id}
         session={session}
@@ -307,6 +330,7 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
           setDraft({ blockId, quote })
         }}
       />
+      )}
       {panel && createPortal(column, panel)}
       {showKey && panel?.parentElement &&
         createPortal(
@@ -333,6 +357,14 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
         <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
           <Icon name="mail" size={14} /> Draft response
         </button>
+        <div className="seg bottombar-layout" role="group" aria-label="How the document is shown">
+          <button className={layout === 'word' ? 'on' : ''} onClick={() => setLayout('word')} title="As it looks in Word: pages, tables, headers and footers">
+            Word layout
+          </button>
+          <button className={layout === 'text' ? 'on' : ''} onClick={() => setLayout('text')} title="As text you can edit in place (your edits become tracked changes)">
+            Edit text
+          </button>
+        </div>
             </div>
             <div className="bottombar-group bottombar-decide">
               <div className="bottombar-group" ref={setDecideSlot} />

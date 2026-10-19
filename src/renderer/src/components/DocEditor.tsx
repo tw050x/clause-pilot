@@ -11,6 +11,7 @@ import { aiSame, changeKey, commentResolved, groupOf, hasOpenChanges, isCleared,
 import type { Mark } from '@shared/diff'
 import { CommentIcon, Icon } from '../lib/icons'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
+import { GUTTER, paragraphState, type GutterState } from '../lib/paragraphState'
 
 /**
  * The contract as one editable column, like Word with Track Changes on, built on ProseMirror.
@@ -84,10 +85,16 @@ const previewPlugin = new Plugin<{ from: number; to: number } | null>({
   }
 })
 
+/** Where pointing at paragraphs goes when the text view isn't showing (the Word layout). */
+let flashFallback: ((blockIds: string[]) => void) | null = null
+export const setFlashFallback = (fn: ((blockIds: string[]) => void) | null) => {
+  flashFallback = fn
+}
+
 /** Point at paragraphs without changing the selection: scroll to the first and flash them. */
 export function flashParagraphs(blockIds: string[]) {
   const v = flashView
-  if (!v) return
+  if (!v) return flashFallback?.(blockIds)
   document.querySelector(`p[data-block="${blockIds[0]}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   window.clearTimeout(flashTimer)
   v.dispatch(v.state.tr.setMeta(FLASH, []).setMeta('addToHistory', false))
@@ -157,17 +164,6 @@ const changeOfMark = (b: DocBlock, m: Mark): SelectedChange | null =>
 
 /** The gutter's comment button's label, and about how wide the button is with it (icon, padding, ~7px a character). */
 const commentLabel = (n: number) => (n ? `${n} comment${n === 1 ? '' : 's'}` : 'Comment')
-/** A paragraph's state as its bar shows it, labelled in the left gutter once per run. */
-type GutterState = 'unchanged' | 'checked' | 'same' | 'decide' | 'edited' | 'read'
-const GUTTER: Record<GutterState, { label: string; tip: string }> = {
-  unchanged: { label: 'Unchanged', tip: 'Reads exactly as our approved wording, or as we last sent it. Nothing to check.' },
-  checked: { label: 'Checked', tip: 'Nothing left to check: their changes here are decided, or a reviewer marked it as checked.' },
-  same: { label: 'Same intent', tip: 'The AI found it means the same as our approved wording. It only advises: decide it yourself.' },
-  decide: { label: 'To decide', tip: 'Their changes, tracked or found by comparison: accept or reject them.' },
-  edited: { label: 'Edited', tip: 'Your edits: they go to them as tracked changes in the marked-up copy.' },
-  read: { label: 'To read', tip: 'Not our wording and nothing to accept or reject: read it, then mark it as checked.' }
-}
-
 const labelledWidth = (n: number) => 40 + commentLabel(n).length * 7
 
 export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChanges, onShowComments, readOnly }: Props) {
@@ -397,38 +393,8 @@ export function DocEditor({ session, act, onFocusBlock, onComment, onSelectChang
         const key = `${b.id}\u0000${node.textContent}`
         let marks = cache.get(key)
         if (!marks) cache.set(key, (marks = marksNow(d, b, node.textContent)))
-        const open = hasOpenChanges(d, b)
-        // Their changes here have all been decided: checked.
-        const decided = !open && theyChanged(b) && segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
-        const edited = b.ours || tidy(node.textContent) !== tidy(plainOf(d, b))
-        // Nothing left to show: their deletion accepted, or their inserted paragraph rejected.
-        const gone = !b.ours && (b.kind === 'deleted' || theyChanged(b)) && !marks.length && !node.textContent
-        // Nothing to look at: its changes all decided, or (untouched) it's our approved wording
-        // word for word, or exactly what we sent last round.
-        const checked = !open && !edited && (decided || isCleared(d, b))
-        // The AI found it means the same as our approved wording: dashed green until you decide it.
-        // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
-        const bar = `${(open || needsReading(d, b)) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : needsReading(d, b) && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''}`.replace(/\s+/g, ' ').trim()
+        const { bar, state, gone } = paragraphState(d, b, node.textContent, marks.length, plainOf(d, b))
         bars.push({ offset, size: node.nodeSize, bar, cls: `${bar} ${gone ? 'gone' : ''}`, gone })
-        // Exactly our approved wording, or exactly what we sent last round: "Unchanged" in the gutter.
-        // (Not one a reviewer marked as checked: that's a judgement, not a match.)
-        const exact = !open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))
-        // The label for its bar (your edits show over theirs, as the bar does).
-        const state: GutterState | null = gone
-          ? null
-          : bar.includes('chg-ours')
-            ? 'edited'
-            : bar.includes('chg-ai')
-              ? 'same'
-              : bar.includes('chg-theirs')
-                ? 'decide'
-                : bar.includes('chg-read')
-                  ? 'read'
-                  : exact
-                    ? 'unchanged'
-                    : bar.includes('chg-checked')
-                      ? 'checked'
-                      : null
         if (state) statesNow.set(b.id, state)
         // The number as it now reads: clauses we add are numbered, and the ones after move up.
         const label = labelOf(d, b)

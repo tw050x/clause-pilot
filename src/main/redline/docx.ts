@@ -34,7 +34,17 @@ const NUMBER_PREFIX = /^\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+/
  * reinstated; our margin comments go in as Word comments (replies where they
  * answer one of theirs). Untouched paragraphs are left exactly as received.
  */
-export async function buildDocRedline(s: ReviewSession, reviewer: string, original: Buffer): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[] }> {
+export async function buildDocRedline(
+  s: ReviewSession,
+  reviewer: string,
+  original: Buffer,
+  /**
+   * stampIds: for showing in the review (not for sending): each paragraph of a review paragraph
+   * gets a Word paragraph id (w14:paraId), returned in `ids` with the review paragraph it is, so
+   * the document view can tell which paragraph on the page is which.
+   */
+  opts: { stampIds?: boolean } = {}
+): Promise<{ bytes: Buffer; stats: RedlineStats; comments: RedlineComment[]; ids: Record<string, string> }> {
   const d = s.doc!
   const source = s.sourceType === 'docx' && d.blocks.some((b) => b.paras?.length) ? 'original' : 'generated'
   // Paragraphs they removed without tracking aren't in the file; restoring one inserts it again.
@@ -147,9 +157,20 @@ export async function buildDocRedline(s: ReviewSession, reviewer: string, origin
   stats.comments = m.added
   if (m.added || m.marked) await m.saveComments()
   await trackFurtherChanges(zip)
+  const ids: Record<string, string> = {}
+  if (opts.stampIds) {
+    let n = 0
+    if (!doc.documentElement!.getAttribute('xmlns:w14')) doc.documentElement!.setAttribute('xmlns:w14', W14)
+    for (const b of d.blocks)
+      for (const p of added.has(b.id) ? [added.get(b.id)!] : parasOf(b)) {
+        const id = (0x10000000 + ++n).toString(16).toUpperCase()
+        p.setAttributeNS(W14, 'w14:paraId', id)
+        ids[id] = b.id
+      }
+  }
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc))
   const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
-  return { bytes, stats, comments: m.log }
+  return { bytes, stats, comments: m.log, ids }
 }
 
 /**
