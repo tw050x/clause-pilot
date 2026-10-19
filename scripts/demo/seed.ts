@@ -34,6 +34,10 @@ interface SeedContract {
   history?: HistoryRound[]
 }
 
+/** Our order form, redlined by the client (round 1, compared with what we sent). */
+const order = (k: string, product: string, daysAgo: number, decide: HistoryRound['decide'], closed = false): HistoryRound[] => [
+  { file: `${k}-${product}-Order-Form-v1-redline.docx`, original: `${k}-${product}-Order-Form-v0-we-sent.docx`, daysAgo, decide, closed }
+]
 const nda = (k: string, days: number[], last: HistoryRound['decide'] = 'all', closed = true): HistoryRound[] => [
   { file: `${k}-Mutual-NDA-v1-redline.docx`, original: `${k}-Mutual-NDA-v0-we-sent.docx`, daysAgo: days[0], decide: days.length > 1 ? 'all' : last, closed: days.length > 1 ? false : closed },
   ...(days.length > 1 ? [{ file: `${k}-Mutual-NDA-v2-response.docx`, daysAgo: days[1], decide: last, closed }] : [])
@@ -50,7 +54,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     account: 'Brightwater Robotics',
     contracts: [
       { key: 'brightwater', title: 'Mutual NDA', type: 'nda' },
-      { key: 'brightwater-order', title: 'Burp Suite Enterprise order form', type: 'order-form' }
+      { key: 'brightwater-order', title: 'Burp Suite Enterprise order form', type: 'order-form', history: order('Brightwater', 'Burp-Suite-Enterprise', 3, 'half') }
     ]
   },
   {
@@ -79,7 +83,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
       { key: 'northwind', title: 'Logistics Services Agreement', type: 'general', history: [{ file: 'Northwind-Logistics-Services-Agreement.docx', theirs: true, daysAgo: 62, decide: 'all', closed: true }] },
       // Their paper, arrived on Saturday, half read.
       { key: 'northwind-2', title: 'Partner Confidentiality Agreement', type: 'nda', history: [{ file: 'Northwind-Partner-Confidentiality-Agreement.docx', theirs: true, daysAgo: 2, decide: 'half' }] },
-      { key: 'northwind-3', title: 'Burp Suite DAST order form', type: 'order-form' }
+      { key: 'northwind-3', title: 'Burp Suite DAST order form', type: 'order-form', history: order('Northwind', 'Burp-Suite-DAST', 1, 'none') }
     ]
   },
   {
@@ -109,7 +113,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
       // Their reseller agreement, on their paper, half read.
       { key: 'initech', title: 'Reseller Agreement', type: 'nda', history: [{ file: 'Initech-Reseller-Agreement.docx', theirs: true, daysAgo: 6, decide: 'half' }] },
       { key: 'initech-2', title: 'Mutual NDA', type: 'nda', history: nda('Initech', [95], 'all', true) },
-      { key: 'initech-3', title: 'Burp Suite Professional order form', type: 'order-form' }
+      { key: 'initech-3', title: 'Burp Suite Professional order form', type: 'order-form', history: order('Initech', 'Burp-Suite-Professional', 42, 'all', true) }
     ]
   }
 ]

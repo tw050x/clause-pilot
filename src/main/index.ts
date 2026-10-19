@@ -313,18 +313,25 @@ ipcMain.handle('demo:quickstarts', () => quickStarts())
  * The demo workspace's history, made the first time it opens: past rounds of other contracts,
  * reviewed as the app reviews any draft (data/seed-demo/history.json says which, how long ago,
  * how much was decided, which were closed), so it has reviews finished, in progress and earlier
- * rounds to look at. Made once (demo-history.json records it).
+ * rounds to look at. Made once per contract (demo-history.json records which), so contracts added
+ * to the demo later get theirs too.
  */
 async function populateDemoHistory() {
   if (!demoMode()) return
   const marker = join(ws.dir, 'demo-history.json')
   const manifest = join(appRoot, 'data/seed-demo/history.json')
-  if (existsSync(marker) || !existsSync(manifest)) return
+  if (!existsSync(manifest)) return
   const day = 86_400_000
   const entries = JSON.parse(readFileSync(manifest, 'utf8')) as { contractId: string; rounds: { file: string; original?: string; theirs?: boolean; daysAgo: number; decide: 'all' | 'half' | 'none'; closed?: boolean }[] }[]
-  let made = 0
-  for (const e of entries) {
-    if (!ws.store.contracts().some((c) => c.id === e.contractId) || ws.store.versionsOf(e.contractId).length) continue
+  const before = existsSync(marker) ? (JSON.parse(readFileSync(marker, 'utf8')) as { reviews?: number; contracts?: string[] }) : null
+  // A workspace made before contracts were recorded: those with drafts already had theirs.
+  const done = new Set(before?.contracts ?? (before ? entries.filter((e) => ws.store.versionsOf(e.contractId).length).map((e) => e.contractId) : []))
+  const todo = entries.filter((e) => !done.has(e.contractId) && ws.store.contracts().some((c) => c.id === e.contractId))
+  if (before && !todo.length) return
+  let made = before?.reviews ?? 0
+  for (const e of todo) {
+    done.add(e.contractId)
+    if (ws.store.versionsOf(e.contractId).length) continue
     for (const r of e.rounds) {
       const at = new Date(Date.now() - r.daysAgo * day - 3_600_000 * 3).toISOString()
       const s = await startReview(ws, demoFile(r.file), e.contractId, r.original ? { kind: 'original', path: demoFile(r.original) } : r.theirs ? { kind: 'theirs' } : undefined)
@@ -348,7 +355,7 @@ async function populateDemoHistory() {
       utimesSync(f, touched, touched)
     }
   }
-  writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), reviews: made }, null, 2))
+  writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), reviews: made, contracts: [...done] }, null, 2))
 }
 
 /**

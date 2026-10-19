@@ -80,7 +80,12 @@ export function NavDrawer(p: Props) {
                 <span style={{ minWidth: 0 }}>
                   <span className="recent-name">{c.title}</span>
                   <span className="sub">
-                    {v ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}` : 'No drafts yet'}
+                    {v
+                      ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}`
+                      : // A demo contract without drafts is a quick start's: it opens from the Demo page.
+                        p.demoMode && c.id.startsWith('ct-demo-')
+                        ? 'Quick start · on the Demo page'
+                        : 'No drafts yet'}
                   </span>
                 </span>
                 <span className="nav-chevron">

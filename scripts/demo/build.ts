@@ -21,7 +21,7 @@ import { PLAYBOOK } from './playbook'
 import JSZip from 'jszip'
 import { MSA_FILE, msaDocx } from './msa'
 import { writeDemoSeed } from './seed'
-import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
+import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, ORDER_FORMS, type Block, type ContractFile } from './contracts'
 
 const DEMOS = [
   { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2] },
@@ -165,8 +165,9 @@ async function main() {
   const files = join(process.cwd(), 'data', 'demo-files')
   mkdirSync(files, { recursive: true })
   for (const v of VARIANTS) await writeDocx(rename(v.from, v.file, v.names), join(files, v.file))
+  for (const f of ORDER_FORMS.flat()) await writeDocx(f, join(files, f.file))
   for (const v of SUPPLIERS) writeFileSync(join(files, v.file), await renameDocx(await msaDocx(), v.names))
-  console.log(`data/demo-files: ${VARIANTS.length + SUPPLIERS.length} more contracts for the demo workspace's history`)
+  console.log(`data/demo-files: ${VARIANTS.length + SUPPLIERS.length + ORDER_FORMS.flat().length} more contracts for the demo workspace's history`)
   // The demo workspace's starting data, from the same library and playbook.
   writeDemoSeed()
 }

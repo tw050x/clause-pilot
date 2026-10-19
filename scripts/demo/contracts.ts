@@ -252,3 +252,104 @@ export const KESTREL: ContractFile = {
 }
 
 export const CONTRACTS = [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL]
+
+// ---------------------------------------------------------------------------------------------
+// Our order form (word for word our approved clauses), as each client redlined it: their asks
+// differ, so no two read the same. Used for the demo workspace's history.
+// ---------------------------------------------------------------------------------------------
+
+/** One of their edits to our order form: the clause (by library id) and what they made of it. */
+export type OrderFormAsk = { clause: string; text?: string; deleted?: true; comment?: string; anchor?: string } | { after: string; inserted: string; comment?: string }
+
+const ORDER_CLAUSES = ['of-precedence', 'of-grant', 'of-restrictions', 'of-ip', 'of-term', 'of-fees', 'of-late-payment', 'of-warranty', 'of-data', 'of-cap', 'of-indirect', 'of-unlimited', 'of-ip-indemnity', 'of-termination', 'of-publicity', 'of-audit']
+const ORDER_HEADINGS: Record<string, string> = { 'of-precedence': '1. The Order Form', 'of-grant': '2. Licence', 'of-term': '3. Term and fees', 'of-warranty': '4. Warranty and data', 'of-cap': '5. Liability', 'of-termination': '6. General' }
+
+/**
+ * Our order form for `product` (v0, as we sent it) and the client's redline of it (v1): their
+ * name, the commercial terms, and their asks as Track Changes and comments.
+ */
+export function orderForm(o: { key: string; product: string; client: string; place: string; signer: string; users: string; fees: string; date: string; asks: OrderFormAsk[] }): [ContractFile, ContractFile] {
+  const slug = o.product.replace(/\s+/g, '-')
+  const head = [
+    title(`${o.product.toUpperCase()} ORDER FORM`),
+    p(undefined, `This Order Form is made between PortSwigger Ltd, a company registered in England and Wales ("PortSwigger"), and ${o.client}, ${o.place} (the "Customer").`),
+    p(undefined, `Software: ${o.product}. Licensed users or agents: ${o.users}. Fees: ${o.fees} per year, invoiced annually in advance. Start Date: the date of the last signature below.`)
+  ]
+  const sign = p(undefined, `Signed for and on behalf of PortSwigger Ltd by [Authorised Signatory], Director. Signed for and on behalf of ${o.client} by ${o.signer}.`)
+  const ours: Block[] = []
+  const theirs: Block[] = []
+  let section = 0
+  let n = 0
+  for (const id of ORDER_CLAUSES) {
+    if (ORDER_HEADINGS[id]) {
+      section++
+      n = 0
+      ours.push(h(ORDER_HEADINGS[id]))
+      theirs.push(h(ORDER_HEADINGS[id]))
+    }
+    const num = `${section}.${++n}`
+    const ask = o.asks.find((a) => 'clause' in a && a.clause === id) as Extract<OrderFormAsk, { clause: string }> | undefined
+    ours.push(p(num, lib(id)))
+    theirs.push(ask?.deleted ? deleted(num, lib(id)) : ask?.text ? edited(num, lib(id), ask.text, ask.comment, ask.anchor) : p(num, lib(id), ask?.comment, ask?.anchor))
+    for (const a of o.asks) if ('after' in a && a.after === id) theirs.push(inserted(`${section}.${++n}`, a.inserted, a.comment))
+  }
+  const short = o.client.split(' ')[0]
+  return [
+    { file: `${o.key}-${slug}-Order-Form-v0-we-sent.docx`, author: 'PortSwigger Legal', date: '2026-09-01T10:00:00Z', blocks: [...head, ...ours, sign] },
+    { file: `${o.key}-${slug}-Order-Form-v1-redline.docx`, author: `${short} Legal`, date: o.date, blocks: [...head, ...theirs, sign] }
+  ]
+}
+
+export const ORDER_FORMS = [
+  orderForm({
+    key: 'Brightwater',
+    product: 'Burp Suite Enterprise',
+    client: 'Brightwater Robotics Inc.',
+    place: 'a Delaware corporation whose principal office is at 200 Harbor Drive, Boston, Massachusetts',
+    signer: 'Dana Whitfield, General Counsel',
+    users: '50 scanning agents',
+    fees: 'USD 98,000',
+    date: '2026-10-16T15:00:00Z',
+    asks: [
+      { clause: 'of-fees', text: lib('of-fees').replace('thirty (30) days of the date of invoice', 'forty-five (45) days of receipt of a valid invoice'), comment: 'Our AP cycle is 45 days.' },
+      {
+        clause: 'of-cap',
+        text: lib('of-cap').replace('the Fees paid or payable in the twelve (12) months preceding the event giving rise to the claim', 'two times (2x) the Fees paid or payable in the twelve (12) months preceding the event giving rise to the claim'),
+        comment: 'We need a higher cap given the scope of the deployment.',
+        anchor: 'two times (2x)'
+      },
+      { clause: 'of-audit', deleted: true },
+      { after: 'of-data', inserted: 'PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer\'s data.', comment: 'Required by our security policy.' }
+    ]
+  }),
+  orderForm({
+    key: 'Northwind',
+    product: 'Burp Suite DAST',
+    client: 'Northwind Logistics Ltd',
+    place: 'a company registered in England and Wales whose registered office is at 1 Dockside Way, Felixstowe',
+    signer: 'Tom Hale, Head of Procurement',
+    users: '20 scanning agents',
+    fees: 'GBP 42,000',
+    date: '2026-10-19T09:30:00Z',
+    asks: [
+      { clause: 'of-term', text: lib('of-term').replace("at least thirty (30) days' written notice", "at least ninety (90) days' written notice"), comment: 'Renewal is not automatic for us: we need 90 days.' },
+      { clause: 'of-fees', text: lib('of-fees').replace("PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.", 'Any increase in the Fees for a renewal term shall not exceed three per cent (3%).'), comment: 'Please cap renewal increases.' },
+      { clause: 'of-ip-indemnity', text: lib('of-ip-indemnity').replace("third party's UK intellectual property rights", "third party's intellectual property rights anywhere in the world") }
+    ]
+  }),
+  orderForm({
+    key: 'Initech',
+    product: 'Burp Suite Professional',
+    client: 'Initech Software Ltd',
+    place: 'a California corporation whose principal office is at 4120 Freidrich Lane, Austin, Texas',
+    signer: 'Bill Lumbergh, VP Operations',
+    users: '12 named users',
+    fees: 'USD 5,940',
+    date: '2026-09-08T11:00:00Z',
+    asks: [
+      { clause: 'of-late-payment', text: lib('of-late-payment').replace('4% per annum', '2% per annum') },
+      { clause: 'of-publicity', text: "Neither party shall use the other party's name or logo in any publicity without the other party's prior written consent, except that PortSwigger may name the Customer in its list of customers.", comment: 'Happy to be listed as a customer.' },
+      { clause: 'of-warranty', comment: 'Is the warranty period the whole Subscription Term?', anchor: 'perform materially in accordance with its documentation' }
+    ]
+  })
+]
