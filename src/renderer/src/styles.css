@@ -1001,6 +1001,8 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 /* Where one page ends and the next begins: a thin line, so the page margins don't read as a gap in the text. */
 .wv-wrap .superdoc-page + .superdoc-page { border-top: 1px solid var(--border) !important; }
 .wv-stage { position: relative; }
+/* The pages centred in the main area, however wide it is (SuperDoc lines them up on the left). */
+.wv-host .superdoc { justify-content: center; }
 .wv-host.loading { position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none; }
 .wv-loading { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 12.5px; color: var(--text-3); }
 .wv-gutter { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
