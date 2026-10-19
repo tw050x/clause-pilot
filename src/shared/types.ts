@@ -427,7 +427,15 @@ export type AiAnswerPart =
 
 export type AiAction =
   /** Make this our wording for the paragraph (a tracked edit, like typing it). */
-  | { type: 'apply-wording'; blockId: string; where: string; text: string; label?: string }
+  | {
+      type: 'apply-wording'
+      blockId: string
+      where: string
+      text: string
+      label?: string
+      /** The paragraph's wording when the question was asked: what this was written against. */
+      base?: string
+    }
   /** Add this comment to them on the paragraph. */
   | { type: 'comment'; blockId: string; where: string; text: string }
 

@@ -1,5 +1,5 @@
 import type { DocBlock, LibraryClause, PlaybookPosition, Precedent, QuestionData, ReviewSession } from '@shared/types'
-import { beforeTheirs, changeSets, hasOpenChanges, marksFor, shownText } from '@shared/changes'
+import { beforeTheirs, changeSets, hasOpenChanges, marksFor, ourText, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import { whereOf } from '@shared/numbering'
 import { paragraphsBlock } from './ai/prompts'
 import { applicable, changeInput, intentInput } from './docreview'
@@ -95,4 +95,53 @@ export function contextFor(s: ReviewSession, blocks: DocBlock[], data: QuestionD
     out.push(f.length ? `What other questions found in this review:\n${f.join('\n')}` : 'What other questions found in this review: nothing yet.')
   }
   return out.join('\n\n')
+}
+
+/**
+ * Where the highlighted paragraphs stand in the review, sent with every question so answers build
+ * on each other instead of repeating or contradicting: each paragraph as it now reads (our edits
+ * and decisions in), as they sent it, and before their changes; and what earlier questions on the
+ * same text answered (their findings, and wording they suggested, applied or not). Any wording
+ * suggested is to be the whole paragraph as it should read, starting from how it now reads.
+ */
+export function standingOf(s: ReviewSession, blocks: DocBlock[], exceptRun?: string): string {
+  const d = s.doc!
+  const ids = new Set(blocks.map((b) => b.id))
+  const paras = blocks
+    .filter((b) => b.kind !== 'heading')
+    .map((b) => {
+      const now = b.kind === 'deleted' && d.edits[b.id] === undefined ? '(deleted by them)' : shownText(marksFor(d, b))
+      const sent = b.kind === 'deleted' ? '(deleted by them)' : segmentsOf(b).filter((x) => x.op !== 'del').map((x) => x.text).join('')
+      return `<paragraph id="${b.id}" number="${esc(whereOf(d, b))}">\n<now>${now}</now>${theyChanged(b) ? `\n<as_they_sent_it>${sent}</as_they_sent_it>\n<before_their_changes>${beforeTheirs(b) || '(not there: they added it)'}</before_their_changes>` : ''}${d.edits[b.id] !== undefined ? '\n<note>We have edited it: <now> includes our wording.</note>' : ''}\n</paragraph>`
+    })
+  const earlier = (d.aiRuns ?? [])
+    .filter((r) => r.id !== exceptRun && r.status === 'done' && r.blockIds.some((x) => ids.has(x)))
+    .slice(-6)
+    .map((r) => {
+      const findings = (r.parts ?? []).flatMap((p) =>
+        p.type === 'finding'
+          ? [
+              `- ${p.title}${p.verdict ? ` (${p.verdict})` : ''}${p.actions
+                .map((a) => {
+                  if (a.type !== 'apply-wording') return `; suggested comment: "${clip(a.text, 300)}"`
+                  const b = d.blocks.find((x) => x.id === a.blockId)
+                  const applied = !!b && ourText(d, b) === a.text.replace(/\s+/g, ' ').trim()
+                  return `; suggested wording for ${a.where} (${applied ? 'APPLIED: it is the paragraph now' : 'not applied'}): "${clip(a.text, 600)}"`
+                })
+                .join('')}`
+            ]
+          : []
+      )
+      const text = findings.length ? findings.join('\n') : clip((r.answer ?? '').replace(/\s+/g, ' '), 600)
+      return `<earlier_answer question="${esc(r.title ?? r.question.split('\n')[0])}" asked="${r.at.slice(0, 16)}">\n${text}\n</earlier_answer>`
+    })
+  return [
+    `Where the highlighted paragraphs stand in this review now (our edits and decisions are in <now>; work from <now>, not from the text as they sent it):\n${paras.join('\n')}`,
+    earlier.length
+      ? `Earlier questions asked of this text, and what they answered:\n${earlier.join('\n')}\nBuild on these: don't repeat a finding or suggestion already made, and if you disagree with one, say so and why. Wording already applied is part of <now>.`
+      : '',
+    'If you suggest wording for a paragraph, give the whole paragraph as it should read, starting from <now> and keeping the changes already made there unless you say why not.'
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }

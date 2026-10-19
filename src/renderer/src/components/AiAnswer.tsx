@@ -60,6 +60,9 @@ function Action({ action: a, session, onChange }: { action: AiAction; session: R
   if (!b) return null
   const now = ourText(d, b)
   const done = a.type === 'apply-wording' ? now === tidy(a.text) : d.comments.some((c) => c.blockId === a.blockId && tidy(c.text) === tidy(a.text))
+  // Written against wording the paragraph no longer has (another suggestion applied, or an edit):
+  // applying it replaces the paragraph as it now reads, so say so first.
+  const stale = a.type === 'apply-wording' && !done && a.base !== undefined && tidy(a.base) !== now
   const run = async () => {
     setBusy(true)
     setError(null)
@@ -74,6 +77,11 @@ function Action({ action: a, session, onChange }: { action: AiAction; session: R
   return (
     <div className="ai-action">
       <div className="ai-action-label">{a.type === 'apply-wording' ? `${a.label ?? 'Suggested wording'} for ${a.where}` : `Suggested comment to them on ${a.where}`}</div>
+      {stale && (
+        <div className="ai-action-stale">
+          <Icon name="alert" size={13} /> Written for {a.where} as it read when asked. It has changed since (another suggestion or an edit), so applying this replaces its current wording, including those changes. Ask again for a suggestion that builds on them.
+        </div>
+      )}
       <div className="ai-action-text rl-ours">{a.type === 'apply-wording' && !done ? <Proposed now={now} next={a.text} /> : a.text}</div>
       <div className="ai-action-foot">
         {done ? (
@@ -81,8 +89,8 @@ function Action({ action: a, session, onChange }: { action: AiAction; session: R
             <Icon name="check" size={13} stroke={2.4} /> {a.type === 'apply-wording' ? `Applied to ${a.where}` : 'Comment added'}
           </span>
         ) : (
-          <button className="btn sm primary" disabled={busy} onClick={run}>
-            {a.type === 'apply-wording' ? `Apply to ${a.where}` : 'Add comment'}
+          <button className={`btn sm ${stale ? '' : 'primary'}`} disabled={busy} onClick={run}>
+            {a.type === 'apply-wording' ? (stale ? 'Apply anyway' : `Apply to ${a.where}`) : 'Add comment'}
           </button>
         )}
         {error && <span className="dr-small dr-err">{error}</span>}

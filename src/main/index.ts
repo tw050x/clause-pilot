@@ -12,14 +12,14 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, ourText, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
 import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
 import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
 import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnswer } from './ai/answers'
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
-import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf } from './questions'
+import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1018,7 +1018,10 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { question: q.id, paragraphs: places, error: patch.error })
     persist(s)
   }
-  const done = (parts: AiAnswerPart[], raw: unknown) => finish({ status: 'done', parts, answer: answerMarkdown(parts), raw })
+  const done = (parts: AiAnswerPart[], raw: unknown) => {
+    for (const p of parts) if (p.type === 'finding') for (const a of p.actions) if (a.type === 'apply-wording') a.base ??= base.get(a.blockId) ?? ourText(d, d.blocks.find((b) => b.id === a.blockId)!)
+    finish({ status: 'done', parts, answer: answerMarkdown(parts), raw })
+  }
   const limit = setTimeout(
     () => finish({ status: 'error', error: `No answer after ${AI_TASK_LIMIT_MS / 60_000} minutes. The AI server may be busy; ask again.` }),
     AI_TASK_LIMIT_MS
@@ -1028,7 +1031,12 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
   // What the method sends itself is left out of the extra context.
   const skip: QuestionData[] = q.method === 'once' ? [] : q.method === 'positions' ? ['paragraphs', 'playbook', 'contract'] : q.method === 'changes' ? ['contract', 'changes', 'playbook', 'precedents'] : method.fixed
   const data = [...new Set([...method.fixed, ...q.data])]
-  const asked: Asked = { prompt: q.prompt, data, extra: [contextFor(s, blocks, data, knowledge, skip), q.method === 'once' ? '' : highlightBlock(s, blocks, task.quote)].filter(Boolean).join('\n\n') }
+  // Where the text stands (now, as sent, before their changes) and what was answered before:
+  // sent with every question, so answers build on each other.
+  const standing = standingOf(s, blocks, run.id)
+  const asked: Asked = { prompt: q.prompt, data, extra: [contextFor(s, blocks, data, knowledge, skip), standing, q.method === 'once' ? '' : highlightBlock(s, blocks, task.quote)].filter(Boolean).join('\n\n') }
+  // Suggested wording remembers the paragraph's wording it was written against (see Apply).
+  const base = new Map(blocks.map((b) => [b.id, ourText(d, b)]))
   // The clauses it names, in the highlight, as a link to them.
   const placeIn = (allowed: Set<string>) => (xs: string[]) => {
     const blockIds = [...new Set(xs.filter((x) => allowed.has(x)))]
@@ -1084,7 +1092,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
       const contract = whole ? contractOf(s) : paragraphsOf(s, blocks)
       const extra = contextFor(s, blocks, data, knowledge, whole ? ['contract'] : ['contract', 'paragraphs'])
       const schema = q.schema ?? DEFAULT_SCHEMA
-      const out = await provider().schemaAnswer({ contract, question: [extra, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n'), schema: schemaToSend(schema) })
+      const out = await provider().schemaAnswer({ contract, question: [extra, standing, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n'), schema: schemaToSend(schema) })
       const flags = out as { injection_suspected?: boolean; injection_notes?: string }
       injection(q.title, { injection_suspected: !!flags.injection_suspected, injection_notes: String(flags.injection_notes ?? '') })
       const allowed = new Set((whole ? d.blocks : blocks).map((b) => b.id))
@@ -1095,7 +1103,7 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
       if (!model) throw new Error(NO_MODEL())
       const whole = data.includes('contract')
       const system = whole ? `${TEXT_SYSTEM}\n\n${contractOf(s)}` : TEXT_SYSTEM
-      const user = [contextFor(s, blocks, data, knowledge, ['contract']), highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n')
+      const user = [contextFor(s, blocks, data, knowledge, ['contract']), standing, highlightBlock(s, blocks, task.quote), `QUESTION: ${q.prompt}`].filter(Boolean).join('\n\n')
       const text = await model.chat(system, [{ role: 'user', content: user }], (t) => send('chat:delta', { requestId: run.id, text: t }), (u) => w.audit.append('system', 'ai.usage', s.id, { question: q.id, ...u }), () => send('chat:thinking', { requestId: run.id }))
       finish({ status: 'done', answer: prose(d)(text), raw: text })
     }
