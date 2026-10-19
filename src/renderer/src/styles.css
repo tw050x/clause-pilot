@@ -96,7 +96,9 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .has-tip:hover .tip, .has-tip:focus-visible .tip { opacity: 1; visibility: visible; transform: none; }
 .mode-pill.live { border-color: var(--exact); color: var(--exact); background: var(--exact-tint); }
 
-.body { display: flex; min-height: 0; min-width: 0; position: relative; overflow: hidden; }
+.body { --rightbar-w: 420px; display: flex; min-height: 0; min-width: 0; position: relative; overflow: hidden; }
+/* With the menu closed, the review column takes half the room it frees (the document the rest). */
+.body.nav-closed { --rightbar-w: 540px; }
 /* The sidebar floats off the window edges as a card. */
 .nav { width: 232px; flex-shrink: 0; margin: 10px 0 12px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; transition: margin 0.25s ease; }
 .nav.closed { margin-left: -232px; } /* its width (border included): fully out, and what's beside it starts at the window's edge */
@@ -112,15 +114,16 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .work { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .work-row { flex: 1; min-height: 0; display: flex; }
 /* A card like the menu, from the menu's edge (or the window's, with it closed) to the window's. */
-.bottombar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 12px 12px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.bottombar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin: 8px 12px 12px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .bottombar[hidden] { display: none; }
 .bottombar-group { display: flex; align-items: center; gap: 8px; }
+.bottombar-group:first-child { flex: 1; min-width: 0; }
+/* Under the review column: from its left edge (the bar's own margin, border and padding taken off). */
+.bottombar-decide { box-sizing: border-box; width: calc(var(--rightbar-w) - 23px); align-self: stretch; margin-block: -8px; padding-left: 16px; border-left: 1px solid var(--border); transition: width 0.25s ease; }
 
 /* ---- right sidebar: review controls + chat ---- */
 /* Floats off the window edges as a card, like the left sidebar. */
-.rightbar { width: 420px; flex-shrink: 0; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
-/* With the menu closed, the review column takes half the room it frees (the document the rest). */
-.body.nav-closed .rightbar { width: 540px; }
+.rightbar { width: var(--rightbar-w); flex-shrink: 0; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
 .rightbar[hidden] { display: none; }
 .rightbar-switch { padding: 12px 16px 4px; }
 .rightbar-body { flex: 1; min-height: 0; overflow-y: auto; }

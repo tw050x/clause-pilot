@@ -60,7 +60,7 @@ The app starts with an empty workspace, as a real team would. [`demo/`](demo/REA
 
 ## How a review works
 
-The contract is shown **as written**, paragraph by paragraph, the way their Word file or PDF shows it. It is never split into clauses. What needs reading is highlighted; everything else is greyed (or folded away with **Show only what changed**). A bar along the bottom, under the document and the review column, has **History**, **Marked-up copy** and **Draft response** on the left, and **Accept** / **Reject** for the changes of theirs in the selection on the right.
+The contract is shown **as written**, paragraph by paragraph, the way their Word file or PDF shows it. It is never split into clauses. What needs reading is highlighted; everything else is greyed (or folded away with **Show only what changed**). A bar along the bottom, under the document and the review column, has **History**, **Marked-up copy** and **Draft response** on the left, and, past a divider, under the review column, **Accept** / **Reject** for the changes of theirs in the selection (only while it has some to decide).
 
 ```
 file ─▶ paragraphs (Word XML: numbering, key-terms rows, tracked changes, comments; PDF / text: lines)

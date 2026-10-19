@@ -347,9 +347,7 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
           <Icon name="mail" size={14} /> Draft response
         </button>
             </div>
-            <div className="bottombar-group" ref={setDecideSlot}>
-              {!(picked && picked.length > 0 && !showHistory) && <DecideButtons open={0} />}
-            </div>
+            <div className="bottombar-group bottombar-decide" ref={setDecideSlot} />
           </>,
           bar
         )}
@@ -358,17 +356,16 @@ export function DocReview({ session, panel, bar, onChange, alert, onOpenSecurity
 }
 
 /**
- * Accept and Reject in the bottom bar: for the changes of theirs in the selection that are still
- * open, all at once. Shown, disabled, when there's nothing selected to decide.
+ * Accept and Reject in the bottom bar, under the review column: for the changes of theirs in the
+ * selection that are still open, all at once. Only there while the selection has some.
  */
-function DecideButtons({ open, busy, onDecide }: { open: number; busy?: boolean; onDecide?: (outcome: 'accepted' | 'rejected') => void }) {
-  const why = open ? undefined : 'Select their changes in the document to accept or reject them'
+function DecideButtons({ open, busy, onDecide }: { open: number; busy?: boolean; onDecide: (outcome: 'accepted' | 'rejected') => void }) {
   return (
     <>
-      <button className="btn sm accept" disabled={!open || busy} title={why} onClick={() => onDecide?.('accepted')}>
+      <button className="btn sm accept" disabled={busy} onClick={() => onDecide('accepted')}>
         <Icon name="check" size={13} /> Accept{open > 1 ? ` all ${open}` : ''}
       </button>
-      <button className="btn sm reject" disabled={!open || busy} title={why} onClick={() => onDecide?.('rejected')}>
+      <button className="btn sm reject" disabled={busy} onClick={() => onDecide('rejected')}>
         <Icon name="x" size={13} /> Reject{open > 1 ? ` all ${open}` : ''}
       </button>
     </>
@@ -467,11 +464,11 @@ function SelectionPanel({
         )}
       </h4>
       {items.length > 1 && <p className="faint dr-small">{counts.join(', ')}</p>}
-      {slot && createPortal(<DecideButtons open={open.length} busy={busy} onDecide={decide} />, slot)}
+      {slot && open.length > 0 && createPortal(<DecideButtons open={open.length} busy={busy} onDecide={decide} />, slot)}
       {theirs.length > 0 &&
         (open.length ? (
           <p className="faint dr-small">
-            {open.length === 1 ? 'Accept or reject it' : `Accept or reject all ${open.length}`} with the buttons at the bottom right.
+            {open.length === 1 ? 'Accept or reject it' : `Accept or reject all ${open.length}`} with the buttons below.
           </p>
         ) : (
           <p className={`dr-small sel-done ${rejected && !accepted ? 'rejected' : accepted && !rejected ? 'accepted' : ''}`}>
