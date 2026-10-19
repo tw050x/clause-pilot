@@ -125,7 +125,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[] })[]; cards: Card[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[] }>({
     bars: [],
     runs: [],
     ai: [],
@@ -310,7 +310,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const ours = d.comments.filter((c) => c.blockId === b.id && !commentResolved(d, c))
       const quotes = [...theirs.map((c) => c.quote), ...ours.map((c) => c.quote ?? b.comments?.find((x) => x.id === c.replyTo)?.quote)]
       const tops = quotes.map((q) => lineOf([b.id], q)).filter((t): t is number => t !== null)
-      return [{ ...p, top: tops.length ? Math.min(...tops) : p.top, blockId: b.id, count, quotes }]
+      return [{ ...p, top: tops.length ? Math.min(...tops) : p.top, blockId: b.id, count, quotes, theirs: theirs.length, theirQuotes: theirs.map((c) => c.quote) }]
     })
     // Markers in the right margin one under the other, not on top of each other (two highlights
     // in one paragraph; a comment marker under the AI markers beside it).
@@ -488,11 +488,16 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    */
   /**
    * The layered paragraph the pointer is over (its stages card shows), and the stage each shows
-   * (0, or none: all changes), kept when the pointer moves away.
+   * (an index into its stages; none: all changes), kept when the pointer moves away.
    */
   const [hovered, setHovered] = useState<string | null>(null)
   const [stageOf, setStageOf] = useState<Record<string, number>>({})
   useEffect(() => setStageOf({}), [session.id])
+  /** The stage a paragraph is shown at, if not all changes. */
+  const stageShown = (blockId: string) => {
+    const k = stageOf[blockId]
+    return k === undefined ? null : (gutter.cards.find((c) => c.blockId === blockId)?.stages[k]?.key ?? null)
+  }
   const hoverAt = (e: React.MouseEvent) => {
     const w = wrap.current
     if (!w) return
@@ -777,20 +782,28 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {gutter.cards
-          .filter((c) => c.blockId === hovered || stageOf[c.blockId])
+          .filter((c) => c.blockId === hovered || stageShown(c.blockId))
           .map((c) => {
-            const shown = stageOf[c.blockId] ?? 0
-            const st = shown ? c.stages[shown - 1] : null
+            // In time order, all changes (the page as it is) last.
+            const shown = stageOf[c.blockId] ?? c.stages.length
+            const st = c.stages[shown] ?? null
             return (
               <div key={`c${c.blockId}`} data-block={c.blockId} className={`wv-stages ${c.blockId === hovered ? '' : 'idle'}`} style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
                 <div className="wv-stages-bar" style={{ bottom: CARD_PAD, height: CARD_BUTTONS }}>
-                  {['All changes', ...c.stages.map((x) => x.name)].map((name, k) => (
+                  {[...c.stages.map((x) => x.name), 'All changes'].map((name, k) => (
                     <button
                       key={name}
                       className={k === shown ? 'on' : ''}
-                      title={k ? c.stages[k - 1].detail : 'Everything at once, as in Word'}
+                      title={c.stages[k]?.detail ?? 'Everything at once, as in Word'}
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setStageOf((m) => ({ ...m, [c.blockId]: k }))}
+                      onClick={() =>
+                        setStageOf((m) => {
+                          const next = { ...m }
+                          if (k === c.stages.length) delete next[c.blockId]
+                          else next[c.blockId] = k
+                          return next
+                        })
+                      }
                     >
                       {name}
                     </button>
@@ -839,7 +852,13 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             </span>
           </div>
         ))}
-        {gutter.notes.map((n) => (
+        {/* A paragraph shown at an earlier stage shows what it had then: no comments before their
+            changes, theirs only with their changes (the questions asked of the AI are all ours). */}
+        {gutter.notes.flatMap((n) => {
+          const stage = stageShown(n.blockId)
+          if (stage === 'original' || (stage === 'theirs' && !n.theirs)) return []
+          return [stage === 'theirs' ? { ...n, count: n.theirs, quotes: n.theirQuotes } : n]
+        }).map((n) => (
           <button
             key={`n${n.blockId}`}
             className="wv-ai wv-note"
@@ -859,7 +878,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             <span>{n.count}</span>
           </button>
         ))}
-        {gutter.ai.map((a, i) => (
+        {gutter.ai.filter((a) => !['original', 'theirs'].includes(stageShown(a.blockIds[0]) ?? '')).map((a, i) => (
           <button
             key={`a${i}`}
             className={`wv-ai ${a.stale ? 'stale' : ''}`}
