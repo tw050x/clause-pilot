@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
-import type { PipelineRun, PipelineStep, ReviewSession } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { PipelineRun, PipelineStep, ReviewPart, ReviewSession } from '@shared/types'
+import { groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { diffSegments } from '@shared/diff'
 import { Icon } from '../lib/icons'
+import { Redline } from './Redline'
 
 /**
  * The automated review, as a timeline in the review column: Start review (with its budget), then
@@ -8,8 +11,17 @@ import { Icon } from '../lib/icons'
  * indented under it, in their own order. What each step used is shown beside it, and the run's
  * total against its budget at the top.
  */
-export function Timeline({ session, onChange, onJump }: { session: ReviewSession; onChange: (s: ReviewSession) => void; onJump: (blockId: string) => void }) {
+export function Timeline({ session, onChange, onJump, focusBlock }: { session: ReviewSession; onChange: (s: ReviewSession) => void; onJump: (blockId: string) => void; focusBlock?: string | null }) {
   const run = session.doc?.pipeline
+  // A paragraph clicked in the document: its part, brought into view in the timeline.
+  const box = useRef<HTMLElement>(null)
+  const focusPart = focusBlock ? run?.parts?.find((p) => p.blockIds.includes(focusBlock))?.id : undefined
+  useEffect(() => {
+    if (!focusPart) return
+    const els = [...(box.current?.querySelectorAll<HTMLElement>(`[data-part="${focusPart}"]`) ?? [])]
+    // The latest mention of it (its proposal, if it has one).
+    els[els.length - 1]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [focusPart])
   const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
   const [budget, setBudget] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +68,7 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
   const claude = defaults?.provider === 'anthropic'
 
   return (
-    <section className="rc-section tl">
+    <section className="rc-section tl" ref={box}>
       <div className="tl-head">
         <div className="dr-mini-h">AI review</div>
         {run && <RunStatus run={run} />}
@@ -72,7 +84,7 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
       {run && (
         <ol className="tl-steps">
           {run.steps.map((st) => (
-            <Step key={st.id} step={st} run={run} session={session} onJump={onJump} />
+            <Step key={st.id} step={st} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
           ))}
         </ol>
       )}
@@ -173,12 +185,20 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
   return <span className={`tl-icon ${status}`}>{icon ? <Icon name={icon} size={11} stroke={2.6} /> : status === 'skipped' ? '–' : null}</span>
 }
 
-function Step({ step, run, session, onJump }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void }) {
-  const [open, setOpen] = useState(true)
+function Step({ step, run, session, onJump, onChange, focusPart }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string }) {
+  // A finished step shows only its items still needing something (for you, failed, running); the
+  // rest on request, so what's waiting for the reviewer isn't buried under what's done.
+  const done = step.status === 'done' || step.status === 'skipped'
+  const [chosen, setChosen] = useState<boolean | null>(null)
+  const all = chosen ?? !done
+  const kids = step.children ?? []
+  const shown = all ? kids : kids.filter((c) => c.status === 'needs-you' || c.status === 'error' || c.status === 'running')
   const part = step.partId ? run.parts?.find((p) => p.id === step.partId) : undefined
   const usage = step.usage && step.usage.input + step.usage.cached + step.usage.output
+  // Under "Your approval": the part's proposal, to decide.
+  const proposal = part?.proposal && /^approve(-\d+)?:/.test(step.id) && part.proposal.status === 'pending' ? part : undefined
   return (
-    <li className={`tl-step ${step.status}`}>
+    <li className={`tl-step ${step.status} ${part && part.id === focusPart ? 'focus' : ''}`} data-part={part?.id}>
       <div className="tl-row">
         <StatusIcon status={step.status} />
         <div className="tl-body">
@@ -190,9 +210,9 @@ function Step({ step, run, session, onJump }: { step: PipelineStep; run: Pipelin
             ) : (
               step.title
             )}
-            {step.children && step.children.length > 0 && (
-              <button className="link-btn tl-count" onClick={() => setOpen((v) => !v)}>
-                {step.children.length} {open ? '▾' : '▸'}
+            {kids.length > 0 && (
+              <button className="link-btn tl-count" onClick={() => setChosen(!all)} title={all ? 'Show only what needs something' : 'Show all of them'}>
+                {all ? `${kids.length} ▾` : shown.length ? `${shown.length} of ${kids.length} ▸` : `${kids.length} ▸`}
               </button>
             )}
             {usage ? (
@@ -201,17 +221,126 @@ function Step({ step, run, session, onJump }: { step: PipelineStep; run: Pipelin
               </span>
             ) : null}
           </div>
-          {step.detail && <div className="tl-detail faint">{step.detail}</div>}
+          {step.detail && !proposal && <div className="tl-detail faint">{step.detail}</div>}
           {step.error && <div className="tl-detail dr-err">{step.error}</div>}
+          {proposal && <ProposalCard part={proposal} session={session} onChange={onChange} onJump={onJump} />}
         </div>
       </div>
-      {open && step.children && step.children.length > 0 && (
+      {shown.length > 0 && (
         <ol className="tl-steps tl-sub">
-          {step.children.map((c) => (
-            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} />
+          {shown.map((c) => (
+            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
           ))}
         </ol>
       )}
     </li>
+  )
+}
+
+/**
+ * A part's proposal, to decide: what it does and why, the new wording as a redline against how the
+ * paragraph now reads, their changes to accept or reject, and a comment to them. Approve applies
+ * it all as the reviewer's tracked edits and decisions, as one action (undone together); Reject
+ * drops it; Ask for changes sends it back with what they want.
+ */
+function ProposalCard({ part, session, onChange, onJump }: { part: ReviewPart; session: ReviewSession; onChange: (s: ReviewSession) => void; onJump: (blockId: string) => void }) {
+  const p = part.proposal!
+  const d = session.doc!
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [note, setNote] = useState('')
+  const block = (id: string) => d.blocks.find((b) => b.id === id)
+  const label = (id: string) => block(id)?.label ?? ''
+  const run = async (fn: () => Promise<ReviewSession>) => {
+    setBusy(true)
+    setError(null)
+    try {
+      onChange(await fn())
+    } catch (e) {
+      setError(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const approve = () =>
+    run(async () => {
+      const group = `ai:${p.id}`
+      let s = session
+      // Their changes first, then the new wording over them, then the comment: one action.
+      for (const x of p.decisions) {
+        const b = block(x.blockId)
+        if (!b) continue
+        for (const seg of groupOf(b, x.seg).length ? groupOf(b, x.seg) : [x.seg]) s = await window.api.doc.resolve(session.id, x.blockId, seg, x.outcome, group)
+      }
+      for (const w of p.wording) s = await window.api.doc.edit(session.id, w.blockId, w.text, group)
+      if (p.comment) s = await window.api.doc.comment(session.id, { blockId: p.comment.blockId, quote: '', text: p.comment.text }, group)
+      void s
+      return window.api.pipeline.decide(session.id, part.id, 'approved')
+    })
+  return (
+    <div className="tl-proposal">
+      <p className="tl-prop-summary">{p.summary}</p>
+      {p.wording.map((w, i) => {
+        const b = block(w.blockId)
+        const now = b ? shownText(marksFor(d, b)) : ''
+        return (
+          <div key={i} className="tl-prop-item rl-ours">
+            <button className="link-btn tl-prop-where" onClick={() => onJump(w.blockId)}>
+              {label(w.blockId) ? `§${label(w.blockId).replace(/\.$/, '')}` : 'Paragraph'}
+            </button>{' '}
+            <Redline segments={diffSegments(now, w.text)} />
+            {w.why && <div className="faint tl-prop-why">{w.why}</div>}
+          </div>
+        )
+      })}
+      {p.decisions.map((x, i) => {
+        const b = block(x.blockId)
+        const seg = b ? segmentsOf(b)[x.seg] : undefined
+        return (
+          <div key={`d${i}`} className="tl-prop-item">
+            <span className={`sel-st ${x.outcome}`}>{x.outcome === 'accepted' ? 'Accept' : 'Reject'}</span> their {seg?.op === 'ins' ? 'insertion' : 'deletion'}
+            {seg && (
+              <>
+                {': '}
+                {seg.op === 'ins' ? <ins className="th-ins">{seg.text.slice(0, 160)}</ins> : <del className="th-del">{seg.text.slice(0, 160)}</del>}
+              </>
+            )}
+            {x.why && <div className="faint tl-prop-why">{x.why}</div>}
+          </div>
+        )
+      })}
+      {p.comment && (
+        <div className="tl-prop-item">
+          <span className="faint">Comment to them:</span> <span className="hist-comment">“{p.comment.text}”</span>
+        </div>
+      )}
+      {asking ? (
+        <div className="tl-prop-ask">
+          <textarea rows={3} value={note} placeholder="What should change?" onChange={(e) => setNote(e.target.value)} autoFocus />
+          <div className="row-gap">
+            <button className="btn sm ghost" onClick={() => setAsking(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button className="btn sm primary" disabled={busy || !note.trim()} onClick={() => run(() => window.api.pipeline.decide(session.id, part.id, 'changes', note))}>
+              Send back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="tl-prop-btns">
+          <button className="btn sm ghost" disabled={busy} onClick={() => run(() => window.api.pipeline.decide(session.id, part.id, 'rejected'))}>
+            Reject
+          </button>
+          <button className="btn sm" disabled={busy} onClick={() => setAsking(true)}>
+            Ask for changes
+          </button>
+          <button className="btn sm primary" disabled={busy} onClick={approve}>
+            {busy ? <span className="spinner sm" /> : <Icon name="check" size={13} />} Approve
+          </button>
+        </div>
+      )}
+      {error && <p className="dr-small dr-err">{error}</p>}
+    </div>
   )
 }

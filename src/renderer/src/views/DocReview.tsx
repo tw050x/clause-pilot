@@ -172,8 +172,9 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   // Paragraphs the AI could check for meaning that it hasn't checked as they now read.
   const aiOk = d.blocks.filter((b) => intentCandidate(d, b) && aiSame(d, b)).length
   const block = focus ? (d.blocks.find((b) => b.id === focus) ?? null) : null
+  // To a paragraph: the page (Word layout or text) scrolls to it.
   const jumpTo = (blockId: string) => {
-    document.querySelector(`p[data-block="${blockId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    flashParagraphs([blockId])
     setFocus(blockId)
   }
   const hlBlock = highlight ? (d.blocks.find((b) => b.id === highlight.blockId) ?? null) : null
@@ -288,87 +289,11 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const column = (
     <div className="rc">
       {!head && header}
-      {!showHistory && only ? (
-        <>
-          <section className="rc-section rc-only-head">
-            <h4 className="rp-h">{(only === 'ai' ? hlBlock : block) ? whereOf(d, (only === 'ai' ? hlBlock : block)!) : ''}</h4>
-            <button className="btn sm" onClick={() => setOnly(null)} title="Its changes, history, comments and AI questions">
-              Show everything
-            </button>
-          </section>
-          {only === 'comments' && block ? (
-            <section className="rc-section">
-              <CommentsBlock session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
-            </section>
-          ) : (
-            only === 'ai' && (
-              <AiSection
-                session={session}
-                highlight={highlight}
-                onHold={onHold}
-                onChange={onChange}
-                debug={debug}
-                asked
-                run={async (questionId) => {
-                  if (!highlight) return
-                  await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
-                }}
-              />
-            )
-          )}
-        </>
-      ) : showHistory ? (
+      {/* The review: the automated review's timeline (the History panel instead while it's open). */}
+      {showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
-      ) : picked && picked.length > 0 ? (
-        <>
-          <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} slot={decideSlot} />
-          {highlight && hlBlock ? (
-            <section className="rc-section">
-              <CommentsBlock session={session} b={hlBlock} quote={highlight.quote} draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
-            </section>
-          ) : (
-            pickedBlock && (
-              // Their reasons: the comments on the paragraph the selected changes are in.
-              <section className="rc-section">
-                <CommentsBlock session={session} b={pickedBlock} draft={draft?.blockId === pickedBlock.id ? draft : null} setDraft={setDraft} act={act} />
-              </section>
-            )
-          )}
-        </>
-      ) : highlight && hlBlock ? (
-        <ParagraphPanel key={hlBlock.id} session={session} b={hlBlock} quote={highlight.quote} showComments draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} onPick={(x) => onSelectChanges(x)} />
-      ) : block ? (
-        <ParagraphPanel
-          key={block.id}
-          session={session}
-          b={block}
-          showComments={commentsFor === block.id || draft?.blockId === block.id}
-          draft={draft?.blockId === block.id ? draft : null}
-          setDraft={setDraft}
-          act={act}
-          onPick={(x) => onSelectChanges(x)}
-        />
       ) : (
-        // Nothing selected: the automated review, as a timeline.
-        <Timeline session={session} onChange={onChange} onJump={jumpTo} />
-      )}
-
-      {/* What's happened to the selected text (or the paragraph the caret is in), newest first. */}
-      {!showHistory && !only && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />}
-
-      {!showHistory && !only && highlight && (
-        <AiSection
-          session={session}
-          highlight={highlight}
-          onHold={onHold}
-          onChange={onChange}
-          debug={debug}
-          run={async (questionId) => {
-            if (!highlight) return
-            // The question is asked; its answer arrives on the card as session updates. Several can run at once.
-            await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
-          }}
-        />
+        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} />
       )}
     </div>
   )

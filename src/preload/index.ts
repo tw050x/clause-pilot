@@ -54,7 +54,7 @@ const api: Api = {
     edit: (id, blockId, text, group) => invoke('doc:edit', id, blockId, text, group),
     revert: (id, setId) => invoke('doc:revert', id, setId),
     decide: (id, setId, status, note) => invoke('doc:decide', id, setId, status, note),
-    comment: (id, c) => invoke('doc:comment', id, c),
+    comment: (id, c, group) => invoke('doc:comment', id, c, group),
     uncomment: (id, commentId) => invoke('doc:uncomment', id, commentId),
     editComment: (id, commentId, text) => invoke('doc:editComment', id, commentId, text),
     view: (id) => invoke('doc:view', id),
@@ -71,7 +71,7 @@ const api: Api = {
     ask: (id, setIds) => invoke('doc:ask', id, setIds),
     nominate: (id, setId, note) => invoke('doc:nominate', id, setId, note)
   },
-  pipeline: { defaults: () => invoke('pipeline:defaults'), start: (id, budget) => invoke('pipeline:start', id, budget), continue: (id, budget) => invoke('pipeline:continue', id, budget), stop: (id) => invoke('pipeline:stop', id) },
+  pipeline: { defaults: () => invoke('pipeline:defaults'), start: (id, budget) => invoke('pipeline:start', id, budget), continue: (id, budget) => invoke('pipeline:continue', id, budget), decide: (id, partId, outcome, feedback) => invoke('pipeline:decide', id, partId, outcome, feedback), stop: (id) => invoke('pipeline:stop', id) },
   redline: { preview: (id) => invoke('redline:preview', id), save: (id) => invoke('redline:save', id), open: (path) => invoke('redline:open', path) },
   chat: {
     get: (id) => invoke('chat:get', id),

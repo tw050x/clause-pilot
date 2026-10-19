@@ -20,7 +20,7 @@ import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnsw
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
-import { DEFAULT_BUDGET, continueReview as continuePipeline, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -760,8 +760,8 @@ ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: Chan
   return s
 })
 
-ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>) => {
-  const out = tracked(session(sessionId), undefined, () => {
+ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>, group?: string) => {
+  const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
     if (!c.text.trim()) throw new Error('Write a comment first.')
     const comment: OurComment = { id: uid('oc'), blockId: c.blockId, quote: c.quote?.trim() || undefined, text: c.text.trim(), replyTo: c.replyTo, by: actor(), at: new Date().toISOString() }
@@ -1154,6 +1154,14 @@ ipcMain.handle('pipeline:continue', (_e, sessionId: string, budget?: { tokens: n
   if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
   continuePipeline(s, pipelineDeps(), budget)
   ws.audit.append(actor(), 'review.pipeline-continued', s.id, { budget })
+  return s
+})
+
+ipcMain.handle('pipeline:decide', (_e, sessionId: string, partId: string, outcome: 'approved' | 'rejected' | 'changes', feedback?: string) => {
+  const s = session(sessionId)
+  const part = s.doc?.pipeline?.parts?.find((p) => p.id === partId)
+  decidePipeline(s, pipelineDeps(), partId, outcome, feedback)
+  ws.audit.append(actor(), `review.proposal-${outcome}`, s.id, { part: part?.title, summary: part?.proposal?.summary, feedback })
   return s
 })
 

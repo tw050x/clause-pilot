@@ -788,6 +788,29 @@ export interface ReviewPart {
   blockIds: string[]
   /** What reviewing it found (to bring together and put to the reviewer). */
   findings?: PartFinding[]
+  /** What's proposed for it, brought together from the findings, for the reviewer to decide. */
+  proposal?: Proposal
+  /** Rounds it has been reviewed in. */
+  rounds?: number
+  /** What the reviewer asked for, when they asked for changes (sent with its next review). */
+  feedback?: string
+}
+
+/** One proposal for a part: what to change, and why, decided by the reviewer as a whole. */
+export interface Proposal {
+  id: string
+  round: number
+  /** What it does and why, in a sentence or two. */
+  summary: string
+  /** New wording, each the whole paragraph as it should read. */
+  wording: { blockId: string; text: string; why: string }[]
+  /** Their tracked changes to accept or reject (index in the paragraph's redline). */
+  decisions: { blockId: string; seg: number; outcome: 'accepted' | 'rejected'; why: string }[]
+  /** A comment to them with it. */
+  comment?: { blockId: string; text: string }
+  status: 'pending' | 'approved' | 'rejected' | 'changes'
+  decidedBy?: string
+  decidedAt?: string
 }
 
 /** Something a part's review found: an issue, and what it suggests doing about it. */
@@ -861,4 +884,6 @@ export interface PipelineRun {
   parts?: ReviewPart[]
   /** Other questions (of the reviewer's) the AI suggests asking, and why. */
   questions?: { questionId: string; partId: string; why: string }[]
+  /** The round it's on: 1, then one more each time the reviewer's decisions send parts back. */
+  round?: number
 }

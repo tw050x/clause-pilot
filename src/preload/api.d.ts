@@ -58,7 +58,7 @@ export interface Api {
     /** Undo their changes in a change set, as our redline. */
     revert(id: string, setId: string): Promise<ReviewSession>
     decide(id: string, setId: string, status: ChangeStatus | null, note?: string): Promise<ReviewSession>
-    comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>): Promise<ReviewSession>
+    comment(id: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>, group?: string): Promise<ReviewSession>
     uncomment(id: string, commentId: string): Promise<ReviewSession>
     /** Our comments and replies in this review only. */
     editComment(id: string, commentId: string, text: string): Promise<ReviewSession>
@@ -95,6 +95,8 @@ export interface Api {
     start(id: string, budget: { tokens: number; usd?: number }): Promise<ReviewSession>
     /** Go on with a paused run (after the estimate, the budget reached, or a failure), with a new budget if given. */
     continue(id: string, budget?: { tokens: number; usd?: number }): Promise<ReviewSession>
+    /** Decide a part's proposal (an approved one is applied by the window first, as one action). */
+    decide(id: string, partId: string, outcome: 'approved' | 'rejected' | 'changes', feedback?: string): Promise<ReviewSession>
     stop(id: string): Promise<ReviewSession>
   }
   redline: {
