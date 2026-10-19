@@ -11,9 +11,11 @@ import { setFlashFallback, type Highlight, type SelectedChange } from './DocEdit
 /**
  * The document as it looks in Word: the review as it stands (their file with our decisions,
  * edits and comments in it, as the marked-up copy has them), laid out in pages by SuperDoc.
- * Read-only for now: clicking and selecting drive the review column as in the text view, and
- * after each change the page is laid out again. Each Word paragraph carries an id naming the
- * review paragraph it is, so the bars, labels and markers beside it are ours.
+ * Clicking and selecting drive the review column as in the text view. Typing into the page is
+ * suggesting: what you type is your tracked change, and after a pause the paragraph's new wording
+ * is saved to the review as your edit (as typing in the text view is). Anything else that changes
+ * the review lays the page out again. Each Word paragraph carries an id naming the review
+ * paragraph it is, so the bars, labels and markers beside it are ours.
  */
 
 interface Props {
@@ -22,23 +24,34 @@ interface Props {
   reviewer: string
   onFocusBlock: (id: string | null) => void
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
+  /** Apply a change to the review (the session it returns becomes the review). */
+  act: (p: Promise<ReviewSession>) => Promise<boolean>
   /** Show the contract as text instead (when it can't be laid out). */
   onShowText: () => void
 }
 
-type Loaded = { sd: SuperDoc; ids: Record<string, string>; host: HTMLDivElement }
+type Loaded = {
+  sd: SuperDoc
+  ids: Record<string, string>
+  host: HTMLDivElement
+  /** Each paragraph's text in the page (all changes applied), as last saved to the review. */
+  texts: Map<string, string>
+}
 type Placed = { top: number; height: number; left: number }
 
 /** Paragraph ids in a page fragment's element. */
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onShowText }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges })
-  cb.current = { onFocusBlock, onSelectChanges }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act })
+  cb.current = { onFocusBlock, onSelectChanges, act }
+  /** Reviews that come back from saving our own typing: the page already shows them. */
+  const typed = useRef(new Set<ReviewSession>())
+  const syncing = useRef(0)
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +63,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
   })
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
+  const measuring = useRef(0)
+  /** Measure on the next frame (many changes to the page come at once). */
+  const remeasure = () => {
+    cancelAnimationFrame(measuring.current)
+    measuring.current = requestAnimationFrame(measure)
+  }
   const measure = () => {
     const w = wrap.current
     const loaded = current.current
@@ -101,6 +120,41 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
     setGutter({ bars, runs, ai })
   }
 
+  /** The page's paragraphs as text, all changes applied (Word's own numbers aren't part of it). */
+  const pageTexts = async (loaded: Loaded) => {
+    const out = new Map<string, string>()
+    const x = await Promise.resolve(loaded.sd.activeEditor?.doc?.extract({})).catch(() => null)
+    for (const b of (x?.blocks ?? []) as { nodeId: string; text?: string }[]) if (loaded.ids[b.nodeId]) out.set(b.nodeId, b.text ?? '')
+    return out
+  }
+
+  /**
+   * Save what was typed into the page: each paragraph whose text changed gets the same change in
+   * the review's wording for it. The change is placed from the end of the paragraph, so a number
+   * that reads differently at the start (Word's own, or one we renumbered) can't become an edit.
+   */
+  const sync = async (loaded: Loaded) => {
+    const now = await pageTexts(loaded)
+    for (const [id, text] of now) {
+      const was = loaded.texts.get(id)
+      if (was === undefined || was === text) continue
+      loaded.texts.set(id, text)
+      const b = model.current.blocks.find((x) => x.id === loaded.ids[id])
+      if (!b) continue
+      let p = 0
+      while (p < was.length && p < text.length && was[p] === text[p]) p++
+      let q = 0
+      while (q < was.length - p && q < text.length - p && was[was.length - 1 - q] === text[text.length - 1 - q]) q++
+      const ours = shownText(marksFor(model.current, b))
+      const end = ours.length - q
+      const start = end - (was.length - q - p)
+      const wording = start >= 0 && ours.slice(start, end) === was.slice(p, was.length - q) ? ours.slice(0, start) + text.slice(p, text.length - q) + ours.slice(end) : text
+      const s = window.api.doc.edit(session.id, b.id, wording, `word:${b.id}`)
+      void s.then((x) => typed.current.add(x)).catch(() => undefined)
+      await cb.current.act(s)
+    }
+  }
+
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
   const theirChange = async (loaded: Loaded, id: string, blockId: string | undefined, picked: SelectedChange[]) => {
     const c = await Promise.resolve(loaded.sd.activeEditor?.doc?.trackChanges.get({ id })).catch(() => null)
@@ -140,6 +194,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
   // Lay the review out again when it changes: the new page is built out of sight and swapped in
   // when it's ready, so nothing flickers and the scroll position stays.
   useEffect(() => {
+    if (typed.current.has(session) && current.current) {
+      typed.current.delete(session)
+      remeasure()
+      return
+    }
     let cancelled = false
     const timer = window.setTimeout(async () => {
       try {
@@ -153,14 +212,20 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
           const made = new SuperDoc({
             selector: host,
             document: file,
-            documentMode: 'viewing',
-            viewing: { trackedChanges: 'markup', comments: false },
-            allowSelectionInViewMode: true,
+            // Typing is suggesting: what you type is your tracked change, in your name.
+            documentMode: 'suggesting',
             user: { name: reviewer, email: '' },
             modules: { comments: false },
             // Nothing about the document leaves this computer.
             telemetry: { enabled: false },
             onReady: () => resolve(made),
+            // Typing: saved to the review after a pause.
+            onEditorUpdate: () => {
+              const loaded = current.current
+              if (!loaded || loaded.sd !== made) return
+              window.clearTimeout(syncing.current)
+              syncing.current = window.setTimeout(() => void sync(loaded), 600)
+            },
             onException: (e: unknown) => reject(e instanceof Error ? e : new Error(String((e as { error?: unknown })?.error ?? e)))
           } as ConstructorParameters<typeof SuperDoc>[0])
         })
@@ -170,13 +235,16 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
           return
         }
         const old = current.current
-        const loaded = { sd, ids, host }
+        const loaded: Loaded = { sd, ids, host, texts: new Map() }
+        loaded.texts = await pageTexts(loaded)
         current.current = loaded
         host.classList.remove('loading')
         if (old) {
           old.sd.destroy()
           old.host.remove()
         }
+        // SuperDoc paints pages as it lays them out, after it's ready: measure as they change.
+        new MutationObserver(remeasure).observe(host, { childList: true, subtree: true })
         // After SuperDoc has settled the selection the click or drag made.
         host.addEventListener('pointerup', (e) => {
           const target = e.target as Element
@@ -184,7 +252,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
         })
         setLoading(false)
         setError(null)
-        requestAnimationFrame(measure)
+        remeasure()
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
         setLoading(false)
@@ -210,7 +278,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onS
   useEffect(() => {
     const w = wrap.current
     if (!w) return
-    const ro = new ResizeObserver(() => measure())
+    const ro = new ResizeObserver(remeasure)
     ro.observe(w)
     if (stage.current) ro.observe(stage.current)
     return () => ro.disconnect()
