@@ -49,10 +49,11 @@ Builds are not code-signed yet. On macOS, right-click the app and choose Open th
 
 ## Demos
 
-The app starts with an empty workspace, as a real team would. [`demo/`](demo/README.md) has two demos to follow step by step, with real AI. Each folder has the library and playbook to import, the contract files to open from the filesystem, and a guide:
+The app starts with an empty workspace, as a real team would. [`demo/`](demo/README.md) has three demos to follow step by step, with real AI. Each folder has the library and playbook to import, the contract files to open from the filesystem, and a guide:
 
 - **[1. Our NDA, redlined by the client](demo/1-our-nda-two-rounds/README.md) (two rounds):** our mutual NDA as a client redlined it (tracked changes, comments, and changes made without Track Changes), then the client's next draft, which is compared with what you actually sent back.
 - **[2. A contract on the client's own paper](demo/2-client-paper/README.md) (one round):** a confidentiality agreement with a different structure. Nothing matches our wording, so the intent check compares each paragraph with the closest of our clauses, and the playbook check reviews the whole contract against our positions.
+- **[3. A supplier's agreement, as it looks in Word](demo/3-supplier-msa/README.md) (one round):** a Master Services Agreement with a logo, address blocks, Word numbering, a table with merged cells, header and footer, reviewed in the Word layout.
 
 ## Library and playbook: import and export
 

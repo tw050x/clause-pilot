@@ -4,6 +4,8 @@
  *   demo/1-our-nda-two-rounds/   library.json, playbook.json, the NDA as we sent it, the client's redline,
  *                                their next draft
  *   demo/2-client-paper/         library.json, playbook.json, the client's own agreement
+ *   demo/3-supplier-msa/         library.json, playbook.json, a supplier's agreement formatted as
+ *                                a real one is (logo, tables, numbering, header and footer)
  * library.json and playbook.json are in the app's export format: import them on the Library and
  * Playbook pages.
  *
@@ -16,11 +18,13 @@ import { diffSegments } from '../../src/shared/diff'
 import { libraryFile, playbookFile } from '../../src/main/transfer'
 import { LIBRARY } from './library'
 import { PLAYBOOK } from './playbook'
+import { MSA_FILE, msaDocx } from './msa'
 import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
 
 const DEMOS = [
   { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2] },
-  { dir: 'demo/2-client-paper', contracts: [KESTREL] }
+  { dir: 'demo/2-client-paper', contracts: [KESTREL] },
+  { dir: 'demo/3-supplier-msa', contracts: [] }
 ]
 
 const by = 'PortSwigger Legal'
@@ -148,7 +152,12 @@ async function main() {
     writeFileSync(join(dir, 'library.json'), library)
     writeFileSync(join(dir, 'playbook.json'), playbook)
     for (const c of demo.contracts) await writeDocx(c, join(dir, c.file))
-    console.log(`${demo.dir}: library.json (${LIBRARY.length} clauses), playbook.json (${PLAYBOOK.length} positions), ${demo.contracts.map((c) => c.file).join(', ')}`)
+    const files = demo.contracts.map((c) => c.file)
+    if (demo.dir.endsWith('3-supplier-msa')) {
+      writeFileSync(join(dir, MSA_FILE), await msaDocx())
+      files.push(MSA_FILE)
+    }
+    console.log(`${demo.dir}: library.json (${LIBRARY.length} clauses), playbook.json (${PLAYBOOK.length} positions), ${files.join(', ')}`)
   }
 }
 

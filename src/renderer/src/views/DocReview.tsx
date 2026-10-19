@@ -143,6 +143,10 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
     setFocus(blockId)
   }
   const hlBlock = highlight ? (d.blocks.find((b) => b.id === highlight.blockId) ?? null) : null
+  // Changes selected in one paragraph that has comments: its comments show with them (often their reasons).
+  const pickedIds = [...new Set((picked ?? []).map((x) => x.blockId))]
+  const pickedBlock =
+    pickedIds.length === 1 ? (d.blocks.find((b) => b.id === pickedIds[0] && (b.comments?.length || d.comments.some((c) => c.blockId === b.id))) ?? null) : null
 
   const column = (
     <div className="rc">
@@ -215,10 +219,17 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
       ) : picked && picked.length > 0 ? (
         <>
           <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} slot={decideSlot} />
-          {highlight && hlBlock && (
+          {highlight && hlBlock ? (
             <section className="rc-section">
               <CommentsBlock session={session} b={hlBlock} quote={highlight.quote} draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
             </section>
+          ) : (
+            pickedBlock && (
+              // Their reasons: the comments on the paragraph the selected changes are in.
+              <section className="rc-section">
+                <CommentsBlock session={session} b={pickedBlock} draft={draft?.blockId === pickedBlock.id ? draft : null} setDraft={setDraft} act={act} />
+              </section>
+            )
           )}
         </>
       ) : highlight && hlBlock ? (

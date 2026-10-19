@@ -166,7 +166,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     if (!b) return
     const seg = segmentsOf(b).findIndex((x) => x.op !== 'same' && [c.insertedText, c.deletedText].some((t) => t && tidy(t) === tidy(x.text)))
     if (seg < 0) return
-    for (const k of groupOf(b, seg)) if (!picked.some((p) => p.kind === 'theirs' && p.blockId === b.id && p.seg === k)) picked.push({ blockId: b.id, kind: 'theirs', seg: k })
+    // A replacement is one change (its deletion and insertion are decided together), as in the text view.
+    const first = groupOf(b, seg)[0] ?? seg
+    if (!picked.some((p) => p.kind === 'theirs' && p.blockId === b.id && groupOf(b, p.seg).includes(first))) picked.push({ blockId: b.id, kind: 'theirs', seg: first })
   }
 
   /**
