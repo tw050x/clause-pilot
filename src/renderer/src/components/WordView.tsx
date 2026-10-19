@@ -192,7 +192,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     })
     // Two highlights in one paragraph: their markers one under the other, not on top of each other.
     ai.sort((x, y) => x.top - y.top)
-    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 28) ai[i] = { ...ai[i], top: ai[i - 1].top + 28 }
+    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 24) ai[i] = { ...ai[i], top: ai[i - 1].top + 24 }
     setGutter({ bars, runs, ai })
   }
 
@@ -518,10 +518,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             onMouseEnter={() => preview(a)}
             onMouseLeave={() => preview(null)}
           >
-            <Icon name="sparkle" size={13} stroke={2.2} />
+            <Icon name="sparkle" size={11} stroke={2.2} />
             <span>
               {a.titles.length === 1 ? '1 Ask' : `${a.titles.length} Asks`}
-              {a.stale && <span className="wv-ai-stale"> · earlier wording</span>}
+              {a.stale && <span className="wv-ai-stale"> · earlier</span>}
             </span>
           </button>
         ))}

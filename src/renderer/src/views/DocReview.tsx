@@ -334,7 +334,7 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
           </div>
           <div className="key-row">
             <span className="key-sample">
-              <span className="key-ask stale">1 Ask · earlier wording</span>
+              <span className="key-ask stale">1 Ask · earlier</span>
             </span>
             <span className="key-text">Asked of wording the paragraph no longer has.</span>
           </div>

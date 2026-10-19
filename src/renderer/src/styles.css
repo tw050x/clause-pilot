@@ -859,7 +859,7 @@ del.us-del ins.th-ins { color: inherit; }
 .key-ins { color: #1f6feb; text-decoration: underline dashed; text-underline-offset: 2px; }
 .key-del { color: var(--rejected); text-decoration: line-through; }
 .key-comment { background: color-mix(in srgb, #f5c542 28%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }
-.key-ask { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); color: var(--processing); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.key-ask { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); color: var(--processing); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .key-ask.stale { border-style: dashed; color: var(--text-3); font-weight: 400; }
 
 /* The AI section: a card per task on the highlighted text, with the answer on the card. */
@@ -981,7 +981,7 @@ del.us-del ins.th-ins { color: inherit; }
 /* The pages on white, with no edges or shadows, so the document reads as one continuous sheet (pages
    are white whatever the theme, so the pane behind them is too); our bars, labels and markers sit in
    the margin beside each paragraph. */
-.wv-wrap { position: relative; min-height: 100%; background: #fff; padding: 8px 0 24px; }
+.wv-wrap { position: relative; min-height: 100%; background: #fff; padding: 8px 0 24px; overflow-x: clip; } /* never scrolls sideways: a marker past the edge is cut off */
 .wv-wrap .superdoc-page { box-shadow: none !important; border: none !important; outline: none !important; }
 .wv-stage { position: relative; }
 .wv-host.loading { position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none; }
@@ -1008,7 +1008,7 @@ del.us-del ins.th-ins { color: inherit; }
 .wv-wrap .superdoc-text-run.wv-ai-preview[data-track-change-kind="delete"] { text-decoration: line-through !important; text-decoration-color: #1c2128 !important; }
 .wv-fallback { margin: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 /* The AI marker in the right margin: "2 Asks", like the comment button. */
-.wv-ai { position: absolute; height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px 0 7px; margin-top: -2px; font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; z-index: 3; }
+.wv-ai { position: absolute; height: 20px; display: inline-flex; align-items: center; gap: 4px; padding: 0 7px 0 5px; margin-top: 0; font: inherit; font-size: 11px; font-weight: 500; white-space: nowrap; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; z-index: 3; }
 .wv-ai:hover { background: var(--processing-tint); }
 .wv-ai.stale { border-style: dashed; }
 .wv-ai-stale { color: var(--text-3); font-weight: 400; }
