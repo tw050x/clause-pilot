@@ -52,9 +52,12 @@ type Placed = { top: number; height: number; left: number; right: number }
 /** Paragraph ids in a page fragment's element. */
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 
-/** Room made above a layered paragraph for its stages card's buttons, and the least below it. */
-const STAGES_TOP = 30
-const STAGES_BOTTOM = 10
+/** Room made around a layered paragraph for its stages card: a little above, its buttons below. */
+const STAGES_TOP = 10
+const STAGES_BOTTOM = 34
+/** How far the card reaches past the text, to take in the labels left of it and the markers right of it. */
+const CARD_LEFT = 100
+const CARD_RIGHT = 74
 
 /** A layered paragraph's stages card: where it is, and how its text is set (to show a stage in it). */
 type Card = Placed & { blockId: string; label: string; stages: Stage[]; textTop: number; textLeft: number; textWidth: number; font: { family: string; size: string; lineHeight: string; align: string } }
@@ -187,7 +190,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         el.textContent = (b.label ? `${b.label} ` : '') + st.segments.map((x) => x.text).join('')
         tallest = Math.max(tallest, el.offsetHeight)
       }
-      next.set(b.id, { top: STAGES_TOP, bottom: Math.max(STAGES_BOTTOM, tallest - height + STAGES_BOTTOM) })
+      next.set(b.id, { top: STAGES_TOP, bottom: Math.max(0, tallest - height) + STAGES_BOTTOM })
     }
     pads.current = next
     const firstOf = new Map<string, HTMLElement>()
@@ -331,10 +334,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           stages,
           top,
           height: bottom - top,
-          left: first.left - 10,
-          right: first.right + 10,
+          left: first.left - CARD_LEFT,
+          right: first.right + CARD_RIGHT,
           textTop: first.top - top,
-          textLeft: 10,
+          textLeft: CARD_LEFT,
           textWidth: first.right - first.left,
           font: { family: cs?.fontFamily ?? '', size: cs?.fontSize ?? '', lineHeight: el?.querySelector<HTMLElement>('.superdoc-line')?.style.lineHeight ?? '', align: el?.style.textAlign ?? '' }
         }
@@ -479,9 +482,13 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    * become the page's selection, so the review column, the AI questions and the comment button
    * follow it as they follow selected text.
    */
-  /** The layered paragraph the pointer is over (its stages card shows), and the stage shown in it (0: all changes). */
+  /**
+   * The layered paragraph the pointer is over (its stages card shows), and the stage each shows
+   * (0, or none: all changes), kept when the pointer moves away.
+   */
   const [hovered, setHovered] = useState<string | null>(null)
-  const [stageShown, setStageShown] = useState(0)
+  const [stageOf, setStageOf] = useState<Record<string, number>>({})
+  useEffect(() => setStageOf({}), [session.id])
   const hoverAt = (e: React.MouseEvent) => {
     const w = wrap.current
     if (!w) return
@@ -490,10 +497,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const y = e.clientY - r.top + w.scrollTop
     const c = gutter.cards.find((c) => y >= c.top && y <= c.top + c.height && x >= c.left && x <= c.right)
     const id = c?.blockId ?? null
-    if (id !== hovered) {
-      setHovered(id)
-      setStageShown(0)
-    }
+    if (id !== hovered) setHovered(id)
   }
 
   const dragging = useRef<{ from: string; to: string } | null>(null)
@@ -736,28 +740,26 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       className="wv-wrap"
       ref={wrap}
       onMouseMove={hoverAt}
-      onMouseLeave={() => {
-        setHovered(null)
-        setStageShown(0)
-      }}
+      onMouseLeave={() => setHovered(null)}
     >
       {loading && <div className="wv-loading">Laying out the document…</div>}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {gutter.cards
-          .filter((c) => c.blockId === hovered)
+          .filter((c) => c.blockId === hovered || stageOf[c.blockId])
           .map((c) => {
-            const st = stageShown ? c.stages[stageShown - 1] : null
+            const shown = stageOf[c.blockId] ?? 0
+            const st = shown ? c.stages[shown - 1] : null
             return (
-              <div key={`c${c.blockId}`} className="wv-stages" style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
-                <div className="wv-stages-bar">
+              <div key={`c${c.blockId}`} className={`wv-stages ${c.blockId === hovered ? '' : 'idle'}`} style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
+                <div className="wv-stages-bar" style={{ left: c.textLeft - 8 }}>
                   {['All changes', ...c.stages.map((x) => x.name)].map((name, k) => (
                     <button
                       key={name}
-                      className={k === stageShown ? 'on' : ''}
+                      className={k === shown ? 'on' : ''}
                       title={k ? c.stages[k - 1].detail : 'Everything at once, as in Word'}
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setStageShown(k)}
+                      onClick={() => setStageOf((m) => ({ ...m, [c.blockId]: k }))}
                     >
                       {name}
                     </button>
@@ -766,7 +768,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
                 {st && (
                   <div
                     className="wv-stage-text"
-                    style={{ top: c.textTop, left: c.textLeft, width: c.textWidth, fontFamily: c.font.family, fontSize: c.font.size, lineHeight: c.font.lineHeight, textAlign: (c.font.align || 'left') as 'left' }}
+                    style={{ top: c.textTop, height: c.height - c.textTop - STAGES_BOTTOM + 4, left: c.textLeft, width: c.textWidth, fontFamily: c.font.family, fontSize: c.font.size, lineHeight: c.font.lineHeight, textAlign: (c.font.align || 'left') as 'left' }}
                   >
                     {c.label && <strong>{c.label} </strong>}
                     {!st.segments.some((x) => x.text.trim()) && <em className="wv-st-none">Not in the draft: they added this paragraph.</em>}
