@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { AiQuestion, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged, commentResolved } from '@shared/changes'
+import { aiSame, authorsOf, changeKey, commentResolved, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, shownText, stillOpen, theyChanged } from '@shared/changes'
 import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
+import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
@@ -242,62 +243,103 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
   )
 
   // The key: how this draft stands, what each bar means, and what it was compared with.
+  // The key: how this draft stands, what it was compared with, and what each mark on the page means.
+  const states = new Map<GutterState, number>()
+  for (const b of d.blocks) {
+    if (b.kind === 'heading') continue
+    const marks = marksFor(d, b)
+    const { state } = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
+    if (state) states.set(state, (states.get(state) ?? 0) + 1)
+  }
   const KEY = (
     <>
-            <div className="rc-stats">
-              <span>
-                <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
-              </span>
-              {decided > 0 && (
-                <span>
-                  <i className="dot decided" /> {decided} of their changes accepted or rejected
-                </span>
-              )}
-              {untracked > 0 && (
-                <span>
-                  <i className="dot untracked" /> {untracked} of them without Track Changes
-                </span>
-              )}
-              {toRead > 0 && (
-                <span title="Paragraphs not in our approved wording and with nothing to accept or reject: read them, then mark them as checked">
-                  <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
-                </span>
-              )}
-              <span>
-                <i className="dot ours" /> {ourEdits} edited by you
+      <section className="key-section">
+        <h4>This draft</h4>
+        <div className="rc-stats">
+          <span>
+            <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
+          </span>
+          {untracked > 0 && (
+            <span>
+              <i className="dot untracked" /> {untracked} of them made without Track Changes
+            </span>
+          )}
+          {decided > 0 && (
+            <span>
+              <i className="dot decided" /> {decided} of their changes accepted or rejected
+            </span>
+          )}
+          {toRead > 0 && (
+            <span>
+              <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
+            </span>
+          )}
+          <span>
+            <i className="dot ours" /> {ourEdits} paragraph{ourEdits === 1 ? '' : 's'} edited by you
+          </span>
+        </div>
+        <p className="faint key-note">
+          {d.baseline
+            ? d.baseline.kind === 'sent'
+              ? d.baseline.version === 0
+                ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
+                : `Compared with what we sent for version ${d.baseline.version}: anything they changed shows, tracked or not.`
+              : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`
+            : 'Their paper: nothing is compared with ours, so a paragraph that isn’t word for word our approved wording is there to read. The intent check compares it with the closest of our clauses.'}
+        </p>
+      </section>
+      <section className="key-section">
+        <h4>Beside each paragraph</h4>
+        <p className="faint key-note">The bar says where it stands; the label names a run of paragraphs in the same state.</p>
+        <div className="key-rows">
+          {(Object.keys(GUTTER) as GutterState[]).map((k) => (
+            <div key={k} className="key-row">
+              <i className={`key-bar ${{ unchanged: 'chg-checked', checked: 'chg-checked', same: 'chg-ai', decide: 'chg-theirs', edited: 'chg-ours', read: 'chg-read' }[k]}`} />
+              <span className={`ed-unchanged ${k} key-label`}>{GUTTER[k].label}</span>
+              <span className="key-text">
+                {GUTTER[k].tip}
+                {states.get(k) ? <span className="faint"> ({states.get(k)})</span> : null}
               </span>
             </div>
-            <div className="rc-key" title="The bar beside each paragraph">
-              <span>
-                <i className="bar checked" /> Unchanged or checked: nothing to check ({cleared})
+          ))}
+          <div className="key-row">
+            <i className="key-bar chg-theirs chg-untracked" />
+            <span className="key-label" />
+            <span className="key-text">A dashed bar: a change of theirs they didn’t track (found by comparison).</span>
+          </div>
+        </div>
+      </section>
+      <section className="key-section">
+        <h4>In the page</h4>
+        <div className="key-rows">
+          <div className="key-row">
+            <span className="key-sample">
+              <span className="key-ins">added</span> <span className="key-del">removed</span>
+            </span>
+            <span className="key-text">Tracked changes, theirs and yours. Click one to see whose, and to accept or reject theirs.</span>
+          </div>
+          <div className="key-row">
+            <span className="key-sample">
+              <span className="key-comment">commented</span>
+            </span>
+            <span className="key-text">Text a comment is on. Click it to see the comments; select text to add one.</span>
+          </div>
+          <div className="key-row">
+            <span className="key-sample">
+              <span className="key-ask">
+                <Icon name="sparkle" size={12} stroke={2.2} /> 2 Asks
               </span>
-              <span>
-                <i className="bar ai" /> Same intent, by AI ({aiOk})
-              </span>
-              <span>
-                <i className="bar theirs" /> To decide
-              </span>
-              <span>
-                <i className="bar ours" /> Edited by you
-              </span>
-              <span>
-                <i className="bar none" /> To read (not our wording)
-              </span>
-            </div>
-            {d.baseline && (
-              <p className="faint rc-note">
-                {d.baseline.kind === 'sent'
-                  ? d.baseline.version === 0
-                    ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
-                    : `Compared with what we sent for version ${d.baseline.version}.`
-                  : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`}
-              </p>
-            )}
-            {!d.baseline && toRead > 0 && (
-              <p className="faint rc-note">
-                Their paper: paragraphs that aren’t word for word our approved wording need reading. The intent check compares each with the closest of our clauses; mark each one checked once you’ve read it.
-              </p>
-            )}
+            </span>
+            <span className="key-text">Text the AI has answered questions about. Hover to see the text; click for the answers.</span>
+          </div>
+          <div className="key-row">
+            <span className="key-sample">
+              <span className="key-ask stale">1 Ask · earlier wording</span>
+            </span>
+            <span className="key-text">Asked of wording the paragraph no longer has.</span>
+          </div>
+        </div>
+      </section>
     </>
   )
 
@@ -403,7 +445,7 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
   )
 }
 
-/** The key, as a dialog over the review column. Escape, the close button or a click outside closes it. */
+/** The key, filling the review column above its foot. Escape, the close button or Hide key closes it. */
 function KeyDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -411,16 +453,14 @@ function KeyDialog({ onClose, children }: { onClose: () => void; children: React
     return () => document.removeEventListener('keydown', esc)
   }, [onClose])
   return (
-    <div className="key-back" onClick={onClose}>
-      <div className="key-dialog" role="dialog" aria-modal="true" aria-labelledby="key-title" onClick={(e) => e.stopPropagation()}>
-        <div className="key-head">
-          <h3 id="key-title">Key</h3>
-          <button className="icon-btn" title="Close" aria-label="Close" onClick={onClose}>
-            <Icon name="x" size={14} />
-          </button>
-        </div>
-        {children}
+    <div className="key-panel" role="dialog" aria-labelledby="key-title">
+      <div className="key-head">
+        <h3 id="key-title">Key</h3>
+        <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={onClose}>
+          <Icon name="x" size={14} />
+        </button>
       </div>
+      <div className="key-body">{children}</div>
     </div>
   )
 }

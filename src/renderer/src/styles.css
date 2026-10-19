@@ -838,10 +838,29 @@ del.us-del ins.th-ins { color: inherit; }
 .rc-key-short { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-2); }
 /* The key: a dialog over the review column, from the bottom bar. */
 .bottombar-key { margin-left: auto; }
-.key-back { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; padding: 12px 12px 4px; background: color-mix(in srgb, var(--text) 14%, transparent); }
-.key-dialog { width: 100%; max-height: 100%; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16); }
-.key-head { display: flex; align-items: center; justify-content: space-between; }
-.key-head h3 { margin: 0; font-size: 14px; }
+.key-panel { position: absolute; inset: 0 0 44px 0; z-index: 20; display: flex; flex-direction: column; background: var(--surface); }
+.key-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
+.key-head h3 { margin: 0; font-size: 15px; }
+.key-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 18px; }
+.key-section h4 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.key-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; }
+.key-section > .key-note:first-of-type { margin-top: 0; margin-bottom: 8px; }
+.key-rows { display: flex; flex-direction: column; gap: 9px; }
+.key-row { display: grid; grid-template-columns: 4px 84px 1fr; align-items: start; gap: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.key-row:has(.key-sample) { grid-template-columns: 130px 1fr; }
+.key-bar { display: block; width: 4px; height: 18px; border-radius: 1px; background: var(--border-strong); }
+.key-bar.chg-checked { background: var(--exact); }
+.key-bar.chg-theirs { background: color-mix(in srgb, #1d4ed8 45%, transparent); }
+.key-bar.chg-ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }
+.key-bar.chg-ai { background: repeating-linear-gradient(to bottom, var(--exact) 0 4px, transparent 4px 7px); }
+.key-bar.chg-theirs.chg-untracked { background: repeating-linear-gradient(to bottom, color-mix(in srgb, #1d4ed8 45%, transparent) 0 4px, transparent 4px 7px); }
+.key-label.ed-unchanged { position: static; justify-self: start; font-size: 10px; margin: 2px 0 0; }
+.key-sample { font-size: 12.5px; }
+.key-ins { color: #1f6feb; text-decoration: underline dashed; text-underline-offset: 2px; }
+.key-del { color: var(--rejected); text-decoration: line-through; }
+.key-comment { background: color-mix(in srgb, #f5c542 28%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, #e0a800 70%, transparent); }
+.key-ask { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); color: var(--processing); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.key-ask.stale { border-style: dashed; color: var(--text-3); font-weight: 400; }
 
 /* The AI section: a card per task on the highlighted text, with the answer on the card. */
 .ai-section { gap: 8px; }
