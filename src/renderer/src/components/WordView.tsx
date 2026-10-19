@@ -513,16 +513,27 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const inStage = target.closest<HTMLElement>('[data-stage-seg]')
     const key = onPage ? `p:${onPage.dataset.trackChangeId}` : inStage ? `s:${inStage.dataset.stageSeg}` : null
     if (key === tip?.key) return
-    setTip(key ? ((onPage ? explainPage(onPage) : explainStage(inStage!)) ?? null) : null)
+    const next = key ? ((onPage ? explainPage(onPage) : explainStage(inStage!)) ?? null) : null
+    // The change it's about, tinted while it shows.
+    for (const el of tinted.current) el.classList.remove('wv-tip-hl')
+    tinted.current = next?.els ?? []
+    for (const el of tinted.current) el.classList.add('wv-tip-hl')
+    setTip(next)
+  }
+  const tinted = useRef<Element[]>([])
+  const clearTip = () => {
+    for (const el of tinted.current) el.classList.remove('wv-tip-hl')
+    tinted.current = []
+    setTip(null)
   }
 
   /**
    * The tooltip for a change: who made it and what it does, when and where it stands (to decide,
    * your edit, or removed by your decision), and the comment on it, if any.
    */
-  type Tip = { key: string; x: number; y: number; title: string; quote: string; meta: string; note?: string }
+  type Tip = { key: string; x: number; y: number; title: string; quote: string; meta: string; note?: string; els: Element[] }
   const [tip, setTip] = useState<Tip | null>(null)
-  useEffect(() => setTip(null), [session])
+  useEffect(() => clearTip(), [session])
   const short = (t: string) => {
     const x = tidy(t)
     return x.length > 110 ? `${x.slice(0, 107)}…` : x
@@ -581,7 +592,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         title: how === 'rejected' ? `You rejected ${who || 'their'}${who ? '’s' : ''} insertion` : `You accepted ${who || 'their'}${who ? '’s' : ''} deletion`,
         quote: `“${short(text)}”`,
         meta: 'Faded here, so its comments and AI answers keep their text. The copy you send leaves it out.',
-        note
+        note,
+        els: mine
       }
     }
     const who = author === reviewer ? 'You' : author || 'They'
@@ -591,7 +603,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const i1 = runs.indexOf(mine[mine.length - 1])
     const side = like(runs[i1 + 1], other) ? i1 + 1 : like(runs[i0 - 1], other) ? i0 - 1 : -1
     const pair = side >= 0
-    const pairText = pair ? join(span(side, other)) : ''
+    const pairEls = pair ? span(side, other) : []
+    const pairText = join(pairEls)
+    const els = [...mine, ...pairEls]
     const [was, now] = kind === 'delete' ? [text, pairText] : [pairText, text]
     const when = ch.dataset.trackChangeDate ? day(ch.dataset.trackChangeDate) : author === reviewer ? '' : 'Made without Track Changes (found by comparison)'
     // Found by comparing with our approved wording: a difference from it, not a change they tracked.
@@ -602,7 +616,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         title: pair ? 'Differs from our approved wording' : kind === 'delete' ? 'In our approved wording, not in theirs' : 'In theirs, not in our approved wording',
         quote: pair ? `Ours: “${short(was)}” · Theirs: “${short(now)}”` : `“${short(text)}”`,
         meta: [b.standard ? `Compared with our approved “${b.standard}”` : 'Compared with our standard wording', 'To decide: click it to accept or reject'].join(' · '),
-        note
+        note,
+        els
       }
     return {
       key: `p:${id}`,
@@ -610,7 +625,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       title: pair ? `${who} replaced` : kind === 'delete' ? `${who} deleted` : `${who} added`,
       quote: pair ? `“${short(was)}” → “${short(now)}”` : `“${short(text)}”`,
       meta: [when, author === reviewer ? 'Your edit: it goes to them as your tracked change' : 'To decide: click it to accept or reject'].filter(Boolean).join(' · '),
-      note
+      note,
+      els
     }
   }
   const explainStage = (el: HTMLElement): Tip | null => {
@@ -624,6 +640,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const next = st.segments[Number(i) + 1]
     const pair = seg.op === 'del' && next?.op === 'ins' ? next : seg.op === 'ins' && prev?.op === 'del' ? prev : null
     const [was, now] = seg.op === 'del' ? [seg.text, pair?.text ?? ''] : [pair?.text ?? '', seg.text]
+    const sibling = pair ? el.parentElement?.querySelector(`[data-stage-seg="${blockId}|${k}|${Number(i) + (pair === next ? 1 : -1)}"]`) : null
     const who = st.key === 'yours' ? 'You' : seg.author || 'They'
     const decided = st.key === 'theirs' ? model.current.resolved?.[changeKey(blockId, Number(i))] : undefined
     return {
@@ -634,7 +651,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       meta:
         st.key === 'yours'
           ? 'Your change to their version'
-          : [day(seg.date), decided === 'accepted' ? 'You accepted it' : decided === 'rejected' ? 'You rejected it' : 'To decide'].filter(Boolean).join(' · ')
+          : [day(seg.date), decided === 'accepted' ? 'You accepted it' : decided === 'rejected' ? 'You rejected it' : 'To decide'].filter(Boolean).join(' · '),
+      els: sibling ? [el, sibling] : [el]
     }
   }
 
@@ -907,7 +925,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       onMouseMove={hoverAt}
       onMouseLeave={() => {
         setHovered(null)
-        setTip(null)
+        clearTip()
       }}
     >
       {loading && <div className="wv-loading">Laying out the document…</div>}
@@ -934,7 +952,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
                     <button
                       key={name}
                       className={k === shown ? 'on' : ''}
-                      title={c.stages[k]?.detail ?? 'Everything at once, as in Word'}
+                      aria-label={c.stages[k]?.detail ?? 'Everything at once, as in Word'}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() =>
                         setStageOf((m) => {
@@ -975,7 +993,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             key={`b${i}`}
             className={`wv-bar ${b.bar} ${lineSel.includes(b.blockId) ? 'picked' : ''}`}
             style={{ top: b.top, height: b.height, left: b.left - 14 }}
-            title="Click to select this paragraph; drag up or down to select several"
+            aria-label="Select this paragraph (drag up or down to select several)"
             onPointerDown={(e) => {
               e.preventDefault()
               dragging.current = { from: b.blockId, to: b.blockId }
@@ -1007,7 +1025,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             key={`n${n.blockId}`}
             className="wv-ai wv-note"
             style={{ top: n.top, left: n.right + 12 }}
-            title={`${commentLabel(n.count)} on this paragraph: show them in the right-hand column`}
             aria-label={`Show ${commentLabel(n.count)}`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -1027,7 +1044,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             key={`a${i}`}
             className={`wv-ai ${a.stale ? 'stale' : ''}`}
             style={{ top: a.top, left: a.right + 12 }}
-            title={`AI answers ${a.stale ? 'about this paragraph as it read before it changed' : 'for this text'} (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
             aria-label="Show the AI answers for this text"
             onClick={() => {
               preview(null)
