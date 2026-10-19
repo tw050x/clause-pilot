@@ -26,6 +26,8 @@ interface Props {
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
   /** Apply a change to the review (the session it returns becomes the review). */
   act: (p: Promise<ReviewSession>) => Promise<boolean>
+  /** Show a paragraph's comments (its highlighted text was clicked). */
+  onShowComments: (blockId: string) => void
   /** Show the contract as text instead (when it can't be laid out). */
   onShowText: () => void
 }
@@ -43,12 +45,12 @@ type Placed = { top: number; height: number; left: number }
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onShowText }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act })
-  cb.current = { onFocusBlock, onSelectChanges, act }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments }
   /** Reviews that come back from saving our own typing: the page already shows them. */
   const typed = useRef(new Set<ReviewSession>())
   const syncing = useRef(0)
@@ -187,6 +189,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const blockId = fragment ? loaded.ids[nodeId(fragment)] : undefined
     const change = (clicked?.closest('[data-track-change-id]') as HTMLElement | null)?.dataset.trackChangeId
     if (change) await theirChange(loaded, change, blockId, picked)
+    // Text a comment is on, not in a change: its comments, as clicking a highlight does in the text view.
+    if (!picked.length && blockId && clicked?.closest('[data-comment-ids]')) return cb.current.onShowComments(blockId)
     cb.current.onFocusBlock(blockId ?? null)
     cb.current.onSelectChanges(picked.length ? picked : null)
   }

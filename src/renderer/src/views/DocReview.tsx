@@ -311,7 +311,16 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges} act={act} onShowText={() => setLayout('text')} />
+        <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+          act={act}
+          onShowComments={(id) => {
+            setFocus(id)
+            setCommentsFor(id)
+            setPicked(null)
+            setHighlight(null)
+          }}
+          onShowText={() => setLayout('text')}
+        />
       ) : (
       <DocEditor
         key={session.id}
