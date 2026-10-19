@@ -32,12 +32,14 @@ export function AccountPicker({
   type Option = { kind: 'account'; account: Account } | { kind: 'create'; name: string }
   const options = useMemo<Option[]>(() => {
     const term = q.trim().toLowerCase()
-    const matches = accounts.filter((a) => !term || a.name.toLowerCase().includes(term)).sort((a, b) => a.name.localeCompare(b.name))
+    // Naming a new account (after "+ New account"): only that, so Enter creates it rather than
+    // picking an existing account whose name contains what was typed.
+    const matches = naming ? [] : accounts.filter((a) => !term || a.name.toLowerCase().includes(term)).sort((a, b) => a.name.localeCompare(b.name))
     const out: Option[] = []
     out.push(...matches.map((account) => ({ kind: 'account' as const, account })))
     if (canCreate && !accounts.some((a) => a.name.toLowerCase() === term)) out.push({ kind: 'create', name: q.trim() })
     return out
-  }, [q, accounts, canCreate])
+  }, [q, accounts, canCreate, naming])
 
   useEffect(() => setCursor(0), [q])
   useEffect(() => {
