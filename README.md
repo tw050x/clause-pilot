@@ -167,3 +167,7 @@ scripts/                 demo/ (generates the demo files), docs check; dev/ has 
 - Grouping uses numbering (typed, or Word's automatic numbering). Unnumbered continuation paragraphs join the change above them. Scanned PDFs would need OCR. Legacy `.doc` files are rejected with a "save as .docx" message.
 - Paragraph alignment between drafts uses a similarity threshold (0.45) tuned on the sample contracts only.
 - Single user, local data. A team deployment needs a shared store and identity for the audit log.
+
+## License
+
+Clause Pilot is free software under the [GNU Affero General Public License v3.0 or later](LICENSE). Its source is public on GitHub. The document view is built on [SuperDoc](https://www.superdoc.dev), which is also AGPL-3.0.

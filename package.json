@@ -1,6 +1,7 @@
 {
   "name": "clause-pilot",
   "version": "0.1.0",
+  "license": "AGPL-3.0-or-later",
   "description": "AI-assisted commercial contract review - desktop app",
   "main": "./out/main/index.js",
   "type": "module",
