@@ -1125,7 +1125,9 @@ const pipelineDeps = (): PipelineDeps => ({
     return st.aiProvider === 'vllm' ? { kind: 'vllm', model: st.vllmModel ?? '' } : { kind: 'anthropic', model: st.model }
   },
   uid: (p) => uid(p),
-  knowledge: () => ({ library: ws.store.library(), playbook: ws.store.playbook(), questions: ws.store.questions() })
+  knowledge: () => ({ library: ws.store.library(), playbook: ws.store.playbook(), questions: ws.store.questions() }),
+  redline: async (s) => (await redline(s.id)).stats,
+  email: (s) => docEmail(s, actor())
 })
 
 ipcMain.handle('pipeline:defaults', () => {

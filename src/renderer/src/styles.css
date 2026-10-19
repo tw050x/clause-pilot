@@ -1188,3 +1188,4 @@ body.past-open .rightbar { z-index: 45; }
 .tl-prop-btns { display: flex; justify-content: flex-end; gap: 6px; }
 .tl-prop-ask { display: flex; flex-direction: column; gap: 6px; }
 .tl-prop-ask .row-gap { justify-content: flex-end; }
+.tl-done { display: flex; gap: 8px; justify-content: flex-end; }

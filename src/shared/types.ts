@@ -886,4 +886,6 @@ export interface PipelineRun {
   questions?: { questionId: string; partId: string; why: string }[]
   /** The round it's on: 1, then one more each time the reviewer's decisions send parts back. */
   round?: number
+  /** Once everything is decided: the cover email to them (the marked-up copy is built from the review as it stands). */
+  email?: EmailDraft
 }

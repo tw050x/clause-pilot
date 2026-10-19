@@ -13,7 +13,9 @@ export function EmailModal({ session, onClose, onMarkup }: { session: ReviewSess
     setError(null)
     window.api.email.draft(session.id).then(setDraft, (e) => setError(String(e)))
   }
-  useEffect(generate, [session.id])
+  // The automated review's email, once it has written one; otherwise built from the decisions.
+  const fromReview = session.doc?.pipeline?.status === 'done' ? session.doc.pipeline.email : undefined
+  useEffect(() => (fromReview ? setDraft(fromReview) : generate()), [session.id])
 
   const doc = session.doc
   // Paragraphs where some of their changes are neither accepted nor rejected yet.

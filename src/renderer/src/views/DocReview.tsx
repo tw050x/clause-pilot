@@ -293,7 +293,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : (
-        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} />
+        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} onMarkup={() => setRedlineOpen(true)} onEmail={() => setEmailOpen(true)} />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import type { AiQuestion, DocBlock, LibraryClause, PartDepth, PartFinding, PartKind, PipelineRun, PipelineStep, PlaybookPosition, Proposal, ReviewPart, ReviewSession, StepUsage } from '@shared/types'
+import type { AiQuestion, DocBlock, EmailDraft, LibraryClause, RedlineStats, PartDepth, PartFinding, PartKind, PipelineRun, PipelineStep, PlaybookPosition, Proposal, ReviewPart, ReviewSession, StepUsage } from '@shared/types'
 import { marksFor, openChanges, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import { applicable, intentInput } from './docreview'
 import { whereOf } from '@shared/numbering'
@@ -50,6 +50,10 @@ export interface PipelineDeps {
   uid: (prefix: string) => string
   /** What the parts are checked against: our approved clauses, playbook, and the reviewer's questions. */
   knowledge: () => { library: LibraryClause[]; playbook: PlaybookPosition[]; questions: AiQuestion[] }
+  /** The marked-up copy as it now stands: what it holds. */
+  redline: (s: ReviewSession) => Promise<RedlineStats>
+  /** The email built from the reviewer's decisions (no AI): the facts the AI's email works from, and the fallback. */
+  email: (s: ReviewSession) => EmailDraft
 }
 
 /** Parts reviewed at once. */
@@ -331,8 +335,46 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     if (fresh(ids.approve)) end(appr, proposals.length ? 'done' : 'skipped', proposals.length ? 'All decided.' : 'Nothing to decide.')
     // Another round for what changed or was sent back, straight on; or everything's decided.
     if (nextRound(s, run, deps)) return go(s, run, deps, flag)
+    const leftOver = run.note?.startsWith('Rounds used up') ? run.note : undefined
+
+    // 7. The new draft (the marked-up copy, as the review now stands) and the email to them.
+    const draft = at('draft')
+    if (fresh('draft')) {
+      begin(draft)
+      draft.children = []
+      const copy: PipelineStep = { id: 'draft:copy', title: 'Marked-up copy', status: 'running', startedAt: now() }
+      draft.children.push(copy)
+      deps.persist(s)
+      const stats = await deps.redline(s)
+      copy.status = 'done'
+      copy.endedAt = now()
+      copy.detail = [
+        stats.replaced ? `${stats.replaced} paragraph${stats.replaced === 1 ? '' : 's'} reworded` : '',
+        stats.removed ? `${stats.removed} struck` : '',
+        stats.reinstated ? `${stats.reinstated} put back` : '',
+        stats.acceptedChanges ? `${stats.acceptedChanges} of their changes decided` : '',
+        stats.comments ? `${stats.comments} comment${stats.comments === 1 ? '' : 's'}` : ''
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'No changes from their draft.'
+      const mail: PipelineStep = { id: 'draft:email', title: 'Email to them', status: 'running', startedAt: now() }
+      draft.children.push(mail)
+      deps.persist(s)
+      run.email = await writeEmail(s, run, deps, (call) => ask(mail, call)).catch((e) => {
+        if (e instanceof Stopped || e instanceof BudgetReached) throw e
+        // The AI couldn't: the email built from the decisions.
+        mail.error = `The AI couldn’t write it (${e instanceof Error ? e.message : String(e)}), so it’s built from your decisions.`
+        return deps.email(s)
+      })
+      mail.status = 'done'
+      mail.endedAt = now()
+      mail.detail = run.email.subject
+      end(draft, 'done', 'Ready: open the marked-up copy and the email below.')
+    }
+    run.status = 'done'
     run.endedAt = now()
-    pause(run.note?.startsWith('Rounds used up') ? run.note : 'Everything is decided. Writing the new draft and email comes in the next phase of this feature.')
+    run.note = leftOver ?? 'Done. The new draft and the email are ready.'
+    deps.persist(s)
   } catch (e) {
     if (e instanceof Stopped) return
     const running = run.steps.find((x) => x.status === 'running')
@@ -485,6 +527,39 @@ const PROPOSAL_SCHEMA: JsonSchema = {
     ...INJECTION
   },
   required: ['summary', 'wording', 'their_changes', 'comment_to_them', 'injection_suspected', 'injection_notes']
+}
+
+/**
+ * The cover email, written by the AI from what the review decided: each approved proposal's
+ * summary and comment, their changes accepted and rejected, and the email built from the
+ * decisions (its facts are the ones to keep).
+ */
+async function writeEmail(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, ask: <T>(call: (onUsage: (u: ChatUsage) => void) => Promise<T>) => Promise<T>): Promise<EmailDraft> {
+  const base = deps.email(s)
+  const decided = (run.parts ?? []).filter((p) => p.proposal)
+  const question = [
+    `What the review decided, part by part:\n${decided
+      .map((p) => {
+        const x = p.proposal!
+        return `<part title="${p.title.replace(/"/g, "'")}" decision="${x.status}">${x.summary}${x.comment && x.status === 'approved' ? `\nComment to them: ${x.comment.text}` : ''}${x.decisions.length && x.status === 'approved' ? `\nTheir changes: ${x.decisions.map((c) => `${c.outcome} (${c.why})`).join('; ')}` : ''}</part>`
+      })
+      .join('\n') || '(nothing proposed: their draft was acceptable as it stands)'}`,
+    `An email built from the decisions (its facts are right; improve the writing, don't add to them):\n<subject>${base.subject}</subject>\n<body>\n${base.body}\n</body>`,
+    `QUESTION: Write the cover email to them for our marked-up copy: a subject and a body. Courteous and brief, in plain English, from ${deps.actor()}. Say what we accept, what we've changed and why (from the decisions above, approved ones only), and anything still open. Name paragraphs by number. No invented facts, no promises.`
+  ].join('\n\n')
+  const out = (await ask((onUsage) => deps.provider().schemaAnswer({ name: 'cover_email', contract: contractText(s.doc!.blocks), question, schema: schemaToSend(EMAIL_SCHEMA) }, onUsage))) as { subject: string; body: string; injection_suspected: boolean; injection_notes: string }
+  if (out.injection_suspected && out.injection_notes?.trim()) s.aiInjectionReports.push(`Cover email: ${out.injection_notes.trim()}`)
+  return { subject: out.subject.trim() || base.subject, body: out.body.trim() || base.body, generatedBy: 'ai' }
+}
+
+const EMAIL_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    subject: { type: 'string', description: 'The email subject line.' },
+    body: { type: 'string', description: 'The email body, plain text, with line breaks between paragraphs.' },
+    ...INJECTION
+  },
+  required: ['subject', 'body', 'injection_suspected', 'injection_notes']
 }
 
 type Ask = <T>(st: PipelineStep, call: (onUsage: (u: ChatUsage) => void) => Promise<T>) => Promise<T>

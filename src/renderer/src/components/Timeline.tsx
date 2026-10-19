@@ -11,7 +11,22 @@ import { Redline } from './Redline'
  * indented under it, in their own order. What each step used is shown beside it, and the run's
  * total against its budget at the top.
  */
-export function Timeline({ session, onChange, onJump, focusBlock }: { session: ReviewSession; onChange: (s: ReviewSession) => void; onJump: (blockId: string) => void; focusBlock?: string | null }) {
+export function Timeline({
+  session,
+  onChange,
+  onJump,
+  focusBlock,
+  onMarkup,
+  onEmail
+}: {
+  session: ReviewSession
+  onChange: (s: ReviewSession) => void
+  onJump: (blockId: string) => void
+  focusBlock?: string | null
+  /** Open the marked-up copy, and the email to them. */
+  onMarkup: () => void
+  onEmail: () => void
+}) {
   const run = session.doc?.pipeline
   // A paragraph clicked in the document: its part, brought into view in the timeline.
   const box = useRef<HTMLElement>(null)
@@ -87,6 +102,17 @@ export function Timeline({ session, onChange, onJump, focusBlock }: { session: R
             <Step key={st.id} step={st} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
           ))}
         </ol>
+      )}
+
+      {run?.status === 'done' && run.steps.some((x) => x.id === 'draft' && x.status === 'done') && (
+        <div className="tl-done">
+          <button className="btn" onClick={onMarkup}>
+            <Icon name="doc" size={14} /> Open marked-up copy
+          </button>
+          <button className="btn primary" onClick={onEmail}>
+            <Icon name="mail" size={14} /> Open the email
+          </button>
+        </div>
       )}
 
       {run?.questions && run.questions.length > 0 && (
