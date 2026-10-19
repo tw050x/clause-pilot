@@ -44,7 +44,7 @@ type Loaded = {
   /** Text typed into a paragraph that was then split (Enter): saved with the split. */
   pending: Map<string, string>
 }
-type Placed = { top: number; height: number; left: number }
+type Placed = { top: number; height: number; left: number; right: number }
 
 /** Paragraph ids in a page fragment's element. */
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
@@ -84,7 +84,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const loaded = current.current
     if (!w || !loaded) return
     const base = w.getBoundingClientRect()
-    const at = (r: DOMRect) => ({ top: r.top - base.top + w.scrollTop, height: r.height, left: r.left - base.left })
+    const at = (r: DOMRect) => ({ top: r.top - base.top + w.scrollTop, height: r.height, left: r.left - base.left, right: r.right - base.left })
     // Paragraphs and table-cell paragraphs both carry their id. A review paragraph's pieces side by
     // side (a table row's cells) are one place, from the leftmost; pieces on later pages are more.
     const byBlock = new Map<string, Placed[]>()
@@ -95,7 +95,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       if (!r.height) continue
       // In a table: level with the table's left edge (a row's first cell may be merged from above).
       const table = el.classList.contains('superdoc-fragment') ? null : el.closest('.superdoc-fragment')
-      if (table) r.left = at(table.getBoundingClientRect()).left
+      if (table) {
+        const t = at(table.getBoundingClientRect())
+        r.left = t.left
+        r.right = t.right
+      }
       const list = byBlock.get(blockId) ?? []
       const same = list.find((x) => r.top < x.top + x.height && x.top < r.top + r.height)
       if (same) {
@@ -103,6 +107,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         same.top = Math.min(same.top, r.top)
         same.height = bottom - same.top
         same.left = Math.min(same.left, r.left)
+        same.right = Math.max(same.right, r.right)
       } else list.push(r)
       byBlock.set(blockId, list)
     }
@@ -111,7 +116,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const bars: (Placed & { bar: string })[] = []
     const runs: (Placed & { state: GutterState })[] = []
     const run: { top: number; left: number; bottom: number; state?: GutterState } = { top: 0, left: 0, bottom: 0 }
-    const end = () => run.state && runs.push({ top: run.top, height: run.bottom - run.top, left: run.left, state: run.state })
+    const end = () => run.state && runs.push({ top: run.top, height: run.bottom - run.top, left: run.left, right: run.left, state: run.state })
     for (const b of d.blocks) {
       const places = byBlock.get(b.id)
       if (!places?.length) continue
@@ -465,7 +470,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           <button
             key={`a${i}`}
             className="ed-ai-mark wv-ai"
-            style={{ top: a.top, left: a.left - 40 }}
+            style={{ top: a.top, left: a.right + 12 }}
             title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
             aria-label="Show the AI answers for this text"
             onClick={() => {
