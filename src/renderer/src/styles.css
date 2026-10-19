@@ -1102,3 +1102,13 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .wv-bar.todo::after, .key-bar.todo::after { animation: none; } }
 .key-bar.todo.chg-ai { background: var(--exact); }
 .dr-todo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, #1d4ed8 8%, var(--surface)); color: #1d4ed8; font-size: 12.5px; font-weight: 600; }
+/* A paragraph as it stood at a point in its history, over it on the page, with the bar to step
+   through its history. */
+.wv-past { position: absolute; z-index: 4; background: #fff; border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 8px 28px rgba(15, 23, 42, 0.16); pointer-events: auto; padding: 0 14px 12px; }
+.wv-past-text { color: #000; white-space: pre-wrap; padding-top: 10px; }
+.past-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 -14px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); border-radius: 10px 10px 0 0; font: 12.5px/1.4 system-ui, sans-serif; }
+.past-what { display: flex; flex-direction: column; min-width: 0; }
+.past-what strong { font-weight: 600; }
+.past-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.hist-then { margin-left: 8px; font-size: 11.5px; }
+.restore-list { margin: 6px 0 10px; padding-left: 18px; }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
@@ -9,6 +9,7 @@ import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/para
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
 import { CommentIcon, Icon } from '../lib/icons'
 import { stagesOf, type Stage } from '../lib/stages'
+import type { Mark } from '@shared/diff'
 
 /**
  * The document as it looks in Word: the review as it stands (their file with our decisions,
@@ -34,6 +35,12 @@ interface Props {
   explain: boolean
   /** New draft only: the page with every change applied, no struck or marked text. */
   final: boolean
+  /**
+   * A point in a paragraph's history (See it then): its paragraphs as they stood then, shown over
+   * them on the page, with the bar to step through it (made by the review column).
+   */
+  past: { blocks: { blockId: string; marks: Mark[] }[]; bar: ReactNode; key: string } | null
+  onClosePast: () => void
   /** Show only the questions asked of some text (the AI marker beside it). */
   onOpenAi: (hl: Highlight) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
@@ -110,12 +117,12 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, explain, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, explain, final, past, onClosePast, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText, onClosePast })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText, onClosePast }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
   /** A paragraph's comments not yet resolved, theirs and ours. */
@@ -156,6 +163,18 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
     setMode(loaded.sd, final)
     remeasure()
   }, [final])
+
+  // A point in a paragraph's history: brought into view; Escape goes back to now.
+  useEffect(() => {
+    if (!past) return
+    const loaded = current.current
+    const id = past.blocks[0]?.blockId
+    const el = loaded && id ? [...loaded.host.querySelectorAll('[data-source-node-id]')].find((x) => loaded.ids[nodeId(x)] === id) : null
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && cb.current.onClosePast()
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [past?.key])
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
   const measuring = useRef(0)
@@ -1006,6 +1025,37 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
       {loading && <div className="wv-loading">Laying out the document…</div>}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
+        {past &&
+          past.blocks.map((pb, n) => {
+            const bar = gutter.bars.find((x) => x.blockId === pb.blockId)
+            if (!bar) return null
+            const loaded = current.current
+            const el = loaded ? [...loaded.host.querySelectorAll<HTMLElement>('[data-source-node-id]')].find((x) => loaded.ids[nodeId(x)] === pb.blockId) : null
+            const run = el?.querySelector('.superdoc-text-run')
+            const cs = run ? getComputedStyle(run) : null
+            const label = model.current.blocks.find((b) => b.id === pb.blockId)?.label
+            return (
+              <div key={`past${pb.blockId}`} className="wv-past" style={{ top: bar.top - (n === 0 ? 62 : 10), left: bar.left - 14, width: bar.right - bar.left + 28, minHeight: bar.height + (n === 0 ? 62 : 10) + 12 }}>
+                {n === 0 && past.bar}
+                <div className="wv-past-text" style={{ fontFamily: cs?.fontFamily, fontSize: cs?.fontSize, lineHeight: el?.querySelector<HTMLElement>('.superdoc-line')?.style.lineHeight }}>
+                  {label && <strong>{label} </strong>}
+                  {pb.marks.length ? (
+                    pb.marks.map((m, i) => {
+                      const del = m.ours === 'del' || (m.theirs === 'del' && !m.ours)
+                      const ins = !del && (m.ours === 'ins' || m.theirs === 'ins')
+                      return (
+                        <span key={i} className={del ? `wv-st-del ${m.ours ? 'yours' : 'theirs'}` : ins ? `wv-st-ins ${m.ours ? 'yours' : 'theirs'}` : undefined}>
+                          {m.text}
+                        </span>
+                      )
+                    })
+                  ) : (
+                    <em className="wv-st-none">Not there then.</em>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         {tip && (
           <div className="wv-tip" ref={tipEl} style={{ left: tip.x, top: tip.y }}>
             <div className="wv-tip-title">{tip.title}</div>

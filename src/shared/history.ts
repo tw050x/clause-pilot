@@ -227,3 +227,17 @@ export function details(d: DocReview, a: HistoryAction): ActionItem[] {
   }
   return items.sort((x, y) => (order.get(x.blockId) ?? 1e9) - (order.get(y.blockId) ?? 1e9))
 }
+
+/**
+ * The review as it stood just after action `a`: every later action still in effect rolled back
+ * (and `a` put back, if it's been undone since). With `before`, as it stood just before `a`.
+ */
+export function stateAt(d: DocReview, a: HistoryAction, before = false): DocReview {
+  const copy: DocReview = JSON.parse(JSON.stringify(d))
+  const history = copy.history ?? []
+  const i = history.findIndex((x) => x.id === a.id)
+  for (const x of history.slice(i + 1).reverse()) if (!x.undone) apply(copy, x.before)
+  if (history[i]?.undone) apply(copy, history[i].after)
+  if (before && history[i]) apply(copy, history[i].before)
+  return copy
+}

@@ -11,7 +11,7 @@ import { WordView } from '../components/WordView'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
-import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
+import { canRedo, dependents, describe, details, stateAt, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { diffSegments } from '@shared/diff'
@@ -96,6 +96,13 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       document.removeEventListener('keydown', off, true)
     }
   }, [explain])
+  /**
+   * A paragraph as it stood at a point in its history (See it then, in the history): the action
+   * it's shown just after, or null for as it was received. Shown over the paragraph on the page.
+   */
+  const [past, setPast] = useState<{ blockId: string; actionId: string | null } | null>(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  useEffect(() => setPast(null), [session.id])
   /** Close review was pressed: asking first. */
   const [confirmClose, setConfirmClose] = useState(false)
   // The document as it looks in Word (pages, tables, headers). As text, paragraph by paragraph,
@@ -176,6 +183,56 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
 
   // The paragraphs the selection is about (the selected text and changes, or the caret's paragraph).
   const textIds = [...new Set([...(highlight?.blockIds ?? []), ...(picked ?? []).map((x) => x.blockId), ...(!highlight && !picked?.length && block ? [block.id] : [])])]
+  // A paragraph's history, step by step: as received, then just after each action (still in
+  // effect) that changed it. The one shown, its paragraphs (an action may span several) as they
+  // stood then, and what restoring it would undo.
+  const pastView = useMemo(() => {
+    if (!past) return null
+    const history = d.history ?? []
+    const touches = (a: (typeof history)[number]) => details(d, a).some((x) => x.blockId === past.blockId)
+    // Actions in one group (a selection, typing in a paragraph) are one step: its last action.
+    const acts = history.filter((a, i) => !a.undone && touches(a) && !(a.group && history[i + 1]?.group === a.group && touches(history[i + 1])))
+    const steps: (string | null)[] = [null, ...acts.map((a) => a.id)]
+    const at = Math.max(0, steps.indexOf(past.actionId))
+    const action = past.actionId ? history.find((a) => a.id === past.actionId) : undefined
+    const first = acts[0]
+    const state = action ? stateAt(d, action) : first ? stateAt(d, first, true) : d
+    const ids = action ? [...new Set(details(d, action).map((x) => x.blockId))] : [past.blockId]
+    const blocks = ids.flatMap((id) => {
+      const b = state.blocks.find((x) => x.id === id)
+      return b ? [{ blockId: id, marks: marksFor(state, b) }] : []
+    })
+    const later = acts.slice(at).filter((a) => !a.undone)
+    return { steps, at, action, blocks, later, latest: at === steps.length - 1 && !action?.undone }
+  }, [past, d])
+  const pastBar = pastView && past && (
+    <div className="past-bar">
+      <div className="past-what">
+        <strong>{pastView.action ? describe(d, pastView.action) : 'As received'}</strong>
+        <span className="faint">
+          {pastView.action
+            ? `${pastView.action.by} · ${new Date(pastView.action.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${pastView.action.undone ? ' · undone' : ''}`
+            : 'Before anything was done to it'}
+          {' · '}step {pastView.at + 1} of {pastView.steps.length}
+        </span>
+      </div>
+      <div className="past-btns">
+        <button className="btn sm" disabled={pastView.at === 0} onClick={() => setPast({ blockId: past.blockId, actionId: pastView.steps[pastView.at - 1] })}>
+          ‹ Earlier
+        </button>
+        <button className="btn sm" disabled={pastView.at >= pastView.steps.length - 1} onClick={() => setPast({ blockId: past.blockId, actionId: pastView.steps[pastView.at + 1] })}>
+          Later ›
+        </button>
+        <button className="btn sm" disabled={pastView.latest || !pastView.later.length} onClick={() => setConfirmRestore(true)} title="Undo everything done to it since this point">
+          Restore to this point
+        </button>
+        <button className="btn sm primary" onClick={() => setPast(null)}>
+          Back to now
+        </button>
+      </div>
+    </div>
+  )
+
   // What's being reviewed and how it stands: above the column's Review / Agent switch (head).
   const header = (
     <section className="rc-section rc-head">
@@ -260,7 +317,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           )}
         </>
       ) : showHistory ? (
-        <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
+        <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : picked && picked.length > 0 ? (
         <>
           <SelectionPanel session={session} picked={picked} act={act} group={`sel:${session.id}:${selection}`} highlighted={highlighted} slot={decideSlot} />
@@ -295,7 +352,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       )}
 
       {/* What's happened to the selected text (or the paragraph the caret is in), newest first. */}
-      {!showHistory && !only && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} />}
+      {!showHistory && !only && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />}
 
       {!showHistory && !only && (
         <AiSection
@@ -427,7 +484,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} past={pastView && pastBar ? { blocks: pastView.blocks, bar: pastBar, key: `${past?.blockId}:${past?.actionId}` } : null} onClosePast={() => setPast(null)} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -539,6 +596,18 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           bar
         )}
       {head && createPortal(header, head)}
+      {confirmRestore && pastView && (
+        <ConfirmRestore
+          where={past ? whereOf(d, d.blocks.find((b) => b.id === past.blockId) ?? d.blocks[0]) : ''}
+          undo={[...pastView.later, ...(pastView.later[0] ? dependents(d.history!, pastView.later[0]).filter((x) => !pastView.later.includes(x)) : [])].map((a) => describe(d, a))}
+          onCancel={() => setConfirmRestore(false)}
+          onConfirm={async () => {
+            setConfirmRestore(false)
+            const first = pastView.later[0]
+            if (first && (await act(window.api.doc.undo(session.id, first.id)))) setPast(null)
+          }}
+        />
+      )}
       {confirmClose && (
         <ConfirmClose
           open={changed.length}
@@ -836,7 +905,22 @@ function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: strin
  * them) and the questions asked of them. Several paragraphs read as one timeline, each entry
  * naming where it is.
  */
-function TextHistory({ session, blockIds, onJump }: { session: ReviewSession; blockIds: string[]; onJump: (blockId: string) => void }) {
+/** In a history entry: show the text as it stood just after it, on the page. */
+function SeeThen({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      className="link-btn hist-then"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      See it then
+    </button>
+  )
+}
+
+function TextHistory({ session, blockIds, onJump, onPast }: { session: ReviewSession; blockIds: string[]; onJump: (blockId: string) => void; onPast: (blockId: string, actionId: string) => void }) {
   const d = session.doc!
   const [all, setAll] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
@@ -873,6 +957,7 @@ function TextHistory({ session, blockIds, onJump }: { session: ReviewSession; bl
               <div className="hist-meta faint">
                 {e.by} · {when(e.at)}
                 {e.undone && ' · undone'}
+                {!e.undone && <SeeThen onClick={() => onPast(e.items[0].blockId, e.key)} />}
               </div>
             </div>
           ) : (
@@ -901,7 +986,7 @@ function TextHistory({ session, blockIds, onJump }: { session: ReviewSession; bl
   )
 }
 
-function HistoryPanel({ session, act, onClose, onJump }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onClose: () => void; onJump: (blockId: string) => void }) {
+function HistoryPanel({ session, act, onClose, onJump, onPast }: { session: ReviewSession; act: (p: Promise<ReviewSession>) => Promise<boolean>; onClose: () => void; onJump: (blockId: string) => void; onPast: (blockId: string, actionId: string) => void }) {
   const d = session.doc!
   const history = [...(d.history ?? [])].reverse()
   const [confirm, setConfirm] = useState<string | null>(null)
@@ -933,6 +1018,7 @@ function HistoryPanel({ session, act, onClose, onJump }: { session: ReviewSessio
               <div className="hist-meta faint">
                 {a.by} · {new Date(a.at).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                 {a.undone && ' · undone'}
+                {items[0] && !a.undone && <SeeThen onClick={() => onPast(items[0].blockId, a.id)} />}
               </div>
               {confirm === a.id ? (
                 <div className="hist-confirm" onClick={(e) => e.stopPropagation()}>
@@ -1549,6 +1635,45 @@ function AiCard({
       )}
       {open && result?.status === 'error' && <p className="dr-small dr-err ai-card-body">{result.error}</p>}
     </div>
+  )
+}
+
+/** Confirm restoring a paragraph to a point in its history: says what's undone (it can be redone). */
+function ConfirmRestore({ where, undo, onCancel, onConfirm }: { where: string; undo: string[]; onCancel: () => void; onConfirm: () => void }) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    cancel.current?.focus()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [onCancel])
+  return createPortal(
+    <div className="modal-back" onClick={onCancel}>
+      <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="restore-title" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <Icon name="history" size={15} />
+          <h3 id="restore-title">Restore {where} to this point?</h3>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginTop: 0 }}>This undoes what’s been done to it since{undo.length > 1 ? ', and what depends on it' : ''}:</p>
+          <ul className="restore-list">
+            {undo.map((x, i) => (
+              <li key={i}>{x}</li>
+            ))}
+          </ul>
+          <p style={{ marginBottom: 0 }}>You can redo it from the history.</p>
+        </div>
+        <div className="modal-foot">
+          <button ref={cancel} className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={onConfirm}>
+            Restore
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
