@@ -56,7 +56,7 @@ const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const STAGES_TOP = 10
 const STAGES_BOTTOM = 34
 /** How far the card reaches past the text, to take in the labels left of it and the markers right of it. */
-const CARD_LEFT = 100
+const CARD_LEFT = 90
 const CARD_RIGHT = 74
 
 /** A layered paragraph's stages card: where it is, and how its text is set (to show a stage in it). */
@@ -334,10 +334,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           stages,
           top,
           height: bottom - top,
-          left: first.left - CARD_LEFT,
+          // (Never past the page area's left edge, where the sidebar is.)
+          left: Math.max(6, first.left - CARD_LEFT),
           right: first.right + CARD_RIGHT,
           textTop: first.top - top,
-          textLeft: CARD_LEFT,
+          textLeft: first.left - Math.max(6, first.left - CARD_LEFT),
           textWidth: first.right - first.left,
           font: { family: cs?.fontFamily ?? '', size: cs?.fontSize ?? '', lineHeight: el?.querySelector<HTMLElement>('.superdoc-line')?.style.lineHeight ?? '', align: el?.style.textAlign ?? '' }
         }
