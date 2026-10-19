@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
-import type { DocReview, ReviewSession } from '@shared/types'
+import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
+import { listAfter } from '@shared/numbering'
 import { groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { Icon } from '../lib/icons'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
@@ -38,6 +39,8 @@ type Loaded = {
   host: HTMLDivElement
   /** Each paragraph's text in the page (all changes applied), as last saved to the review. */
   texts: Map<string, string>
+  /** Text typed into a paragraph that was then split (Enter): saved with the split. */
+  pending: Map<string, string>
 }
 type Placed = { top: number; height: number; left: number }
 
@@ -122,38 +125,84 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     setGutter({ bars, runs, ai })
   }
 
-  /** The page's paragraphs as text, all changes applied (Word's own numbers aren't part of it). */
-  const pageTexts = async (loaded: Loaded) => {
-    const out = new Map<string, string>()
+  /** The page's paragraphs in order, as text with all changes applied (Word's own numbers aren't part of it). */
+  const pageBlocks = async (loaded: Loaded) => {
     const x = await Promise.resolve(loaded.sd.activeEditor?.doc?.extract({})).catch(() => null)
-    for (const b of (x?.blocks ?? []) as { nodeId: string; text?: string }[]) if (loaded.ids[b.nodeId]) out.set(b.nodeId, b.text ?? '')
-    return out
+    return ((x?.blocks ?? []) as { nodeId: string; text?: string }[]).map((b) => ({ nodeId: b.nodeId, text: b.text ?? '' }))
+  }
+  const pageTexts = async (loaded: Loaded) => new Map((await pageBlocks(loaded)).filter((b) => loaded.ids[b.nodeId]).map((b) => [b.nodeId, b.text]))
+
+  /**
+   * The review's wording for a paragraph after its text in the page went from `was` to `now`: the
+   * same change, placed from the end of the paragraph, so a number that reads differently at the
+   * start (Word's own, or one we renumbered) can't become an edit.
+   */
+  const wordingFor = (b: DocBlock, was: string, now: string) => {
+    let p = 0
+    while (p < was.length && p < now.length && was[p] === now[p]) p++
+    let q = 0
+    while (q < was.length - p && q < now.length - p && was[was.length - 1 - q] === now[now.length - 1 - q]) q++
+    const ours = shownText(marksFor(model.current, b))
+    const end = ours.length - q
+    const start = end - (was.length - q - p)
+    return start >= 0 && ours.slice(start, end) === was.slice(p, was.length - q) ? ours.slice(0, start) + now.slice(p, now.length - q) + ours.slice(end) : now
+  }
+
+  /** Apply a change from the page to the review; the page already shows it, so it isn't laid out again. */
+  const apply = async (p: Promise<ReviewSession>) => {
+    void p.then((x) => typed.current.add(x)).catch(() => undefined)
+    return cb.current.act(p)
   }
 
   /**
-   * Save what was typed into the page: each paragraph whose text changed gets the same change in
-   * the review's wording for it. The change is placed from the end of the paragraph, so a number
-   * that reads differently at the start (Word's own, or one we renumbered) can't become an edit.
+   * Save what was typed into the page. A paragraph whose text changed gets the same change in the
+   * review's wording for it. A new paragraph (Enter) is the paragraph before it split, as Enter
+   * does in the text view, and becomes ours. One of ours that's gone (merged back with Backspace)
+   * is removed; one of theirs that's gone is struck.
    */
   const sync = async (loaded: Loaded) => {
-    const now = await pageTexts(loaded)
-    for (const [id, text] of now) {
-      const was = loaded.texts.get(id)
-      if (was === undefined || was === text) continue
-      loaded.texts.set(id, text)
-      const b = model.current.blocks.find((x) => x.id === loaded.ids[id])
+    const now = await pageBlocks(loaded)
+    const blockOf = (nodeId: string) => model.current.blocks.find((x) => x.id === loaded.ids[nodeId])
+    let prev: string | null = null
+    for (let i = 0; i < now.length; i++) {
+      const { nodeId, text } = now[i]
+      if (!loaded.ids[nodeId]) {
+        // New: split the paragraph before it (its text as it now reads stays with it).
+        const b = prev ? blockOf(prev) : undefined
+        if (!b || !prev) continue
+        const was = loaded.texts.get(prev) ?? ''
+        const head = loaded.pending.get(prev) ?? was
+        const newId = `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+        const r = await window.api.doc.split(session.id, b.id, wordingFor(b, was, head), text, newId, listAfter(model.current, b) ?? null).catch(() => null)
+        if (!r) continue
+        loaded.pending.delete(prev)
+        loaded.texts.set(prev, head)
+        loaded.ids[nodeId] = r.id
+        loaded.texts.set(nodeId, text)
+        await apply(Promise.resolve(r.session))
+        prev = nodeId
+        continue
+      }
+      const was = loaded.texts.get(nodeId)
+      if (was !== undefined && was !== text) {
+        // Changed: saved now, unless a new paragraph follows (the split saves it with that).
+        if (now[i + 1] && !loaded.ids[now[i + 1].nodeId]) loaded.pending.set(nodeId, text)
+        else {
+          const b = blockOf(nodeId)
+          loaded.texts.set(nodeId, text)
+          if (b) await apply(window.api.doc.edit(session.id, b.id, wordingFor(b, was, text), `word:${b.id}`))
+        }
+      }
+      prev = nodeId
+    }
+    // Paragraphs that are gone: ours removed, theirs struck.
+    const present = new Set(now.map((b) => b.nodeId))
+    for (const nodeId of [...loaded.texts.keys()]) {
+      if (present.has(nodeId)) continue
+      const b = blockOf(nodeId)
+      loaded.texts.delete(nodeId)
       if (!b) continue
-      let p = 0
-      while (p < was.length && p < text.length && was[p] === text[p]) p++
-      let q = 0
-      while (q < was.length - p && q < text.length - p && was[was.length - 1 - q] === text[text.length - 1 - q]) q++
-      const ours = shownText(marksFor(model.current, b))
-      const end = ours.length - q
-      const start = end - (was.length - q - p)
-      const wording = start >= 0 && ours.slice(start, end) === was.slice(p, was.length - q) ? ours.slice(0, start) + text.slice(p, text.length - q) + ours.slice(end) : text
-      const s = window.api.doc.edit(session.id, b.id, wording, `word:${b.id}`)
-      void s.then((x) => typed.current.add(x)).catch(() => undefined)
-      await cb.current.act(s)
+      await apply(b.ours ? window.api.doc.unsplit(session.id, b.id) : window.api.doc.edit(session.id, b.id, '', `word:${b.id}`))
     }
   }
 
@@ -241,7 +290,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           return
         }
         const old = current.current
-        const loaded: Loaded = { sd, ids, host, texts: new Map() }
+        const loaded: Loaded = { sd, ids, host, texts: new Map(), pending: new Map() }
         loaded.texts = await pageTexts(loaded)
         current.current = loaded
         host.classList.remove('loading')
