@@ -1,0 +1,125 @@
+[
+  {
+    "contractId": "ct-demo-kestrel-data",
+    "rounds": [
+      {
+        "file": "Kestrel-Data-Sharing-Agreement.docx",
+        "theirs": true,
+        "daysAgo": 4,
+        "decide": "half"
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-harbourline-nda",
+    "rounds": [
+      {
+        "file": "Harbourline-Mutual-NDA-v1-redline.docx",
+        "original": "Harbourline-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 210,
+        "decide": "all",
+        "closed": false
+      },
+      {
+        "file": "Harbourline-Mutual-NDA-v2-response.docx",
+        "daysAgo": 196,
+        "decide": "all",
+        "closed": true
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-northwind",
+    "rounds": [
+      {
+        "file": "Northwind-Mutual-NDA-v1-redline.docx",
+        "original": "Northwind-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 62,
+        "decide": "all",
+        "closed": false
+      },
+      {
+        "file": "Northwind-Mutual-NDA-v2-response.docx",
+        "daysAgo": 47,
+        "decide": "all",
+        "closed": true
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-northwind-2",
+    "rounds": [
+      {
+        "file": "Northwind-Partner-Confidentiality-Agreement.docx",
+        "theirs": true,
+        "daysAgo": 2,
+        "decide": "half"
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-acme",
+    "rounds": [
+      {
+        "file": "Acme-Mutual-NDA-v1-redline.docx",
+        "original": "Acme-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 12,
+        "decide": "all",
+        "closed": false
+      },
+      {
+        "file": "Acme-Mutual-NDA-v2-response.docx",
+        "daysAgo": 1,
+        "decide": "none",
+        "closed": false
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-globex",
+    "rounds": [
+      {
+        "file": "Globex-Mutual-NDA-v1-redline.docx",
+        "original": "Globex-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 34,
+        "decide": "all",
+        "closed": true
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-globex-3",
+    "rounds": [
+      {
+        "file": "Globex-Mutual-NDA-v1-redline.docx",
+        "original": "Globex-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 420,
+        "decide": "all",
+        "closed": true
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-initech",
+    "rounds": [
+      {
+        "file": "Initech-Reseller-Agreement.docx",
+        "theirs": true,
+        "daysAgo": 6,
+        "decide": "half"
+      }
+    ]
+  },
+  {
+    "contractId": "ct-demo-initech-2",
+    "rounds": [
+      {
+        "file": "Initech-Mutual-NDA-v1-redline.docx",
+        "original": "Initech-Mutual-NDA-v0-we-sent.docx",
+        "daysAgo": 95,
+        "decide": "all",
+        "closed": true
+      }
+    ]
+  }
+]

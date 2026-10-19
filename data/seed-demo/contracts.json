@@ -7,9 +7,23 @@
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
+    "id": "ct-demo-brightwater-order",
+    "accountId": "ac-demo-brightwater",
+    "title": "Burp Suite Enterprise order form",
+    "contractType": "order-form",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
     "id": "ct-demo-kestrel",
     "accountId": "ac-demo-kestrel",
     "title": "Confidentiality Agreement",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-kestrel-data",
+    "accountId": "ac-demo-kestrel",
+    "title": "Data Sharing Agreement",
     "contractType": "nda",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
@@ -18,6 +32,13 @@
     "accountId": "ac-demo-harbourline",
     "title": "Master Services Agreement",
     "contractType": "general",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-harbourline-nda",
+    "accountId": "ac-demo-harbourline",
+    "title": "Mutual NDA",
+    "contractType": "nda",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
@@ -30,12 +51,26 @@
   {
     "id": "ct-demo-northwind-2",
     "accountId": "ac-demo-northwind",
+    "title": "Partner Confidentiality Agreement",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-northwind-3",
+    "accountId": "ac-demo-northwind",
     "title": "Burp Suite DAST order form",
     "contractType": "order-form",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
     "id": "ct-demo-acme",
+    "accountId": "ac-demo-acme",
+    "title": "Mutual NDA",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-acme-2",
     "accountId": "ac-demo-acme",
     "title": "Order form 2026",
     "contractType": "order-form",
@@ -56,9 +91,27 @@
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
+    "id": "ct-demo-globex-3",
+    "accountId": "ac-demo-globex",
+    "title": "Supplier NDA (2024)",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z",
+    "archived": {
+      "by": "Priya Shah",
+      "at": "2026-10-01T09:00:00.000Z"
+    }
+  },
+  {
     "id": "ct-demo-initech",
     "accountId": "ac-demo-initech",
-    "title": "Reseller NDA",
+    "title": "Reseller Agreement",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-initech-2",
+    "accountId": "ac-demo-initech",
+    "title": "Mutual NDA",
     "contractType": "nda",
     "createdAt": "2026-10-01T09:00:00.000Z"
   }

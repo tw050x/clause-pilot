@@ -159,9 +159,58 @@ async function main() {
       files.push(MSA_FILE)
     }
     console.log(`${demo.dir}: library.json (${LIBRARY.length} clauses), playbook.json (${PLAYBOOK.length} positions), ${files.join(', ')}`)
-  }  // The demo workspace's starting data, from the same library and playbook.
+  }  // Other clients' contracts, for the demo workspace's history: the demo contracts with the
+  // parties renamed (their reviews are made by the app the first time the workspace opens).
+  const files = join(process.cwd(), 'data', 'demo-files')
+  mkdirSync(files, { recursive: true })
+  for (const v of VARIANTS) await writeDocx(rename(v.from, v.file, v.names), join(files, v.file))
+  console.log(`data/demo-files: ${VARIANTS.length} more contracts for the demo workspace's history`)
+  // The demo workspace's starting data, from the same library and playbook.
   writeDemoSeed()
 }
+
+/** A demo contract with its parties renamed (every mention, author included), as another file. */
+function rename(c: ContractFile, file: string, names: [string, string][]): ContractFile {
+  const text = names.reduce((t, [a, b]) => t.split(a).join(b), JSON.stringify(c))
+  return { ...(JSON.parse(text) as ContractFile), file }
+}
+
+const NDA = (party: string, short: string, key: string) => {
+  const names: [string, string][] = [
+    ['Brightwater Robotics Inc.', party],
+    ['Brightwater Robotics', party],
+    ['Brightwater', short]
+  ]
+  return [
+    { from: BRIGHTWATER_V0, file: `${key}-Mutual-NDA-v0-we-sent.docx`, names },
+    { from: BRIGHTWATER_V1, file: `${key}-Mutual-NDA-v1-redline.docx`, names },
+    { from: BRIGHTWATER_V2, file: `${key}-Mutual-NDA-v2-response.docx`, names }
+  ]
+}
+const PAPER = (party: string, short: string, key: string, title: string) => [
+  {
+    from: KESTREL,
+    file: `${key}-${title.replace(/\s+/g, '-')}.docx`,
+    names: [
+      ['Kestrel Health Systems, Inc.', party],
+      ['Kestrel Health Systems', party],
+      ['Kestrel', short],
+      ['CONFIDENTIALITY AGREEMENT', title.toUpperCase()],
+      ['Confidentiality Agreement', title]
+    ] as [string, string][]
+  }
+]
+/** Contracts for the demo workspace's history (see scripts/demo/seed.ts for whose they are). */
+export const VARIANTS = [
+  ...NDA('Harbourline Hosting Ltd', 'Harbourline', 'Harbourline'),
+  ...NDA('Northwind Logistics Ltd', 'Northwind', 'Northwind'),
+  ...NDA('Acme Analytics Ltd', 'Acme', 'Acme'),
+  ...NDA('Globex Retail Inc.', 'Globex', 'Globex'),
+  ...NDA('Initech Software Ltd', 'Initech', 'Initech'),
+  ...PAPER('Kestrel Health Systems', 'Kestrel', 'Kestrel', 'Data Sharing Agreement'),
+  ...PAPER('Initech Software Ltd', 'Initech', 'Initech', 'Reseller Agreement'),
+  ...PAPER('Northwind Logistics Ltd', 'Northwind', 'Northwind', 'Partner Confidentiality Agreement')
+]
 
 main().catch((e) => {
   console.error(e)

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell } from 'electron'
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,7 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, ourText, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, needsReading, ourText, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
 import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
 import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
@@ -213,12 +213,14 @@ function createWindow() {
   else win.loadFile(join(here, '../renderer/index.html'))
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ensureDemoServer()
   // A packaged app takes its icon from the bundle; in development, show it in the Dock too (the
   // macOS version, with the margin the Dock expects, so it's the size of the others).
   const devIcon = join(appRoot, 'build/icon-mac.png')
   if (!app.isPackaged && process.platform === 'darwin' && existsSync(devIcon)) app.dock?.setIcon(devIcon)
+  // The demo workspace's history, made the first time it opens (before the window shows it).
+  await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
@@ -306,6 +308,67 @@ const DEMO_FILES = {
 }
 
 ipcMain.handle('demo:quickstarts', () => quickStarts())
+
+/**
+ * The demo workspace's history, made the first time it opens: past rounds of other contracts,
+ * reviewed as the app reviews any draft (data/seed-demo/history.json says which, how long ago,
+ * how much was decided, which were closed), so it has reviews finished, in progress and earlier
+ * rounds to look at. Made once (demo-history.json records it).
+ */
+async function populateDemoHistory() {
+  if (!demoMode()) return
+  const marker = join(ws.dir, 'demo-history.json')
+  const manifest = join(appRoot, 'data/seed-demo/history.json')
+  if (existsSync(marker) || !existsSync(manifest)) return
+  const day = 86_400_000
+  const entries = JSON.parse(readFileSync(manifest, 'utf8')) as { contractId: string; rounds: { file: string; original?: string; theirs?: boolean; daysAgo: number; decide: 'all' | 'half' | 'none'; closed?: boolean }[] }[]
+  let made = 0
+  for (const e of entries) {
+    if (!ws.store.contracts().some((c) => c.id === e.contractId) || ws.store.versionsOf(e.contractId).length) continue
+    for (const r of e.rounds) {
+      const at = new Date(Date.now() - r.daysAgo * day - 3_600_000 * 3).toISOString()
+      const s = await startReview(ws, demoFile(r.file), e.contractId, r.original ? { kind: 'original', path: demoFile(r.original) } : r.theirs ? { kind: 'theirs' } : undefined)
+      decideForDemo(s, r.decide, at)
+      s.createdAt = at
+      if (r.closed) s.closed = { by: actor(), at: new Date(Date.parse(at) + day).toISOString() }
+      ws.store.saveSession(s)
+      sessions.delete(s.id)
+      made++
+    }
+    // Dated as they were made: the original we sent a fortnight before their first draft.
+    for (const v of ws.store.versionsOf(e.contractId)) {
+      const round = v.original ? undefined : e.rounds[(v.version ?? 1) - 1]
+      const at = round ? Date.parse(v.createdAt) : Date.now() - (e.rounds[0].daysAgo + 14) * day
+      if (v.original) {
+        v.createdAt = new Date(at).toISOString()
+        ws.store.saveSession(v)
+      }
+      const f = join(ws.dir, 'sessions', `${v.id}.json`)
+      const touched = new Date(round ? at + (round.decide === 'none' ? 0 : day / 2) : at)
+      utimesSync(f, touched, touched)
+    }
+  }
+  writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), reviews: made }, null, 2))
+}
+
+/**
+ * A demo review's decisions: their changes accepted (every third rejected), or the first half of
+ * them; on their paper, the paragraphs to read marked as checked (all, or the first half).
+ */
+function decideForDemo(s: ReviewSession, how: 'all' | 'half' | 'none', at: string) {
+  if (how === 'none') return
+  const d = s.doc!
+  tracked(s, 'demo:history', () => {
+    const changes = d.blocks.flatMap((b) => segmentsOf(b).flatMap((x, i) => (x.op === 'same' ? [] : [{ b, i }])))
+    const take = how === 'all' ? changes : changes.slice(0, Math.ceil(changes.length / 2))
+    d.resolved ??= {}
+    take.forEach(({ b, i }, n) => (d.resolved![changeKey(b.id, i)] = n % 3 === 2 ? 'rejected' : 'accepted'))
+    const reading = d.blocks.filter((b) => needsReading(d, b))
+    d.checked ??= {}
+    for (const b of how === 'all' ? reading : reading.slice(0, Math.ceil(reading.length / 2))) d.checked[b.id] = { by: actor(), at, text: proposedText(d, b) }
+  })
+  for (const h of d.history ?? []) h.at = at
+}
 
 /** Start a quick start (or, if it's done, find what it opened): where the window goes next. */
 ipcMain.handle('demo:quickstart', async (_e, id: QuickStartId): Promise<{ view: 'review' | 'queue'; sessionId?: string; accountId?: string }> => {
@@ -417,7 +480,7 @@ ipcMain.handle('demo:quickstart', async (_e, id: QuickStartId): Promise<{ view: 
  * the demo one starts from the demo data), the demo server started if it's needed, and the
  * window reloaded.
  */
-ipcMain.handle('mode:set', (_e, demo: boolean) => {
+ipcMain.handle('mode:set', async (_e, demo: boolean) => {
   const next = { ...loadSettings(), demoMode: demo }
   writeFileSync(settingsFile, JSON.stringify(next, null, 2))
   sessions.clear()
@@ -425,6 +488,7 @@ ipcMain.handle('mode:set', (_e, demo: boolean) => {
   Object.assign(ws, openWorkspace())
   ws.audit.append(actor(), demo ? 'mode.demo-on' : 'mode.demo-off', null, {})
   void ensureDemoServer()
+  await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
   win?.webContents.reload()
   return settings()
 })
