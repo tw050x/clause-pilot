@@ -131,7 +131,7 @@ button.mode-pill:hover { filter: brightness(0.96); }
 
 .rp-section { padding: 14px 16px; }
 /* Sections are separated by three centred dots rather than rules. */
-.rp-section + .rp-section::before, .chat-input::before { content: '\2022\2002\2022\2002\2022'; display: block; text-align: center; color: var(--text-3); font-size: 11px; line-height: 1; letter-spacing: 2px; margin: -6px 0 16px; }
+.rp-section + .rp-section::before { content: '\2022\2002\2022\2002\2022'; display: block; text-align: center; color: var(--text-3); font-size: 11px; line-height: 1; letter-spacing: 2px; margin: -6px 0 16px; }
 .rp-doc { display: flex; gap: 10px; align-items: flex-start; color: var(--text-2); }
 .rp-docname { font-weight: 600; color: var(--text); word-break: break-word; line-height: 1.35; }
 .rp-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 10px; }
@@ -347,10 +347,14 @@ details summary { cursor: pointer; color: var(--text-2); font-size: 12.5px; }
 .md blockquote { margin: 0 0 8px; padding: 2px 0 2px 10px; border-left: 3px solid var(--border-strong); color: var(--text-2); font-family: var(--doc-font); }
 .md code { font: 12px ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 4px; padding: 0 4px; }
 .md pre { font: 12px ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; margin: 0 0 8px; }
-.chat-input { padding: 4px 10px 10px; display: flex; flex-wrap: wrap; gap: 8px; }
-.chat-input::before { flex-basis: 100%; margin: 0 0 6px; }
-.chat-input textarea { flex: 1; }
-.chat-input textarea { min-height: 40px; max-height: 140px; }
+/* The Agent's message box, as the column's foot: full width, the same corners however tall it grows,
+   Send a circle in its bottom right corner. */
+.chat-input { flex-shrink: 0; padding: 10px; }
+.chat-box { position: relative; border: 1px solid var(--border-strong); border-radius: 18px; background: var(--surface); }
+.chat-box:focus-within { border-color: var(--processing); box-shadow: 0 0 0 3px color-mix(in srgb, var(--processing) 15%, transparent); }
+.chat-box textarea { display: block; width: 100%; box-sizing: border-box; resize: none; border: 0; outline: none; background: transparent; font: inherit; font-size: 13px; line-height: 20px; padding: 9px 46px 9px 14px; min-height: 38px; max-height: 180px; overflow-y: auto; border-radius: 18px; }
+.chat-send { position: absolute; right: 5px; bottom: 5px; width: 28px; height: 28px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--text); color: var(--surface); cursor: pointer; padding: 0; }
+.chat-send:disabled { background: var(--border-strong); cursor: default; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 6px; }
 .suggestions button { font-size: 12px; border: 1px solid var(--border-strong); border-radius: 99px; background: var(--surface); padding: 3px 10px; cursor: pointer; }
 

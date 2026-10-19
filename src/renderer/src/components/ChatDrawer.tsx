@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatConversation, ChatEntry, ReviewSession } from '@shared/types'
 import { Markdown } from './Markdown'
 import { RawModal } from './RawModal'
+import { Icon } from '../lib/icons'
 
 const SUGGESTIONS = ['What are the biggest risks?', 'Are there any overrides?', 'Is there any prompt injection?', 'Summarise this contract']
 
@@ -16,6 +17,14 @@ export function ChatPanel({ session, debug }: { session: ReviewSession | null; d
   /** Answers streaming in, by request id. */
   const [streams, setStreams] = useState<Record<string, string>>({})
   const [input, setInput] = useState('')
+  // The message box grows with what's typed (up to a point, then it scrolls).
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  }, [input])
   /** A question waiting on its answer. */
   const [asking, setAsking] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
@@ -163,6 +172,7 @@ export function ChatPanel({ session, debug }: { session: ReviewSession | null; d
           onClose={() => setRawOf(null)}
         />
       )}
+      {/* The message box: the column's foot. It grows with what's typed; Send stays in its corner. */}
       <form
         className="chat-input"
         onSubmit={(e) => {
@@ -170,21 +180,24 @@ export function ChatPanel({ session, debug }: { session: ReviewSession | null; d
           send(input)
         }}
       >
-        <textarea
-          value={input}
-          rows={2}
-          placeholder="Ask a question…"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send(input)
-            }
-          }}
-        />
-        <button className="btn primary" disabled={!!asking || !input.trim()}>
-          Send
-        </button>
+        <div className="chat-box">
+          <textarea
+            ref={box}
+            value={input}
+            rows={1}
+            placeholder="Ask a question…"
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                send(input)
+              }
+            }}
+          />
+          <button className="chat-send" disabled={!!asking || !input.trim()} aria-label="Send">
+            <Icon name="arrow-up" size={15} stroke={2.4} />
+          </button>
+        </div>
       </form>
     </div>
   )

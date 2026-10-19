@@ -326,7 +326,8 @@ export function App() {
             <ChatPanel session={session} debug={!!settings?.debug} />
           </div>
           {/* Accept / Reject for the selected changes, and the key: rendered into by a portal. */}
-          <div className="rightbar-foot" ref={setReviewFoot} />
+          {/* (On the Agent's tab, its message box is the foot instead.) */}
+          <div className="rightbar-foot" ref={setReviewFoot} style={{ display: rightTab === 'review' ? undefined : 'none' }} />
         </aside>
         </div>
       </div>
