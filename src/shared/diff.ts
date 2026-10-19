@@ -8,12 +8,21 @@ export interface DiffOp {
   insert: string
 }
 
+/** Changes this close together (unchanged words between them) read as one: "~~shall be free~~ any right". */
+const MERGE_GAP_WORDS = 2
+/** Past this share of the paragraph changed, it's a rewrite: shown as one replacement. */
+const REWRITE_SHARE = 0.5
+
 /**
  * Word-level diff from `old` to `next`, as replacements over character ranges
  * of `old`. Used both to show our edits on screen and to write them into the
- * Word file as tracked changes, so the two always agree.
+ * Word file as tracked changes, so the two always agree. Changes are whole words
+ * (never part of one), changes a word or two apart are one change, and a
+ * paragraph mostly rewritten is one replacement (the words it starts and ends
+ * with aside, if they're the same): the old struck as a block, the new after it.
  */
-export function diffWords(old: string, next: string, wholeWords = false): DiffOp[] {
+// (`wholeWords` is kept for callers; changes are always whole words now.)
+export function diffWords(old: string, next: string, _wholeWords = false): DiffOp[] {
   const tok = (s: string) => {
     const out: { word: string; text: string; at: number }[] = []
     for (const m of s.matchAll(/\S+\s*/g)) out.push({ word: m[0].trim(), text: m[0], at: m.index! })
@@ -50,28 +59,33 @@ export function diffWords(old: string, next: string, wholeWords = false): DiffOp
     }
   }
   flush()
+  // Changes a word or two apart: one change, the words between them struck and written again.
+  const words = (from: number, to: number) => (old.slice(from, to).match(/\S+/g) ?? []).length
+  for (let k = ops.length - 1; k > 0; k--) {
+    const x = ops[k - 1]
+    const y = ops[k]
+    if (words(x.to, y.from) > MERGE_GAP_WORDS) continue
+    ops.splice(k - 1, 2, { from: x.from, to: y.to, insert: x.insert + old.slice(x.to, y.from) + y.insert })
+  }
+  // Mostly rewritten: one replacement, between the words it starts and ends with unchanged.
+  const gone = ops.reduce((n, op) => n + (op.to - op.from), 0)
+  const added = ops.reduce((n, op) => n + op.insert.length, 0)
+  if (ops.length > 1 && (gone / (old.length || 1) + added / (next.length || 1)) / 2 > REWRITE_SHARE) {
+    let pre = 0
+    while (pre < a.length && pre < b.length && a[pre].word === b[pre].word) pre++
+    let suf = 0
+    while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf].word === b[b.length - 1 - suf].word) suf++
+    const from = pre < a.length ? a[pre].at : old.length
+    const to = suf ? a[a.length - suf].at : old.length
+    const insert = b.slice(pre, b.length - suf).map((t) => t.text).join('')
+    ops.splice(0, ops.length, { from, to, insert })
+  }
   // Spacing: an insertion at the very end of text with no trailing space needs a leading one.
   for (const op of ops) {
     if (!op.insert) continue
     const atEnd = op.to >= old.length
     if (atEnd && old && op.to === op.from && !/\s$/.test(old)) op.insert = ' ' + op.insert.trimEnd()
     else if (!atEnd && !/\s$/.test(op.insert)) op.insert += ' '
-  }
-  // Within a replaced word, mark only the characters that changed ("regarded" → "regar": "ded"
-  // struck), as Word does. Only shared runs of two or more characters are kept.
-  if (wholeWords) return ops
-  for (const op of ops) {
-    if (op.to === op.from || !op.insert) continue
-    const gone = old.slice(op.from, op.to)
-    let p = 0
-    while (p < gone.length && p < op.insert.length && gone[p] === op.insert[p]) p++
-    if (p < 2) p = 0
-    let q = 0
-    while (q < gone.length - p && q < op.insert.length - p && gone[gone.length - 1 - q] === op.insert[op.insert.length - 1 - q]) q++
-    if (q < 2) q = 0
-    op.from += p
-    op.to -= q
-    op.insert = op.insert.slice(p, op.insert.length - q)
   }
   return ops.filter((op) => op.to > op.from || op.insert)
 }
