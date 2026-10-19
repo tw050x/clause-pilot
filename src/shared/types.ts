@@ -373,6 +373,8 @@ export interface ChangeReview {
 }
 
 export interface DocReview {
+  /** A PDF's main typeface ("Calibri"), for the Word file the page and the marked-up copy are built as. */
+  font?: string
   blocks: DocBlock[]
   /** Our wording per block (without the label). Empty: we strike the paragraph. */
   edits: Record<string, string>

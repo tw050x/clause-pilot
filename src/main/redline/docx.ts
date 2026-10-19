@@ -50,7 +50,7 @@ export async function buildDocRedline(
   const source = s.sourceType === 'docx' && d.blocks.some((b) => b.paras?.length) ? 'original' : 'generated'
   // Paragraphs they removed without tracking aren't in the file; restoring one inserts it again.
   const received = d.blocks.filter((b) => !(b.untracked && b.kind === 'deleted') && !b.ours)
-  const zip = await JSZip.loadAsync(source === 'original' ? original : await docxFromBlocks(received))
+  const zip = await JSZip.loadAsync(source === 'original' ? original : await docxFromBlocks(received, d.font))
   const doc = await xml(zip, 'word/document.xml')
   if (!doc) throw new Error('Not a Word document (word/document.xml missing).')
   await numberParagraphs(zip, doc)
@@ -217,13 +217,15 @@ function listModel(d: DocReview, b: DocBlock, parasOf: (b: DocBlock) => Element[
 }
 
 /** A plain .docx of the contract as received (PDF / text uploads): one paragraph per block. */
-async function docxFromBlocks(blocks: DocBlock[]): Promise<Buffer> {
+/** A Word file of the paragraphs (a PDF's or text file's), in `font` if the source said which. */
+async function docxFromBlocks(blocks: DocBlock[], font?: string): Promise<Buffer> {
   return packageDocx(
     blocks.map((b) => {
       const opts = `${b.center ? '<w:jc w:val="center"/>' : ''}${b.kind === 'heading' ? '<w:keepNext/>' : ''}`
       const runs = (b.label ? run(`${b.label} `, true) : '') + run(b.text, b.kind === 'heading' || !!b.bold)
       return para(runs, opts)
-    })
+    }),
+    font
   )
 }
 
@@ -911,7 +913,8 @@ const esc = (t: string) => xmlSafe(t).replace(/&/g, '&amp;').replace(/</g, '&lt;
 const para = (runs: string, opts = '') => `<w:p><w:pPr>${opts}<w:spacing w:after="120"/></w:pPr>${runs}</w:p>`
 const run = (t: string, bold = false) => `<w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`
 
-async function packageDocx(body: string[]): Promise<Buffer> {
+async function packageDocx(body: string[], font = 'Georgia'): Promise<Buffer> {
+  const face = esc(font)
   const zip = new JSZip()
   zip.file(
     '[Content_Types].xml',
@@ -924,7 +927,7 @@ async function packageDocx(body: string[]): Promise<Buffer> {
   )
   zip.file(
     'word/styles.xml',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia" w:cs="Georgia"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>`
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${face}" w:hAnsi="${face}" w:cs="${face}"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>`
   )
   zip.file('word/settings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${W}"/>`)
   zip.file(

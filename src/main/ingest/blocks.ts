@@ -23,9 +23,10 @@ export async function readBlocks(path: string, sourceType: 'pdf' | 'docx' | 'txt
     }
   }
   const doc = await parseFile(path)
-  return joinBrokenLines(doc.lines).map((line, i) => {
-    const { label, text } = splitLabel(line)
-    return { id: `b${i}`, kind: headingLike(label, text) ? 'heading' : 'para', label, text }
+  return joinBrokenLines(doc.lines, doc.layout).map(({ line, center, bold }, i) => {
+    // A centred line isn't a numbered clause ("12 Crossland Mews" is an address).
+    const { label, text } = center ? { label: undefined, text: line } : splitLabel(line)
+    return { id: `b${i}`, kind: headingLike(label, text) ? 'heading' : 'para', label, text, ...(center ? { center: true } : {}), ...(bold ? { bold: true } : {}) }
   })
 }
 
@@ -90,13 +91,19 @@ function dropPrefix(segments: TrackedSegment[], label: string): TrackedSegment[]
  * PDF text breaks paragraphs at page ends. A line that doesn't start a numbered
  * clause or heading, following one that doesn't end a sentence, continues it.
  */
-function joinBrokenLines(lines: string[]): string[] {
-  const out: string[] = []
-  for (const line of lines) {
+function joinBrokenLines(lines: string[], layout?: { center?: boolean; hard?: boolean; bold?: boolean }[]): { line: string; center: boolean; bold: boolean }[] {
+  const out: { line: string; center: boolean; hard: boolean; bold: boolean }[] = []
+  lines.forEach((line, i) => {
     const prev = out[out.length - 1]
-    const continues = prev !== undefined && !/[.;:!?)"”']$/.test(prev.trim()) && !TYPED_NUMBER.test(line) && !isHeading(line) && !isHeading(prev)
-    if (continues) out[out.length - 1] = `${prev.trimEnd()} ${line.trimStart()}`
-    else out.push(line)
-  }
+    const here = layout?.[i] ?? {}
+    // A line broken on purpose, or centred, stays as it is (a PDF says which).
+    const continues =
+      prev !== undefined && !prev.hard && !prev.center && !here.center && !/[.;:!?)"”']$/.test(prev.line.trim()) && !TYPED_NUMBER.test(line) && !isHeading(line) && !isHeading(prev.line)
+    if (continues) {
+      prev.line = `${prev.line.trimEnd()} ${line.trimStart()}`
+      prev.hard = !!here.hard
+      prev.bold &&= !!here.bold
+    } else out.push({ line, center: !!here.center, hard: !!here.hard, bold: !!here.bold })
+  })
   return out
 }

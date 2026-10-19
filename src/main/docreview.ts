@@ -44,7 +44,7 @@ export function createDocSession(
     injection: {},
     aiInjectionReports: [],
     decisions: {},
-    doc: { blocks, edits: {}, comments: [], decisions: {}, ai: {} }
+    doc: { blocks, edits: {}, comments: [], decisions: {}, ai: {}, ...(doc.font ? { font: doc.font } : {}) }
   }
   const d = s.doc!
   if (opts.prev?.doc) {
