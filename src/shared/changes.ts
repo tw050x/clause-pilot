@@ -147,16 +147,26 @@ export function effectiveSegments(doc: DocReview, b: DocBlock): TrackedSegment[]
  * insertion of theirs our edit strikes in full isn't one: striking it is rejecting it (as deleting
  * another reviewer's insertion is in Word), and there's nothing of theirs left on the page to pick.
  */
-export const hasOpenChanges = (doc: DocReview, b: DocBlock) => {
+export const hasOpenChanges = (doc: DocReview, b: DocBlock) => openChanges(doc, b).length > 0
+
+/** Their changes in the paragraph still to decide (their indexes in its redline); see hasOpenChanges. */
+export function openChanges(doc: DocReview, b: DocBlock): number[] {
   const segs = effectiveSegments(doc, b).filter((s) => s.op !== 'same')
-  if (!segs.length) return false
-  if (doc.edits[b.id] === undefined) return true
+  if (!segs.length || doc.edits[b.id] === undefined) return segs.map((s) => s.i!)
   const marks = marksFor(doc, b)
-  return segs.some((s) => {
-    if (s.op !== 'ins') return true
+  const tidyT = (t: string) => t.replace(/\s+/g, ' ').trim()
+  return segs.filter((s) => {
+    if (s.op === 'del') {
+      // A deletion of theirs our edit puts back word for word, where it was (after what of theirs
+      // we struck in its place): rejected.
+      const at = marks.findIndex((m) => m.seg === s.i && m.theirs === 'del')
+      let k = at + 1
+      while (k < marks.length && marks[k].theirs === 'ins' && marks[k].ours === 'del') k++
+      return !(at >= 0 && marks[k]?.ours === 'ins' && !marks[k].theirs && tidyT(marks[k].text) === tidyT(s.text))
+    }
     const mine = marks.filter((m) => m.seg === s.i && m.theirs === 'ins')
     return !mine.length || !mine.every((m) => m.ours === 'del')
-  })
+  }).map((s) => s.i!)
 }
 
 /** A paragraph as shown: their redline (as resolved) with our wording over it. */

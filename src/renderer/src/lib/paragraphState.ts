@@ -48,13 +48,15 @@ export function paragraphState(d: DocReview, b: DocBlock, text: string, marks: n
   // The AI found it means the same as our approved wording: dashed green until you decide it.
   // (Their paper: a paragraph to read that the AI found means the same as one of ours, too.)
   const reading = needsReading(d, b)
-  const bar = `${(open || reading) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : reading && !edited ? 'chg-read' : ''} ${edited ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''}`
+  // Their changes still to decide show over our edits (the bar's stripes say there's something to
+  // do, and the label says what): an edited paragraph is "Edited" once nothing of theirs is open.
+  const bar = `${(open || reading) && !edited && aiSame(d, b) ? 'chg-ai' : open ? 'chg-theirs' : reading && !edited ? 'chg-read' : ''} ${edited && !open ? 'chg-ours' : checked ? 'chg-checked' : ''} ${b.untracked && open ? 'chg-untracked' : ''}`
     .replace(/\s+/g, ' ')
     .trim()
   // Exactly our approved wording, or exactly what we sent last round: "Unchanged".
   // (Not one a reviewer marked as checked: that's a judgement, not a match.)
   const exact = !open && !edited && !gone && b.kind !== 'deleted' && !b.ours && !theyChanged(b) && (!!b.approved || (d.baseline?.kind === 'sent' && !!d.lastRound?.[b.id]))
-  // The label for its bar (your edits show over theirs, as the bar does).
+  // The label for its bar (as the bar: their changes to decide, then your edits).
   const state: GutterState | null = gone
     ? null
     : bar.includes('chg-ours')

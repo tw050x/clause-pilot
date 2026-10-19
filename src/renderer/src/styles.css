@@ -1101,3 +1101,4 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 @keyframes wv-todo { from { background-position: 0 0; } to { background-position: 0 -8px; } }
 @media (prefers-reduced-motion: reduce) { .wv-bar.todo::after, .key-bar.todo::after { animation: none; } }
 .key-bar.todo.chg-ai { background: var(--exact); }
+.dr-todo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, #1d4ed8 8%, var(--surface)); color: #1d4ed8; font-size: 12.5px; font-weight: 600; }

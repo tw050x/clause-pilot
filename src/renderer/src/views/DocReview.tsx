@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { AiQuestion, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, commentResolved, groupOf, hasOpenChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, shownText, stillOpen, theyChanged } from '@shared/changes'
+import { aiSame, authorsOf, changeKey, commentResolved, groupOf, hasOpenChanges, openChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, shownText, stillOpen, theyChanged } from '@shared/changes'
 import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -278,7 +278,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           )}
         </>
       ) : highlight && hlBlock ? (
-        <ParagraphPanel key={hlBlock.id} session={session} b={hlBlock} quote={highlight.quote} showComments draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} />
+        <ParagraphPanel key={hlBlock.id} session={session} b={hlBlock} quote={highlight.quote} showComments draft={draft?.blockId === hlBlock.id ? draft : null} setDraft={setDraft} act={act} onPick={(x) => onSelectChanges(x)} />
       ) : block ? (
         <ParagraphPanel
           key={block.id}
@@ -288,6 +288,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           draft={draft?.blockId === block.id ? draft : null}
           setDraft={setDraft}
           act={act}
+          onPick={(x) => onSelectChanges(x)}
         />
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
@@ -993,7 +994,8 @@ function ParagraphPanel({
   setDraft,
   act,
   showComments,
-  quote
+  quote,
+  onPick
 }: {
   session: ReviewSession
   b: DocBlock
@@ -1003,8 +1005,12 @@ function ParagraphPanel({
   /** Comments show only when something is referenced: highlighted text, or the comment badge. */
   showComments?: boolean
   quote?: string
+  /** Select changes (its changes still to decide), as clicking them would. */
+  onPick?: (picked: SelectedChange[]) => void
 }) {
   const d = session.doc!
+  // Their changes here still to decide, a replacement counted once.
+  const todo = [...new Set(openChanges(d, b).map((i) => groupOf(b, i)[0] ?? i))]
   const edit = d.edits[b.id]
   const authors = [...new Set(segmentsOf(b).filter((s) => s.op !== 'same').map((s) => s.author ?? 'Unknown'))]
   const last = d.lastRound?.[b.id]
@@ -1038,6 +1044,18 @@ function ParagraphPanel({
         <div className="dr-last">
           <div className="dr-mini-h">Last round we proposed</div>
           <div className="dr-last-text">{last.sent}</div>
+        </div>
+      )}
+      {todo.length > 0 && (
+        <div className="dr-todo">
+          <span>
+            {todo.length === 1 ? '1 change of theirs' : `${todo.length} changes of theirs`} still to decide
+          </span>
+          {onPick && (
+            <button className="btn sm primary" onClick={() => onPick(todo.map((seg) => ({ blockId: b.id, kind: 'theirs' as const, seg })))}>
+              Select {todo.length === 1 ? 'it' : 'them'}
+            </button>
+          )}
         </div>
       )}
       <div className="dr-card-actions">
