@@ -3,7 +3,7 @@ import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { indentList, listAfter } from '@shared/numbering'
-import { groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { commentResolved, groupOf, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
@@ -99,6 +99,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onShowText }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
+  /** A paragraph's comments not yet resolved, theirs and ours. */
+  const openComments = (blockId: string) => {
+    const d = model.current
+    return (d.blocks.find((b) => b.id === blockId)?.comments ?? []).filter((c) => !commentResolved(d, c)).length + d.comments.filter((c) => c.blockId === blockId && !commentResolved(d, c)).length
+  }
   /** A paragraph's comments, theirs and ours. */
   const commentCount = (blockId: string) => (model.current.blocks.find((b) => b.id === blockId)?.comments?.length ?? 0) + model.current.comments.filter((c) => c.blockId === blockId).length
   /** The margin's comment button, level with a selection, to the right of the text. */
@@ -109,10 +114,11 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number })[] }>({
     bars: [],
     runs: [],
-    ai: []
+    ai: [],
+    notes: []
   })
   // The gutter as last measured, for handlers set up before it was (the page's own listeners).
   const gutterNow = useRef(gutter)
@@ -195,10 +201,17 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const stale = !textRuns(loaded, g.blockIds, g.quote, reviewer).hit?.length
       return p ? [{ ...p, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale }] : []
     })
-    // Two highlights in one paragraph: their markers one under the other, not on top of each other.
-    ai.sort((x, y) => x.top - y.top)
-    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 20) ai[i] = { ...ai[i], top: ai[i - 1].top + 20 }
-    setGutter({ bars, runs, ai })
+    // Paragraphs with comments still open: their count, always shown, beside the paragraph.
+    const notes = d.blocks.flatMap((b) => {
+      const p = byBlock.get(b.id)?.[0]
+      const count = openComments(b.id)
+      return p && count ? [{ ...p, blockId: b.id, count }] : []
+    })
+    // Markers in the right margin one under the other, not on top of each other (two highlights
+    // in one paragraph; a comment marker under the AI markers beside it).
+    const column = [...ai.map((m) => ({ m, kind: 0 })), ...notes.map((m) => ({ m, kind: 1 }))].sort((x, y) => x.m.top - y.m.top || x.kind - y.kind)
+    for (let i = 1; i < column.length; i++) if (column[i].m.top < column[i - 1].m.top + 19) column[i].m.top = column[i - 1].m.top + 19
+    setGutter({ bars, runs, ai, notes })
   }
 
   /** The page's paragraphs in order, as text with all changes applied (Word's own numbers aren't part of it). */
@@ -415,7 +428,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
         // An AI marker it would cover, or that it would sit just under: directly below it.
         const marker = gutterNow.current.ai.find((m) => top > m.top + 2 - 16 && top < m.top + 2 + 16 + 24)
         if (marker) top = marker.top + 2 + 16 + 3 // 3px between them
-        setBubble({ top, left: r.right - base.left + 12, blockId: loaded.ids[nodeId(fragment)] ?? blockIds[0], quote: sel.quotedText })
+        const at = loaded.ids[nodeId(fragment)] ?? blockIds[0]
+        // A paragraph with open comments has its marker already; others get one with the selection.
+        if (!openComments(at)) setBubble({ top, left: r.right - base.left + 12, blockId: at, quote: sel.quotedText })
       }
       cb.current.onFocusBlock(blockIds[0])
       cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
@@ -585,6 +600,20 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
               {GUTTER[r.state].label}
             </span>
           </div>
+        ))}
+        {gutter.notes.map((n) => (
+          <button
+            key={`n${n.blockId}`}
+            className="ed-gutter-btn out wv-comment"
+            style={{ top: n.top + 2, left: n.right + 12 }}
+            title={`${commentLabel(n.count)} on this paragraph: show them in the right-hand column`}
+            aria-label={`Show ${commentLabel(n.count)}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => cb.current.onOpenComments(n.blockId)}
+          >
+            <CommentIcon size={10} />
+            <span>{n.count}</span>
+          </button>
         ))}
         {bubble && (
           <button
