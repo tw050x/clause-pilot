@@ -125,7 +125,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[] }>({
     bars: [],
     runs: [],
     ai: [],
@@ -302,12 +302,14 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       return el ? at((el.closest('.superdoc-line') ?? el).getBoundingClientRect()).top : null
     }
     // Text with AI answers: a marker beside the first line of each highlight.
-    const groups = new Map<string, { blockIds: string[]; quote: string; titles: Set<string> }>()
+    // (A question still being asked shows there too, loading, before its answer is in.)
+    const groups = new Map<string, { blockIds: string[]; quote: string; titles: Set<string>; running: boolean }>()
     for (const r of d.aiRuns ?? []) {
-      if (r.status !== 'done' || !r.blockIds.length) continue
+      if ((r.status !== 'done' && r.status !== 'running') || !r.blockIds.length) continue
       const key = `${[...r.blockIds].sort().join(',')}\u0000${tidy(r.quote)}`
-      const g = groups.get(key) ?? { blockIds: r.blockIds, quote: r.quote, titles: new Set<string>() }
-      g.titles.add(r.title ?? DEFAULTS.find((q) => q.id === questionIdOf(r))?.title ?? r.question.split('\n')[0])
+      const g = groups.get(key) ?? { blockIds: r.blockIds, quote: r.quote, titles: new Set<string>(), running: false }
+      if (r.status === 'running') g.running = true
+      else g.titles.add(r.title ?? DEFAULTS.find((q) => q.id === questionIdOf(r))?.title ?? r.question.split('\n')[0])
       groups.set(key, g)
     }
     const ai = [...groups.values()].flatMap((g) => {
@@ -315,7 +317,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       // Asked of wording the paragraph no longer has (changed since): says so, and hovering it
       // shows the paragraph as a whole.
       const top = lineOf(g.blockIds, g.quote)
-      return p ? [{ ...p, top: top ?? p.top, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale: top === null }] : []
+      return p ? [{ ...p, top: top ?? p.top, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale: top === null, running: g.running }] : []
     })
     // Paragraphs with comments still open: their count, always shown, beside the first line one
     // is on (a reply, where the comment it answers is).
@@ -1094,9 +1096,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             onMouseEnter={() => preview(a)}
             onMouseLeave={() => preview(null)}
           >
-            <Icon name="sparkle" size={9} stroke={2.4} />
+            {a.running ? <span className="spinner wv-ai-spin" aria-label="Asking the AI" /> : <Icon name="sparkle" size={9} stroke={2.4} />}
             <span>
-              {a.titles.length}
+              {a.titles.length || (a.running ? '' : 0)}
               {a.stale && <span className="wv-ai-stale"> · earlier</span>}
             </span>
           </button>
