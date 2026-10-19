@@ -1160,7 +1160,9 @@ function AiSection({
     const runs = [...(d.aiRuns ?? [])].reverse().filter((r) => questionIdOf(r) === q.id && sameIds(r.blockIds, highlight.blockIds))
     return runs.find((r) => r.quote === highlight.quote) ?? (q.method === 'once' ? undefined : runs[0])
   }
-  const offered = questions.filter(fits)
+  // Offered if it fits this text, and always if it's been asked of it (once answered, it may no
+  // longer fit: their changes decided, the intent check done; the card and its answer stay).
+  const offered = questions.filter((q) => fits(q) || latest(q))
   // Prioritised questions, and others once asked of this text, are cards; the rest are in the menu.
   const cards = offered.filter((q) => q.priority || latest(q))
   const more = offered.filter((q) => !cards.includes(q))
