@@ -118,12 +118,13 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .bottombar[hidden] { display: none; }
 .bottombar-group { display: flex; align-items: center; gap: 8px; }
 .bottombar-group:first-child { flex: 1; min-width: 0; }
-/* Under the review column: from its left edge (the bar's own margin, border and padding taken off). */
-.bottombar-decide { box-sizing: border-box; width: calc(var(--rightbar-w) - 23px); align-self: stretch; margin-block: -8px; padding-left: 16px; border-left: 1px solid var(--border); transition: width 0.25s ease; }
+/* Under the review column: from its left edge (the column card's border and right margin, and the
+   bar's own border and padding, accounted for). */
+.bottombar-decide { box-sizing: border-box; width: calc(var(--rightbar-w) - 11px); align-self: stretch; margin-block: -8px; padding-left: 16px; border-left: 1px solid var(--border); transition: width 0.25s ease; }
 
 /* ---- right sidebar: review controls + chat ---- */
 /* Floats off the window edges as a card, like the left sidebar. */
-.rightbar { position: relative; width: var(--rightbar-w); flex-shrink: 0; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
+.rightbar { position: relative; width: var(--rightbar-w); flex-shrink: 0; margin: 10px 12px 0 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
 .rightbar[hidden] { display: none; }
 .rightbar-switch { padding: 12px 16px 4px; }
 .rightbar-body { flex: 1; min-height: 0; overflow-y: auto; }
