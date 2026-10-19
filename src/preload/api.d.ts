@@ -93,6 +93,8 @@ export interface Api {
     /** The cap a run starts with, and what the AI is set to. */
     defaults(): Promise<{ provider: 'anthropic' | 'vllm'; model: string; budget: { tokens: number; usd?: number }; ready: boolean; why?: string }>
     start(id: string, budget: { tokens: number; usd?: number }): Promise<ReviewSession>
+    /** Go on with a paused run (after the estimate, the budget reached, or a failure), with a new budget if given. */
+    continue(id: string, budget?: { tokens: number; usd?: number }): Promise<ReviewSession>
     stop(id: string): Promise<ReviewSession>
   }
   redline: {

@@ -20,7 +20,7 @@ import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnsw
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
-import { DEFAULT_BUDGET, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, continueReview as continuePipeline, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1124,7 +1124,8 @@ const pipelineDeps = (): PipelineDeps => ({
     const st = loadSettings()
     return st.aiProvider === 'vllm' ? { kind: 'vllm', model: st.vllmModel ?? '' } : { kind: 'anthropic', model: st.model }
   },
-  uid: (p) => uid(p)
+  uid: (p) => uid(p),
+  knowledge: () => ({ library: ws.store.library(), playbook: ws.store.playbook(), questions: ws.store.questions() })
 })
 
 ipcMain.handle('pipeline:defaults', () => {
@@ -1145,6 +1146,14 @@ ipcMain.handle('pipeline:start', (_e, sessionId: string, budget: { tokens: numbe
   if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
   startPipeline(s, pipelineDeps(), budget)
   ws.audit.append(actor(), 'review.pipeline-started', s.id, { budget })
+  return s
+})
+
+ipcMain.handle('pipeline:continue', (_e, sessionId: string, budget?: { tokens: number; usd?: number }) => {
+  const s = session(sessionId)
+  if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
+  continuePipeline(s, pipelineDeps(), budget)
+  ws.audit.append(actor(), 'review.pipeline-continued', s.id, { budget })
   return s
 })
 

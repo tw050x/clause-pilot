@@ -17,9 +17,14 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
   useEffect(() => {
     void window.api.pipeline.defaults().then((x) => {
       setDefaults(x)
-      setBudget(String(x.provider === 'anthropic' ? x.budget.usd : Math.round(x.budget.tokens / 1000)))
+      // A run's own budget, to raise when going on; otherwise the default.
+      const b = run?.budget ?? x.budget
+      setBudget(String(x.provider === 'anthropic' ? (b.usd ?? x.budget.usd) : Math.round(b.tokens / 1000)))
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id])
+  const [questions, setQuestions] = useState<{ id: string; title: string }[]>([])
+  useEffect(() => void window.api.questions.list().then((q) => setQuestions(q.map((x) => ({ id: x.id, title: x.title })))), [])
   const act = async (p: Promise<ReviewSession>) => {
     setBusy(true)
     setError(null)
@@ -31,12 +36,22 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
       setBusy(false)
     }
   }
-  const start = () => {
-    if (!defaults) return
+  const budgetOf = () => {
     const n = Number(budget)
-    if (!(n > 0)) return setError('Set a budget above zero.')
-    void act(window.api.pipeline.start(session.id, defaults.provider === 'anthropic' ? { usd: n, tokens: defaults.budget.tokens } : { tokens: n * 1000 }))
+    if (!defaults || !(n > 0)) return null
+    return defaults.provider === 'anthropic' ? { usd: n, tokens: defaults.budget.tokens } : { tokens: n * 1000 }
   }
+  const start = () => {
+    const b = budgetOf()
+    if (!b) return setError('Set a budget above zero.')
+    void act(window.api.pipeline.start(session.id, b))
+  }
+  const goOn = () => {
+    const b = budgetOf()
+    if (!b) return setError('Set a budget above zero.')
+    void act(window.api.pipeline.continue(session.id, b))
+  }
+  const resumable = run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped')
   const running = run?.status === 'running'
   const claude = defaults?.provider === 'anthropic'
 
@@ -62,6 +77,30 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
         </ol>
       )}
 
+      {run?.questions && run.questions.length > 0 && (
+        <div className="tl-questions">
+          <div className="dr-mini-h">Worth asking too</div>
+          {run.questions.map((q, i) => {
+            const part = run.parts?.find((p) => p.id === q.partId)
+            return (
+              <div key={i} className="tl-question dr-small">
+                <strong>{questions.find((x) => x.id === q.questionId)?.title ?? q.questionId}</strong>
+                {part && (
+                  <>
+                    {' '}
+                    on{' '}
+                    <button className="link-btn" onClick={() => onJump(part.blockIds[0])}>
+                      {part.title}
+                    </button>
+                  </>
+                )}
+                <span className="faint">: {q.why}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {!running && defaults && (
         <div className="tl-start">
           <label className="tl-budget" title={claude ? 'The most this run may spend on Claude: it pauses there, keeping what it has done.' : 'The most this run may use: it pauses there, keeping what it has done.'}>
@@ -70,9 +109,20 @@ export function Timeline({ session, onChange, onJump }: { session: ReviewSession
             <input type="number" min={1} step={claude ? 1 : 100} value={budget} onChange={(e) => setBudget(e.target.value)} />
             {!claude && <span className="faint">k tokens</span>}
           </label>
-          <button className="btn primary" disabled={busy || !defaults.ready} onClick={start} title={defaults.why}>
-            <Icon name="sparkle" size={14} /> {run ? 'Start again' : 'Start review'}
-          </button>
+          {resumable ? (
+            <div className="row-gap">
+              <button className="btn sm ghost" disabled={busy || !defaults.ready} onClick={start} title="Start over: the structure is read again and every part reviewed again">
+                Start again
+              </button>
+              <button className="btn primary" disabled={busy || !defaults.ready} onClick={goOn} title="Go on from where it stopped, with this budget">
+                Continue
+              </button>
+            </div>
+          ) : (
+            <button className="btn primary" disabled={busy || !defaults.ready} onClick={start} title={defaults.why}>
+              <Icon name="sparkle" size={14} /> {run ? 'Start again' : 'Start review'}
+            </button>
+          )}
         </div>
       )}
       {running && (

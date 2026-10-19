@@ -129,7 +129,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[]; parts: (Placed & { text: string; tip: string; status: string })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[]; parts: (Placed & { text: string; tip: string; status: string; found: string[] })[] }>({
     bars: [],
     runs: [],
     ai: [],
@@ -397,7 +397,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
     })
     // Once the AI has read the structure: the left margin shows its parts instead (each part one
     // bar, in its review status; a label naming what it is), not each paragraph's own state.
-    const partLabels: (Placed & { text: string; tip: string; status: string })[] = []
+    const partLabels: (Placed & { text: string; tip: string; status: string; found: string[] })[] = []
     const parts = d.pipeline?.parts
     if (parts?.length) {
       const statusOf = new Map((d.pipeline!.steps.find((x) => x.id === 'review')?.children ?? []).map((c) => [c.partId, c.status]))
@@ -421,7 +421,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
       for (const p of parts) {
         const first = byTop.find((b) => p.blockIds.includes(b.blockId))
         if (!first) continue
-        partLabels.push({ top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}` })
+        partLabels.push({ top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title) })
       }
     }
     setGutter({ bars, runs, ai, notes, cards, parts: partLabels })
@@ -1136,52 +1136,17 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
             </span>
           </div>
         ))}
-        {/* A paragraph shown at an earlier stage shows what it had then: no comments before their
-            changes, theirs only with their changes (the questions asked of the AI are all ours). */}
-        {gutter.notes.flatMap((n) => {
-          const stage = stageShown(n.blockId)
-          if (stage === 'original' || (stage === 'theirs' && !n.theirs)) return []
-          return [stage === 'theirs' ? { ...n, count: n.theirs, quotes: n.theirQuotes } : n]
-        }).map((n) => (
-          <button
-            key={`n${n.blockId}`}
-            className="wv-ai wv-note"
-            style={{ top: n.top, left: n.right + 12 }}
-            aria-label={`Show ${commentLabel(n.count)}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              preview(null)
-              pick([])
-              cb.current.onOpenComments(n.blockId)
-            }}
-            onMouseEnter={() => preview({ blockIds: [n.blockId], quotes: n.quotes })}
-            onMouseLeave={() => preview(null)}
-          >
-            <CommentIcon size={9} />
-            <span>{n.count}</span>
-          </button>
-        ))}
-        {gutter.ai.filter((a) => !['original', 'theirs'].includes(stageShown(a.blockIds[0]) ?? '')).map((a, i) => (
-          <button
-            key={`a${i}`}
-            className={`wv-ai ${a.stale ? 'stale' : ''}`}
-            style={{ top: a.top, left: a.right + 12 }}
-            aria-label="Show the AI answers for this text"
-            onClick={() => {
-              preview(null)
-              pick([])
-              cb.current.onOpenAi({ blockId: a.blockIds[0], blockIds: a.blockIds, quote: a.quote })
-            }}
-            onMouseEnter={() => preview(a)}
-            onMouseLeave={() => preview(null)}
-          >
-            {a.running ? <span className="spinner wv-ai-spin" aria-label="Asking the AI" /> : <Icon name="sparkle" size={9} stroke={2.4} />}
-            <span>
-              {a.titles.length || (a.running ? '' : 0)}
-              {a.stale && <span className="wv-ai-stale"> · earlier</span>}
+        {/* The automated review on each part, beside its first line: the AI looking at it now, or
+            what it found that needs the reviewer. (The questions and comments that were here are
+            part of the review now.) */}
+        {gutter.parts
+          .filter((r) => r.status === 'running' || r.found.length)
+          .map((r, i) => (
+            <span key={`pm${i}`} className={`wv-ai wv-part-mark ${r.status}`} style={{ top: r.top, left: r.right + 12 }} data-tip={r.status === 'running' ? 'The AI is reviewing this part now' : r.found.join('\n')}>
+              {r.status === 'running' ? <span className="spinner wv-ai-spin" /> : <Icon name="alert" size={9} stroke={2.4} />}
+              <span>{r.status === 'running' ? 'Reviewing' : r.found.length}</span>
             </span>
-          </button>
-        ))}
+          ))}
       </div>
     </div>
   )

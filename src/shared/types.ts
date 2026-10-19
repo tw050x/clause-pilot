@@ -786,6 +786,28 @@ export interface ReviewPart {
   reason: string
   /** Its paragraphs, in order. */
   blockIds: string[]
+  /** What reviewing it found (to bring together and put to the reviewer). */
+  findings?: PartFinding[]
+}
+
+/** Something a part's review found: an issue, and what it suggests doing about it. */
+export interface PartFinding {
+  id: string
+  /** Which check found it. */
+  check: 'standards' | 'playbook' | 'intent' | 'conflict' | 'their-change' | 'language'
+  severity: 'info' | 'warn' | 'high'
+  title: string
+  detail: string
+  /** The paragraph it's about. */
+  blockId?: string
+  /** Wording suggested for that paragraph (all of it, from how it now reads). */
+  wording?: string
+  /** For one of their tracked changes (its index in the paragraph's redline): accept or reject it. */
+  change?: { seg: number; outcome: 'accepted' | 'rejected' }
+  /** A comment to them suggested with it. */
+  comment?: string
+  /** Other paragraphs it concerns (a conflict). */
+  related?: string[]
 }
 
 export type PipelineStatus = 'waiting' | 'running' | 'done' | 'skipped' | 'needs-you' | 'error'
@@ -831,8 +853,12 @@ export interface PipelineRun {
   /** The cap: tokens (input + output) and, on Claude, dollars. */
   budget: { tokens: number; usd?: number }
   spent: StepUsage
+  /** The reviewer has seen the estimate and said to go on (Continue). */
+  confirmed?: boolean
   /** The estimate for what's next, once the structure is known. */
   estimate?: { calls: number; tokens: number; usd?: number }
   steps: PipelineStep[]
   parts?: ReviewPart[]
+  /** Other questions (of the reviewer's) the AI suggests asking, and why. */
+  questions?: { questionId: string; partId: string; why: string }[]
 }
