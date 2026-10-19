@@ -13,7 +13,7 @@ import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
-import { questionIdOf } from '@shared/questions'
+import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { diffSegments } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
 import { Redline } from '../components/Redline'
@@ -140,6 +140,8 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
   const pickedBlock =
     pickedIds.length === 1 ? (d.blocks.find((b) => b.id === pickedIds[0] && (b.comments?.length || d.comments.some((c) => c.blockId === b.id))) ?? null) : null
 
+  // The paragraphs the selection is about (the selected text and changes, or the caret's paragraph).
+  const textIds = [...new Set([...(highlight?.blockIds ?? []), ...(picked ?? []).map((x) => x.blockId), ...(!highlight && !picked?.length && block ? [block.id] : [])])]
   const column = (
     <div className="rc">
       <section className="rc-section">
@@ -191,20 +193,6 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
         )}
       </section>
 
-      {!showHistory && (
-        <AiSection
-          session={session}
-          highlight={highlight}
-          onHold={onHold}
-          onChange={onChange}
-          debug={debug}
-          run={async (questionId) => {
-            if (!highlight) return
-            // The question is asked; its answer arrives on the card as session updates. Several can run at once.
-            await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
-          }}
-        />
-      )}
 
       {showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
@@ -238,6 +226,24 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
         />
       ) : (
         <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
+      )}
+
+      {/* What's happened to the selected text (or the paragraph the caret is in), newest first. */}
+      {!showHistory && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} />}
+
+      {!showHistory && (
+        <AiSection
+          session={session}
+          highlight={highlight}
+          onHold={onHold}
+          onChange={onChange}
+          debug={debug}
+          run={async (questionId) => {
+            if (!highlight) return
+            // The question is asked; its answer arrives on the card as session updates. Several can run at once.
+            await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
+          }}
+        />
       )}
     </div>
   )
@@ -699,6 +705,77 @@ function ItemView({ item, onJump }: { item: ActionItem; onJump?: (blockId: strin
       )}
       <span className="hist-comment">“{short(item.text)}”</span>
     </div>
+  )
+}
+
+/**
+ * The history of some paragraphs (the selected text, or the paragraph the caret is in), newest
+ * first: what was done to them (decisions, edits, comments, checks: each action's parts that touch
+ * them) and the questions asked of them. Several paragraphs read as one timeline, each entry
+ * naming where it is.
+ */
+function TextHistory({ session, blockIds, onJump }: { session: ReviewSession; blockIds: string[]; onJump: (blockId: string) => void }) {
+  const d = session.doc!
+  const [all, setAll] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
+  const ids = new Set(blockIds)
+  type Event = { at: string; by: string; key: string } & ({ kind: 'action'; undone: boolean; label: string; items: ActionItem[] } | { kind: 'ask'; title: string; where: string; blockId: string })
+  const events: Event[] = [
+    ...(d.history ?? []).flatMap((a): Event[] => {
+      const items = details(d, a).filter((x) => ids.has(x.blockId))
+      return items.length ? [{ kind: 'action', key: a.id, at: a.at, by: a.by, undone: !!a.undone, label: describe(d, a), items }] : []
+    }),
+    ...(d.aiRuns ?? []).flatMap((r): Event[] => {
+      const blockId = r.blockIds.find((x) => ids.has(x))
+      const b = blockId ? d.blocks.find((x) => x.id === blockId) : undefined
+      if (r.status !== 'done' || !b) return []
+      return [{ kind: 'ask', key: r.id, at: r.at, by: r.by, title: r.title ?? DEFAULTS.find((q) => q.id === questionIdOf(r))?.title ?? r.question.split('\n')[0], where: whereOf(d, b), blockId: b.id }]
+    })
+  ].sort((x, y) => y.at.localeCompare(x.at))
+  const shown = all ? events : events.slice(0, 6)
+  const when = (at: string) => new Date(at).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
+  return (
+    <section className="rc-section text-history">
+      <div className="dr-mini-h">History{blockIds.length > 1 ? ` · ${blockIds.length} paragraphs` : ''}</div>
+      {!events.length && <p className="faint dr-small">Nothing done here yet: decisions, edits, comments and questions asked will show here.</p>}
+      <div className="hist-list">
+        {shown.map((e) =>
+          e.kind === 'action' ? (
+            <div key={e.key} className={`hist-item ${e.undone ? 'undone' : ''} ${open === e.key ? 'open' : ''}`} onClick={() => setOpen(open === e.key ? null : e.key)}>
+              <div className="hist-items">
+                {(open === e.key ? e.items : e.items.slice(0, 3)).map((x, i) => (
+                  <ItemView key={i} item={x} onJump={onJump} />
+                ))}
+                {open !== e.key && e.items.length > 3 && <div className="faint hist-more">+ {e.items.length - 3} more · click to see all</div>}
+              </div>
+              <div className="hist-meta faint">
+                {e.by} · {when(e.at)}
+                {e.undone && ' · undone'}
+              </div>
+            </div>
+          ) : (
+            <div key={e.key} className="hist-item">
+              <div className="hist-items">
+                <div className="hist-row">
+                  <button className="link-btn hist-where" onClick={() => onJump(e.blockId)}>
+                    {e.where}
+                  </button>{' '}
+                  asked the AI: <span className="hist-comment">{e.title}</span>
+                </div>
+              </div>
+              <div className="hist-meta faint">
+                {e.by} · {when(e.at)}
+              </div>
+            </div>
+          )
+        )}
+      </div>
+      {events.length > shown.length && (
+        <button className="link-btn dr-small" onClick={() => setAll(true)}>
+          Show all {events.length}
+        </button>
+      )}
+    </section>
   )
 }
 
