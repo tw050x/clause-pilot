@@ -84,14 +84,28 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     if (!w || !loaded) return
     const base = w.getBoundingClientRect()
     const at = (r: DOMRect) => ({ top: r.top - base.top + w.scrollTop, height: r.height, left: r.left - base.left })
+    // Paragraphs and table-cell paragraphs both carry their id. A review paragraph's pieces side by
+    // side (a table row's cells) are one place, from the leftmost; pieces on later pages are more.
     const byBlock = new Map<string, Placed[]>()
-    for (const el of loaded.host.querySelectorAll('.superdoc-fragment[data-source-node-id]')) {
+    for (const el of loaded.host.querySelectorAll('[data-source-node-id]')) {
       const blockId = loaded.ids[nodeId(el)]
       if (!blockId) continue
+      const r = at(el.getBoundingClientRect())
+      if (!r.height) continue
+      // In a table: level with the table's left edge (a row's first cell may be merged from above).
+      const table = el.classList.contains('superdoc-fragment') ? null : el.closest('.superdoc-fragment')
+      if (table) r.left = at(table.getBoundingClientRect()).left
       const list = byBlock.get(blockId) ?? []
-      list.push(at(el.getBoundingClientRect()))
+      const same = list.find((x) => r.top < x.top + x.height && x.top < r.top + r.height)
+      if (same) {
+        const bottom = Math.max(same.top + same.height, r.top + r.height)
+        same.top = Math.min(same.top, r.top)
+        same.height = bottom - same.top
+        same.left = Math.min(same.left, r.left)
+      } else list.push(r)
       byBlock.set(blockId, list)
     }
+    for (const list of byBlock.values()) list.sort((a, b) => a.top - b.top)
     const d = model.current
     const bars: (Placed & { bar: string })[] = []
     const runs: (Placed & { state: GutterState })[] = []
@@ -239,7 +253,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       if (!blockIds.length) return
       // The comment button: level with where the selection ended, beside the text.
       const w = wrap.current
-      const fragment = clicked?.closest('.superdoc-fragment[data-source-node-id]')
+      const fragment = clicked?.closest('.superdoc-fragment[data-source-node-id]') ?? clicked?.closest('[data-source-node-id]')
       if (w && fragment) {
         const base = w.getBoundingClientRect()
         const r = fragment.getBoundingClientRect()
@@ -249,7 +263,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
       return
     }
-    const fragment = clicked?.closest('.superdoc-fragment[data-source-node-id]')
+    const fragment = clicked?.closest('[data-source-node-id]')
     const blockId = fragment ? loaded.ids[nodeId(fragment)] : undefined
     const change = (clicked?.closest('[data-track-change-id]') as HTMLElement | null)?.dataset.trackChangeId
     if (change) await theirChange(loaded, change, blockId, picked)
@@ -359,7 +373,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const loaded = current.current
       if (!loaded) return
       const want = new Set(blockIds)
-      const el = [...loaded.host.querySelectorAll('.superdoc-fragment[data-source-node-id]')].find((x) => want.has(loaded.ids[nodeId(x)]))
+      const el = [...loaded.host.querySelectorAll('[data-source-node-id]')].find((x) => want.has(loaded.ids[nodeId(x)]))
       el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     })
     return () => setFlashFallback(null)
