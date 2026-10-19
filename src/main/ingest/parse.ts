@@ -3,6 +3,7 @@ import { extname, basename } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { DocComment, SourceType, TrackedDeletion, TrackedSegment } from '@shared/types'
 import { readDocx } from './docxTracked'
+import { Ligatures } from './ligatures'
 
 export interface ParsedDocument {
   name: string
@@ -82,19 +83,25 @@ async function pdfLines(buf: Buffer): Promise<string[]> {
   const task = pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: true })
   const doc = await task.promise
   const out: string[] = []
+  // Glyphs drawn without letters (ligatures): marked here, resolved once the whole text is in.
+  const ligatures = new Ligatures()
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
-    type Row = { y: number; x: number; h: number; text: string }
+    type Row = { y: number; x: number; h: number; text: string; glued: boolean }
     const rows: Row[] = []
     for (const item of content.items) {
       if (!('str' in item) || !item.str.trim()) continue
-      const [, , , , x, y] = item.transform as number[]
+      const [a, b, , , x, y] = item.transform as number[]
       const h = item.height || 10
+      // A ligature with no letters: its marker joins the words either side of it (no space).
+      const unmapped = item.str.includes('\u0000')
+      const str = unmapped ? item.str.replace(/\u0000/g, ligatures.mark(item.fontName, item.width / (Math.hypot(a, b) || 1) / item.str.length)) : item.str
       const row = rows.find((r) => Math.abs(r.y - y) < h * 0.4)
       if (row) {
-        row.text += (x > row.x ? ' ' : '') + item.str
-      } else rows.push({ y, x, h, text: item.str })
+        row.text += (x > row.x && !unmapped && !row.glued ? ' ' : '') + str
+        row.glued = unmapped
+      } else rows.push({ y, x, h, text: str, glued: unmapped })
     }
     rows.sort((a, b) => b.y - a.y)
     let para = ''
@@ -113,5 +120,5 @@ async function pdfLines(buf: Buffer): Promise<string[]> {
     if (para) out.push(para.trim())
   }
   await task.destroy()
-  return out.filter(Boolean)
+  return ligatures.repair(out.filter(Boolean))
 }
