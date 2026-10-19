@@ -1034,3 +1034,5 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .ai-card-state.done { color: var(--exact); background: var(--exact-tint); }
 .ai-card-state.running { color: var(--processing); background: var(--processing-tint); }
 .ai-card-state.failed { color: var(--rejected); background: var(--rejected-tint); }
+.rc-only-head { display: flex; flex-direction: row; align-items: center; padding-bottom: 0; justify-content: space-between; gap: 8px; }
+.rc-only-head .rp-h { margin: 0; }

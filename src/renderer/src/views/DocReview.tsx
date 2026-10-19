@@ -83,7 +83,13 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
   const highlighted = !!highlight
   /** A paragraph whose comments were asked for (its comment badge). */
   const [commentsFor, setCommentsFor] = useState<string | null>(null)
+  /**
+   * A margin marker was clicked: the column shows only what it's for (the questions asked of
+   * that text, or the paragraph's comments) until "Show everything" or another click on the page.
+   */
+  const [only, setOnly] = useState<'ai' | 'comments' | null>(null)
   const onSelectChanges = useCallback((x: SelectedChange[] | null, hl?: Highlight) => {
+    setOnly(null)
     setPicked(x)
     setHighlight(x && hl ? hl : null)
     if (x) {
@@ -96,6 +102,7 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
     setFocus(null)
     setDraft(null)
     setPicked(null)
+    setOnly(null)
   }, [session.id])
 
   const act = useCallback(
@@ -112,6 +119,7 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
     [onChange]
   )
   const onFocusBlock = useCallback((id: string | null) => {
+    setOnly(null)
     setFocus(id)
     setCommentsFor((c) => (c === id ? c : null))
   }, [])
@@ -194,7 +202,36 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
       </section>
 
 
-      {showHistory ? (
+      {!showHistory && only ? (
+        <>
+          <section className="rc-section rc-only-head">
+            <h4 className="rp-h">{(only === 'ai' ? hlBlock : block) ? whereOf(d, (only === 'ai' ? hlBlock : block)!) : ''}</h4>
+            <button className="btn sm" onClick={() => setOnly(null)} title="Its changes, history, comments and AI questions">
+              Show everything
+            </button>
+          </section>
+          {only === 'comments' && block ? (
+            <section className="rc-section">
+              <CommentsBlock session={session} b={block} draft={draft?.blockId === block.id ? draft : null} setDraft={setDraft} act={act} />
+            </section>
+          ) : (
+            only === 'ai' && (
+              <AiSection
+                session={session}
+                highlight={highlight}
+                onHold={onHold}
+                onChange={onChange}
+                debug={debug}
+                asked
+                run={async (questionId) => {
+                  if (!highlight) return
+                  await act(window.api.ai.run(session.id, { questionId, blockIds: highlight.blockIds, quote: highlight.quote }).then((r) => r.session))
+                }}
+              />
+            )
+          )}
+        </>
+      ) : showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} />
       ) : picked && picked.length > 0 ? (
         <>
@@ -229,9 +266,9 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
       )}
 
       {/* What's happened to the selected text (or the paragraph the caret is in), newest first. */}
-      {!showHistory && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} />}
+      {!showHistory && !only && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} />}
 
-      {!showHistory && (
+      {!showHistory && !only && (
         <AiSection
           session={session}
           highlight={highlight}
@@ -364,10 +401,22 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
         <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
-            // The comments, with the selection kept (so a new one can go on the selected text).
+            // Only the paragraph's comments ("Show everything" brings the rest back).
             setFocus(blockId)
             setCommentsFor(blockId)
-            requestAnimationFrame(() => document.querySelector('.rightbar .rc-comments-h')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+            setPicked(null)
+            setHighlight(null)
+            setShowHistory(false)
+            setOnly('comments')
+          }}
+          onOpenAi={(hl) => {
+            // Only the questions asked of that text.
+            setFocus(hl.blockId)
+            setPicked([])
+            setHighlight(hl)
+            setShowHistory(false)
+            setSelection((n) => n + 1)
+            setOnly('ai')
           }}
           onShowComments={(id) => {
             setFocus(id)
@@ -1206,11 +1255,14 @@ function AiSection({
   onHold,
   run,
   onChange,
-  debug
+  debug,
+  asked
 }: {
   session: ReviewSession
   highlight: Highlight | null
   onHold: boolean
+  /** Only the questions already asked of it (its AI marker was clicked). */
+  asked?: boolean
   run: (questionId: string) => Promise<unknown>
   onChange: (s: ReviewSession) => void
   debug: boolean
@@ -1243,11 +1295,11 @@ function AiSection({
   // longer fit: their changes decided, the intent check done; the card and its answer stay).
   const offered = questions.filter((q) => fits(q) || latest(q))
   // Prioritised questions, and others once asked of this text, are cards; the rest are in the menu.
-  const cards = offered.filter((q) => q.priority || latest(q))
-  const more = offered.filter((q) => !cards.includes(q))
+  const cards = offered.filter((q) => (asked ? latest(q) : q.priority || latest(q)))
+  const more = asked ? [] : offered.filter((q) => !cards.includes(q))
   return (
     <section className="rc-section ai-section">
-      <div className="dr-mini-h">AI</div>
+      <div className="dr-mini-h">{asked ? 'Asked of this text' : 'AI'}</div>
       {onHold && <p className="dr-small dr-err">On security hold: nothing from this contract goes to the AI.</p>}
       {!offered.length && <p className="faint dr-small">No questions fit this text. Add questions on the Questions page.</p>}
       {cards.map((q) => (

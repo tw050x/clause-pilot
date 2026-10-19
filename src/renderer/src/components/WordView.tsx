@@ -27,8 +27,10 @@ interface Props {
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
   /** Apply a change to the review (the session it returns becomes the review). */
   act: (p: Promise<ReviewSession>) => Promise<boolean>
-  /** Show a paragraph's comments with the selection kept (the margin button beside it). */
+  /** Show only a paragraph's comments (the comment marker beside it). */
   onOpenComments: (blockId: string) => void
+  /** Show only the questions asked of some text (the AI marker beside it). */
+  onOpenAi: (hl: Highlight) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
   /** Show the contract as text instead: called when it can't be laid out, with why. */
@@ -91,12 +93,12 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onOpenComments, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onShowText })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onShowText }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
   /** A paragraph's comments not yet resolved, theirs and ours. */
@@ -632,6 +634,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               preview(null)
+              pick([])
               cb.current.onOpenComments(n.blockId)
             }}
             onMouseEnter={() => preview({ blockIds: [n.blockId], quotes: n.quotes })}
@@ -650,8 +653,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             aria-label="Show the AI answers for this text"
             onClick={() => {
               preview(null)
-              cb.current.onFocusBlock(a.blockIds[0])
-              cb.current.onSelectChanges([], { blockId: a.blockIds[0], blockIds: a.blockIds, quote: a.quote })
+              pick([])
+              cb.current.onOpenAi({ blockId: a.blockIds[0], blockIds: a.blockIds, quote: a.quote })
             }}
             onMouseEnter={() => preview(a)}
             onMouseLeave={() => preview(null)}
