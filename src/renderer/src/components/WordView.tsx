@@ -8,6 +8,7 @@ import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
 import { CommentIcon, Icon } from '../lib/icons'
+import { stagesOf, type Stage } from '../lib/stages'
 
 /**
  * The document as it looks in Word: the review as it stands (their file with our decisions,
@@ -50,6 +51,13 @@ type Placed = { top: number; height: number; left: number; right: number }
 
 /** Paragraph ids in a page fragment's element. */
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
+
+/** Room made above a layered paragraph for its stages card's buttons, and the least below it. */
+const STAGES_TOP = 30
+const STAGES_BOTTOM = 10
+
+/** A layered paragraph's stages card: where it is, and how its text is set (to show a stage in it). */
+type Card = Placed & { blockId: string; label: string; stages: Stage[]; textTop: number; textLeft: number; textWidth: number; font: { family: string; size: string; lineHeight: string; align: string } }
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
 /**
@@ -112,11 +120,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[] })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[] })[]; cards: Card[] }>({
     bars: [],
     runs: [],
     ai: [],
-    notes: []
+    notes: [],
+    cards: []
   })
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
@@ -126,10 +135,93 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     cancelAnimationFrame(measuring.current)
     measuring.current = requestAnimationFrame(measure)
   }
+  /**
+   * Room on the page for each layered paragraph's stages card: space above it for the card's
+   * buttons and below it for the longest stage, made by moving the paragraphs under it on its
+   * page down and making the page that much taller (nothing moves onto another page; a footer
+   * moves down with the page's end). The page's own positions are kept, so this can be done
+   * again whenever the page is drawn again.
+   */
+  const pads = useRef(new Map<string, { top: number; bottom: number }>())
+  const sizer = useRef<HTMLDivElement | null>(null)
+  const makeRoom = (loaded: Loaded) => {
+    const d = model.current
+    const orig = (el: HTMLElement, prop: 'top' | 'height') => {
+      const was = el.dataset[`wv${prop}`]
+      return was !== undefined && el.dataset[`wvset${prop}`] === el.style[prop] ? Number(was) : parseFloat(el.style[prop]) || 0
+    }
+    const put = (el: HTMLElement, prop: 'top' | 'height' | 'minHeight', from: number, to: number) => {
+      const key = prop === 'minHeight' ? 'height' : prop
+      if (prop !== 'minHeight') el.dataset[`wv${key}`] = String(from)
+      const v = `${to}px`
+      if (el.style[prop] !== v) el.style[prop] = v
+      if (prop !== 'minHeight') el.dataset[`wvset${key}`] = el.style[prop]
+    }
+    const pages = [...loaded.host.querySelectorAll<HTMLElement>('.superdoc-page')]
+    const frags = pages.map((page) =>
+      ([...page.children] as HTMLElement[])
+        .filter((f) => f.dataset.layoutStory === 'body' && f.style.top)
+        .map((f) => ({ f, top: orig(f, 'top'), blockId: loaded.ids[nodeId(f)] }))
+        .sort((a, b) => a.top - b.top)
+    )
+    const all = frags.flat()
+    const next = new Map<string, { top: number; bottom: number }>()
+    for (const b of d.blocks) {
+      const stages = stagesOf(d, b)
+      const mine = stages ? all.filter((x) => x.blockId === b.id) : []
+      if (!stages || !mine.length) continue
+      // Below it: the longest stage's text, set as the paragraph is, less the paragraph's height.
+      const run = mine[0].f.querySelector('.superdoc-text-run')
+      const line = mine[0].f.querySelector<HTMLElement>('.superdoc-line')
+      const height = mine.reduce((n, x) => n + x.f.offsetHeight, 0)
+      let el = sizer.current
+      if (!el) {
+        el = sizer.current = document.createElement('div')
+        el.className = 'wv-sizer'
+        document.body.appendChild(el)
+      }
+      const cs = run ? getComputedStyle(run) : null
+      Object.assign(el.style, { width: `${mine[0].f.offsetWidth}px`, fontFamily: cs?.fontFamily ?? '', fontSize: cs?.fontSize ?? '', lineHeight: line?.style.lineHeight ?? '' })
+      let tallest = 0
+      for (const st of stages) {
+        el.textContent = (b.label ? `${b.label} ` : '') + st.segments.map((x) => x.text).join('')
+        tallest = Math.max(tallest, el.offsetHeight)
+      }
+      next.set(b.id, { top: STAGES_TOP, bottom: Math.max(STAGES_BOTTOM, tallest - height + STAGES_BOTTOM) })
+    }
+    pads.current = next
+    const firstOf = new Map<string, HTMLElement>()
+    const lastOf = new Map<string, HTMLElement>()
+    for (const x of all) {
+      if (!x.blockId || !next.has(x.blockId)) continue
+      if (!firstOf.has(x.blockId)) firstOf.set(x.blockId, x.f)
+      lastOf.set(x.blockId, x.f)
+    }
+    pages.forEach((page, i) => {
+      let off = 0
+      for (const x of frags[i]) {
+        const pad = next.get(x.blockId)
+        if (pad && firstOf.get(x.blockId) === x.f) off += pad.top
+        put(x.f, 'top', x.top, x.top + off)
+        if (pad && lastOf.get(x.blockId) === x.f) off += pad.bottom
+      }
+      for (const f of [...page.children] as HTMLElement[])
+        if (f.dataset.layoutStory?.startsWith('footer') && f.style.top) {
+          const top = orig(f, 'top')
+          put(f, 'top', top, top + off)
+        }
+      const h = orig(page, 'height')
+      put(page, 'height', h, h + off)
+      put(page, 'minHeight', h, h + off)
+    })
+  }
+  useEffect(() => () => sizer.current?.remove(), [])
+
   const measure = () => {
     const w = wrap.current
     const loaded = current.current
     if (!w || !loaded) return
+    makeRoom(loaded)
     const base = w.getBoundingClientRect()
     const at = (r: DOMRect) => ({ top: r.top - base.top + w.scrollTop, height: r.height, left: r.left - base.left, right: r.right - base.left })
     // Paragraphs and table-cell paragraphs both carry their id. A review paragraph's pieces side by
@@ -219,7 +311,36 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     // in one paragraph; a comment marker under the AI markers beside it).
     const column = [...ai.map((m) => ({ m, kind: 0 })), ...notes.map((m) => ({ m, kind: 1 }))].sort((x, y) => x.m.top - y.m.top || x.kind - y.kind)
     for (let i = 1; i < column.length; i++) if (column[i].m.top < column[i - 1].m.top + 19) column[i].m.top = column[i - 1].m.top + 19
-    setGutter({ bars, runs, ai, notes })
+    // Layered paragraphs: their stages cards, over the paragraph and the room made for them.
+    const cards: Card[] = d.blocks.flatMap((b) => {
+      const pad = pads.current.get(b.id)
+      const places = byBlock.get(b.id)
+      const stages = pad && stagesOf(d, b)
+      if (!pad || !places?.length || !stages) return []
+      const first = places[0]
+      const last = places[places.length - 1]
+      const el = [...loaded.host.querySelectorAll<HTMLElement>('[data-source-node-id]')].find((x) => loaded.ids[nodeId(x)] === b.id)
+      const run = el?.querySelector('.superdoc-text-run')
+      const cs = run ? getComputedStyle(run) : null
+      const top = first.top - pad.top + 3
+      const bottom = last.top + last.height + pad.bottom - 3
+      return [
+        {
+          blockId: b.id,
+          label: b.label ?? '',
+          stages,
+          top,
+          height: bottom - top,
+          left: first.left - 10,
+          right: first.right + 10,
+          textTop: first.top - top,
+          textLeft: 10,
+          textWidth: first.right - first.left,
+          font: { family: cs?.fontFamily ?? '', size: cs?.fontSize ?? '', lineHeight: el?.querySelector<HTMLElement>('.superdoc-line')?.style.lineHeight ?? '', align: el?.style.textAlign ?? '' }
+        }
+      ]
+    })
+    setGutter({ bars, runs, ai, notes, cards })
     // The page may have been drawn again: the picked changes' tint with it.
     tintPicks()
   }
@@ -358,6 +479,23 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    * become the page's selection, so the review column, the AI questions and the comment button
    * follow it as they follow selected text.
    */
+  /** The layered paragraph the pointer is over (its stages card shows), and the stage shown in it (0: all changes). */
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [stageShown, setStageShown] = useState(0)
+  const hoverAt = (e: React.MouseEvent) => {
+    const w = wrap.current
+    if (!w) return
+    const r = w.getBoundingClientRect()
+    const x = e.clientX - r.left
+    const y = e.clientY - r.top + w.scrollTop
+    const c = gutter.cards.find((c) => y >= c.top && y <= c.top + c.height && x >= c.left && x <= c.right)
+    const id = c?.blockId ?? null
+    if (id !== hovered) {
+      setHovered(id)
+      setStageShown(0)
+    }
+  }
+
   const dragging = useRef<{ from: string; to: string } | null>(null)
   const [lineSel, setLineSel] = useState<string[]>([])
   const blocksBetween = (from: string, to: string) => {
@@ -594,10 +732,54 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   }, [])
 
   return (
-    <div className="wv-wrap" ref={wrap}>
+    <div
+      className="wv-wrap"
+      ref={wrap}
+      onMouseMove={hoverAt}
+      onMouseLeave={() => {
+        setHovered(null)
+        setStageShown(0)
+      }}
+    >
       {loading && <div className="wv-loading">Laying out the document…</div>}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
+        {gutter.cards
+          .filter((c) => c.blockId === hovered)
+          .map((c) => {
+            const st = stageShown ? c.stages[stageShown - 1] : null
+            return (
+              <div key={`c${c.blockId}`} className="wv-stages" style={{ top: c.top, height: c.height, left: c.left, width: c.right - c.left }}>
+                <div className="wv-stages-bar">
+                  {['All changes', ...c.stages.map((x) => x.name)].map((name, k) => (
+                    <button
+                      key={name}
+                      className={k === stageShown ? 'on' : ''}
+                      title={k ? c.stages[k - 1].detail : 'Everything at once, as in Word'}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setStageShown(k)}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                {st && (
+                  <div
+                    className="wv-stage-text"
+                    style={{ top: c.textTop, left: c.textLeft, width: c.textWidth, fontFamily: c.font.family, fontSize: c.font.size, lineHeight: c.font.lineHeight, textAlign: (c.font.align || 'left') as 'left' }}
+                  >
+                    {c.label && <strong>{c.label} </strong>}
+                    {!st.segments.some((x) => x.text.trim()) && <em className="wv-st-none">Not in the draft: they added this paragraph.</em>}
+                    {st.segments.map((x, i) => (
+                      <span key={i} className={x.op === 'ins' ? `wv-st-ins ${st.key}` : x.op === 'del' ? `wv-st-del ${st.key}` : undefined}>
+                        {x.text}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         {gutter.bars.map((b, i) => (
           <div
             key={`b${i}`}
