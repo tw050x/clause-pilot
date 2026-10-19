@@ -75,7 +75,7 @@ There is no second round.
 
 10. Now read the agreement. The AI only advises; a person clears each paragraph:
     - **If a paragraph is fine as it is** (for example the dashed-green ones, once you've read them), click into it and press **Mark as checked** in the right-hand column. The bar turns solid green.
-    - **If it needs to change**, type your wording into the document (it shows in red as your tracked change) and add a comment saying why. Select text and press the comment button in the margin. For example:
+    - **If it needs to change**, type your wording into the document (it shows in red as your tracked change) and add a comment saying why. Select text and press **Comment on the highlighted text** in the right-hand column. For example:
       - Section 3.01: change **five (5) years** to **three (3) years**.
       - Section 4.06: change **the State of Delaware** to **England and Wales**, and the courts to **the courts of England and Wales**.
       - Section 2.05: strike the whole paragraph (select it and delete) and comment *We cannot accept a residuals clause.*

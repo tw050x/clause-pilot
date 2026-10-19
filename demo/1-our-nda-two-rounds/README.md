@@ -55,7 +55,7 @@ This demo shows the app on our own paper. Most of the document is our approved w
    - **Accept** 1.3, 2.1 and 2.2.
    - **Reject** 2.4, 3.3, 5.4, 5.8, 5.9 and 5.10.
    - **Reject** 4.1. Then click into 4.1, select **three (3)** and type **four (4)**. Your wording appears as your tracked change, in your name.
-10. Add comments. Select text, press the comment button that appears in the margin, and type in the right-hand column:
+10. Add comments. Select text, press **Comment on the highlighted text** in the right-hand column, and type:
     - On 2.4: *We cannot accept a residuals clause.*
     - On 4.1: *We can meet you at four years.*
     - On 5.8: *English law is our standard for NDAs.*

@@ -104,10 +104,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const d = model.current
     return (d.blocks.find((b) => b.id === blockId)?.comments ?? []).filter((c) => !commentResolved(d, c)).length + d.comments.filter((c) => c.blockId === blockId && !commentResolved(d, c)).length
   }
-  /** A paragraph's comments, theirs and ours. */
-  const commentCount = (blockId: string) => (model.current.blocks.find((b) => b.id === blockId)?.comments?.length ?? 0) + model.current.comments.filter((c) => c.blockId === blockId).length
-  /** The margin's comment button, level with a selection, to the right of the text. */
-  const [bubble, setBubble] = useState<{ top: number; left: number; blockId: string; quote: string } | null>(null)
   /** Reviews that come back from saving our own typing: the page already shows them. */
   const typed = useRef(new Set<ReviewSession>())
   const syncing = useRef(0)
@@ -120,9 +116,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     ai: [],
     notes: []
   })
-  // The gutter as last measured, for handlers set up before it was (the page's own listeners).
-  const gutterNow = useRef(gutter)
-  gutterNow.current = gutter
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
   const measuring = useRef(0)
@@ -410,28 +403,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const report = async (loaded: Loaded, clicked: Element | null, y: number) => {
     const sel = loaded.sd.ui?.selection.getSnapshot()
     const picked: SelectedChange[] = []
-    setBubble(null)
     if (sel && !sel.empty && sel.target && sel.quotedText.trim()) {
       const blockIds = [...new Set(sel.target.segments.map((x) => loaded.ids[x.blockId]).filter(Boolean))]
       for (const id of sel.activeChangeIds) await theirChange(loaded, id, blockIds[0], picked)
       if (!blockIds.length) return
-      // The comment button: level with where the selection ended, beside the text.
-      const w = wrap.current
-      const fragment = clicked?.closest('.superdoc-fragment[data-source-node-id]') ?? clicked?.closest('[data-source-node-id]')
-      if (w && fragment) {
-        const base = w.getBoundingClientRect()
-        const r = fragment.getBoundingClientRect()
-        // Centred on the line the selection ended on, as far from the text as the AI markers; below
-        // an AI marker it would cover.
-        const line = [...fragment.querySelectorAll('.superdoc-line')].map((l) => l.getBoundingClientRect()).find((l) => y >= l.top && y <= l.bottom)
-        let top = (line ? line.top + line.height / 2 : y) - base.top - 8
-        // An AI marker it would cover, or that it would sit just under: directly below it.
-        const marker = gutterNow.current.ai.find((m) => top > m.top + 2 - 16 && top < m.top + 2 + 16 + 24)
-        if (marker) top = marker.top + 2 + 16 + 3 // 3px between them
-        const at = loaded.ids[nodeId(fragment)] ?? blockIds[0]
-        // A paragraph with open comments has its marker already; others get one with the selection.
-        if (!openComments(at)) setBubble({ top, left: r.right - base.left + 12, blockId: at, quote: sel.quotedText })
-      }
       cb.current.onFocusBlock(blockIds[0])
       cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
       return
@@ -615,19 +590,6 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             <span>{n.count}</span>
           </button>
         ))}
-        {bubble && (
-          <button
-            className="ed-gutter-btn out wv-comment"
-            style={{ top: bubble.top, left: bubble.left }}
-            title={commentCount(bubble.blockId) ? `${commentLabel(commentCount(bubble.blockId))} on this paragraph: show them (and add one) in the right-hand column` : 'Comments: show them (and add one) in the right-hand column'}
-            aria-label="Show comments"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => cb.current.onOpenComments(bubble.blockId)}
-          >
-            <CommentIcon size={10} />
-            {commentCount(bubble.blockId) > 0 && <span>{commentCount(bubble.blockId)}</span>}
-          </button>
-        )}
         {gutter.ai.map((a, i) => (
           <button
             key={`a${i}`}
