@@ -458,7 +458,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           <div key={`b${i}`} className={`wv-bar ${b.bar}`} style={{ top: b.top, height: b.height, left: b.left - 14 }} />
         ))}
         {gutter.runs.map((r, i) => (
-          <div key={`r${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 104 }}>
+          <div key={`r${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>
             <span className={`ed-unchanged ${r.state}`} data-tip={GUTTER[r.state].tip}>
               {GUTTER[r.state].label}
             </span>
