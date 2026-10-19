@@ -192,7 +192,7 @@ export async function buildDocRedline(
         ids[id] = b.id
       }
   }
-  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc))
+  zip.file('word/document.xml', xmlSafe(new XMLSerializer().serializeToString(doc)))
   const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
   return { bytes, stats, comments: m.log, ids }
 }
@@ -904,7 +904,9 @@ async function trackFurtherChanges(zip: JSZip) {
 
 // ---- a Word base for PDF / text uploads --------------------------------------------------
 
-const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+/** Characters XML can't hold (a PDF's unmapped glyphs come through as NUL): left out of what we write. */
+const xmlSafe = (t: string) => t.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+const esc = (t: string) => xmlSafe(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 const para = (runs: string, opts = '') => `<w:p><w:pPr>${opts}<w:spacing w:after="120"/></w:pPr>${runs}</w:p>`
 const run = (t: string, bold = false) => `<w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`
