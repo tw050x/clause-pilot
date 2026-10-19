@@ -1190,7 +1190,7 @@ body.past-open .rightbar { z-index: 45; }
 .tl-prop-ask .row-gap { justify-content: flex-end; }
 .tl-done { display: flex; gap: 8px; justify-content: flex-end; }
 /* Demo mode: a switch in the title bar. */
-.demo-switch { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 6px; margin-right: 8px; border-radius: 13px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; -webkit-app-region: no-drag; }
+.demo-switch { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 6px; margin-left: 8px; border-radius: 13px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; -webkit-app-region: no-drag; }
 .demo-switch.on { color: #7c3aed; border-color: color-mix(in srgb, #7c3aed 45%, var(--border)); background: color-mix(in srgb, #7c3aed 8%, var(--surface)); }
 .demo-switch-track { position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--border-strong); transition: background 0.15s; }
 .demo-switch.on .demo-switch-track { background: #7c3aed; }
