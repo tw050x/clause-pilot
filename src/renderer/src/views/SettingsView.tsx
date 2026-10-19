@@ -260,7 +260,7 @@ function DemoServer({ settings, save }: { settings: Settings; save: (patch: Part
       const list = await window.api.ai.vllmModels(url.trim())
       setTest({ ok: true, text: `Connected to the demo server${list[0] ? ` (${list[0]})` : ''}.` })
     } catch (e) {
-      setTest({ ok: false, text: `${String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')} Is it running? Start it with: npm run demo:server` })
+      setTest({ ok: false, text: `${String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')} The app starts the demo server itself at 127.0.0.1:4321; at another address, it has to be running there.` })
     } finally {
       setTesting(false)
     }
@@ -274,7 +274,7 @@ function DemoServer({ settings, save }: { settings: Settings; save: (patch: Part
           {testing ? 'Connecting…' : 'Connect'}
         </button>
       </div>
-      <span className="hint">Start it in the app’s folder with npm run demo:server (it listens on port 4321). It speaks the same API as a vLLM server.</span>
+      <span className="hint">The app runs the demo server itself, on this machine (port 4321), while demo mode is on. It speaks the same API as a vLLM server; to run it on its own instead, use npm run demo:server in the app’s folder.</span>
       {test && <div className={`banner ${test.ok ? 'info' : 'danger'}`} style={{ marginTop: 6 }}>{test.text}</div>}
     </div>
   )

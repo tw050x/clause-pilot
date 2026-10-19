@@ -2,11 +2,13 @@
 //
 // It speaks the OpenAI-compatible API a vLLM server does (the app connects to it as it would to
 // one), so demos run the app's real code end to end, with answers from here instead of a model.
-// No dependencies:  node demo-server/server.mjs   (PORT=4321 by default; npm run demo:server)
+// The app starts it itself in demo mode (startDemoServer, from the main process); it also runs on
+// its own, with no dependencies:  node demo-server/server.mjs   (PORT=4321; npm run demo:server)
 //
-// Each request is logged (one line: what was asked, how much) so a demo can be followed here.
+// Each request is logged (one line: what was asked, how much) so a demo can be followed.
 
 import http from 'node:http'
+import { pathToFileURL } from 'node:url'
 
 const PORT = Number(process.env.PORT ?? 4321)
 const MODEL = 'clause-pilot-demo'
@@ -14,7 +16,7 @@ const MODEL = 'clause-pilot-demo'
 const DELAY = Number(process.env.DEMO_DELAY ?? 500)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a)
+let log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a)
 
 /** The contract's paragraphs as the app sends them: <p id="…" number="…">text</p>. */
 const paragraphs = (text) =>
@@ -71,8 +73,7 @@ function structured(body) {
 
 const usage = (prompt, completion) => ({ prompt_tokens: Math.ceil(prompt.length / 4), completion_tokens: Math.ceil(completion.length / 4) })
 
-http
-  .createServer((req, res) => {
+const handler = (req, res) => {
     let raw = ''
     req.on('data', (c) => (raw += c))
     req.on('end', async () => {
@@ -115,5 +116,24 @@ http
       res.statusCode = 404
       res.end(JSON.stringify({ error: { message: `Not here: ${req.method} ${path}` } }))
     })
+}
+
+/**
+ * Start the demo server on 127.0.0.1 (the app calls this in demo mode). Resolves once it's
+ * listening; if the port is already taken (the server already running, started by hand), resolves
+ * with { existing: true } and that one is used.
+ */
+export function startDemoServer({ port = PORT, onLog } = {}) {
+  if (onLog) log = onLog
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(handler)
+    server.once('error', (e) => (e.code === 'EADDRINUSE' ? resolve({ existing: true, port, close: () => {} }) : reject(e)))
+    server.listen(port, '127.0.0.1', () => {
+      log(`Clause Pilot demo server on http://127.0.0.1:${port} (model ${MODEL})`)
+      resolve({ existing: false, port, close: () => server.close() })
+    })
   })
-  .listen(PORT, '127.0.0.1', () => log(`Clause Pilot demo server on http://127.0.0.1:${PORT} (model ${MODEL})`))
+}
+
+// Run on its own (node demo-server/server.mjs).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) void startDemoServer()

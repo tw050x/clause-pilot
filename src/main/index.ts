@@ -20,6 +20,7 @@ import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnsw
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
+import { startDemoServer } from '../../demo-server/server.mjs'
 import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
@@ -184,6 +185,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ensureDemoServer()
   // A packaged app takes its icon from the bundle; in development, show it in the Dock too (the
   // macOS version, with the margin the Dock expects, so it's the size of the others).
   const devIcon = join(appRoot, 'build/icon-mac.png')
@@ -247,6 +249,7 @@ ipcMain.handle('settings:get', () => settings())
 ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
   const next = { ...loadSettings(), ...patch }
   writeFileSync(settingsFile, JSON.stringify(next, null, 2))
+  void ensureDemoServer()
   ws.audit.append(next.reviewerName, 'settings.changed', null, { ...patch })
   return settings()
 })
@@ -300,8 +303,37 @@ ipcMain.handle('settings:setVllmKey', (_e, key: string | null) => {
   ws.audit.append(actor(), key ? 'settings.vllm-key-set' : 'settings.vllm-key-cleared', null, {})
   return settings()
 })
-/** The models a vLLM server offers (also a connection test). */
-ipcMain.handle('ai:vllmModels', (_e, url: string) => vllmModels({ url, apiKey: vllmKey() }))
+/** The models a vLLM server offers (also a connection test). In demo mode, once the demo server is up. */
+ipcMain.handle('ai:vllmModels', async (_e, url: string) => {
+  await ensureDemoServer()
+  return vllmModels({ url, apiKey: vllmKey() })
+})
+
+/**
+ * Demo mode: the demo server, started here in the main process (once, when demo mode is on at
+ * launch or chosen in Settings) if its address is this machine's, and closed when the app quits.
+ * If one is already listening there (started by hand), that one is used.
+ */
+let demoServer: Promise<unknown> | null = null
+function ensureDemoServer(): Promise<unknown> {
+  const s = loadSettings()
+  if (s.aiProvider !== 'demo') return Promise.resolve()
+  if (demoServer) return demoServer
+  let at: URL
+  try {
+    at = new URL(s.demoUrl)
+  } catch {
+    return Promise.resolve()
+  }
+  if (!['127.0.0.1', 'localhost'].includes(at.hostname)) return Promise.resolve()
+  demoServer = startDemoServer({ port: Number(at.port || 80), onLog: (...a) => console.log('[demo server]', ...a) })
+    .then((x) => app.on('will-quit', x.close))
+    .catch((e) => {
+      demoServer = null
+      console.warn('The demo server could not start:', e)
+    })
+  return demoServer
+}
 
 // ---- IPC: documents ------------------------------------------------------------------
 
