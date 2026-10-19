@@ -142,8 +142,22 @@ export function effectiveSegments(doc: DocReview, b: DocBlock): TrackedSegment[]
   return tidy.filter((s) => s.text)
 }
 
-/** Does the paragraph still have changes of theirs to decide (tracked or found by comparison)? */
-export const hasOpenChanges = (doc: DocReview, b: DocBlock) => effectiveSegments(doc, b).some((s) => s.op !== 'same')
+/**
+ * Does the paragraph still have changes of theirs to decide (tracked or found by comparison)? An
+ * insertion of theirs our edit strikes in full isn't one: striking it is rejecting it (as deleting
+ * another reviewer's insertion is in Word), and there's nothing of theirs left on the page to pick.
+ */
+export const hasOpenChanges = (doc: DocReview, b: DocBlock) => {
+  const segs = effectiveSegments(doc, b).filter((s) => s.op !== 'same')
+  if (!segs.length) return false
+  if (doc.edits[b.id] === undefined) return true
+  const marks = marksFor(doc, b)
+  return segs.some((s) => {
+    if (s.op !== 'ins') return true
+    const mine = marks.filter((m) => m.seg === s.i && m.theirs === 'ins')
+    return !mine.length || !mine.every((m) => m.ours === 'del')
+  })
+}
 
 /** A paragraph as shown: their redline (as resolved) with our wording over it. */
 export function marksFor(doc: DocReview, b: DocBlock): Mark[] {
