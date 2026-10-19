@@ -23,6 +23,8 @@ interface Props {
   panel: HTMLElement | null
   /** The bar under the document and the review column: the review's actions, and Accept / Reject. */
   bar: HTMLElement | null
+  /** The foot of the review column: Accept / Reject for the selected changes, and Show key. */
+  foot: HTMLElement | null
   onChange: (s: ReviewSession) => void
   alert: SecurityAlert | null
   onOpenSecurity: () => void
@@ -54,7 +56,7 @@ function useLibrary(): Map<string, LibraryClause> {
  * in red, as tracked changes), and a right-hand column for the review as a whole
  * and the paragraph the caret is in.
  */
-export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
+export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
   const [focus, setFocus] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -369,11 +371,9 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
-      {/* In the bar under the document and the review column: the review as a whole on the left,
-          Accept / Reject for the selected changes on the right. */}
+      {/* In the bar under the document: what you do with the review as a whole. */}
       {bar &&
         createPortal(
-          <>
             <div className="bottombar-group">
         <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
           <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
@@ -385,15 +385,19 @@ export function DocReview({ session, panel, bar, reviewer, onChange, alert, onOp
           <Icon name="mail" size={14} /> Draft response
         </button>
 
-            </div>
-            <div className="bottombar-group bottombar-decide">
-              <div className="bottombar-group" ref={setDecideSlot} />
-              <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
-                {showKey ? 'Hide key' : 'Show key'}
-              </button>
-            </div>
-          </>,
+            </div>,
           bar
+        )}
+      {/* At the foot of the review column: Accept / Reject for the selected changes, and the key. */}
+      {foot &&
+        createPortal(
+          <>
+            <div className="bottombar-group" ref={setDecideSlot} />
+            <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
+              {showKey ? 'Hide key' : 'Show key'}
+            </button>
+          </>,
+          foot
         )}
     </div>
   )

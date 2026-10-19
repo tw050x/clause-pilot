@@ -7,6 +7,8 @@ interface Props {
   panel: HTMLElement | null
   /** The bar under the document and the review column, for the review's actions. */
   bar: HTMLElement | null
+  /** The foot of the review column, for Accept / Reject and the key. */
+  foot: HTMLElement | null
   onChange: (s: ReviewSession) => void
   onNominationsChanged: () => void
   /** Debug mode (Settings): show raw AI responses. */

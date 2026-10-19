@@ -29,6 +29,7 @@ export function App() {
   const [rightTab, setRightTab] = useState<'review' | 'chat'>('review')
   const [reviewPanel, setReviewPanel] = useState<HTMLDivElement | null>(null)
   const [bottomBar, setBottomBar] = useState<HTMLDivElement | null>(null)
+  const [reviewFoot, setReviewFoot] = useState<HTMLDivElement | null>(null)
   const [nominations, setNominations] = useState<Nomination[]>([])
   const [proposals, setProposals] = useState<PlaybookProposal[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -212,9 +213,9 @@ export function App() {
           onNewContract={() => setView('new-contract')}
           onChooseAccount={() => setPickerOpen(true)}
         />
-        {/* Beside the menu: the page (and the review column), with the review's bar under both. */}
+        {/* Beside the menu: the page, with the review's bar under it, and the review column. */}
         <div className="work">
-        <div className="work-row">
+        <div className="main-col">
         <main className="main">
           {error && (
             <div className="banner danger" style={{ margin: 12 }}>
@@ -236,6 +237,7 @@ export function App() {
               session={session}
               panel={reviewPanel}
               bar={bottomBar}
+              foot={reviewFoot}
               onChange={setSession}
               onNominationsChanged={refreshNominations}
               alert={alerts.find((a) => a.sessionId === session.id) ?? null}
@@ -304,6 +306,9 @@ export function App() {
             />
           )}
         </main>
+        {/* The review's actions on the document as a whole, under it: rendered into by a portal. */}
+        <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
+        </div>
         <aside className="rightbar" hidden={!reviewing}>
           <div className="rightbar-switch">
             <div className="seg full">
@@ -320,10 +325,9 @@ export function App() {
           <div className="rightbar-chat" style={{ display: rightTab === 'chat' ? undefined : 'none' }}>
             <ChatPanel session={session} debug={!!settings?.debug} />
           </div>
+          {/* Accept / Reject for the selected changes, and the key: rendered into by a portal. */}
+          <div className="rightbar-foot" ref={setReviewFoot} />
         </aside>
-        </div>
-        {/* The review's actions, under the document and the review column: rendered into by a portal. */}
-        <div className="bottombar" ref={setBottomBar} hidden={!reviewing} />
         </div>
       </div>
       {pickerOpen && (

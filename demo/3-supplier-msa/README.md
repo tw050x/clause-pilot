@@ -42,7 +42,7 @@ The AI is optional here. Set it up in **Settings** to try the questions in step 
 
    Their tracked changes are shown as in Word. The bars and labels in the left margin say where each paragraph stands: **To decide** for their changes, **To read** for their wording.
 
-6. Click **99.5%** in 2.1. The change is selected: **Accept** and **Reject** appear in the bar along the bottom, under the right-hand column. Press **Reject**. The page is laid out again with 99.9% back, and 2.1's label changes.
+6. Click **99.5%** in 2.1. The change is selected: **Accept** and **Reject** appear at the foot of the right-hand column. Press **Reject**. The page is laid out again with 99.9% back, and 2.1's label changes.
 
 7. Click **sixty (60)** in 2.2. The change is selected, and their comment on it shows underneath in the right-hand column: *Our release cycle needs a longer cure period.* Accept or reject the change, or reply to the comment.
 
