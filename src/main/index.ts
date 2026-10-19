@@ -679,14 +679,11 @@ ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: numb
     const before = marksFor(d, b)
     const edit = d.edits[blockId]
     d.resolved ??= {}
-    if (b.untracked && outcome === 'rejected') {
-      d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
-      delete d.resolved[key]
-    } else {
-      if (outcome) d.resolved[key] = outcome
-      else delete d.resolved[key]
-      if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
-    }
+    // Decided like any other change, found by comparison or tracked. (A change found by comparison
+    // isn't in their file as one: the marked-up copy writes our decision on it as our edit.)
+    if (outcome) d.resolved[key] = outcome
+    else delete d.resolved[key]
+    if (edit !== undefined && outcome === 'rejected') d.edits[blockId] = textWithout(before, (m) => m.seg === seg && !!m.theirs)
     // Our wording that now matches the text as it stands isn't an edit any more.
     const plain = shownText(marksFor({ ...d, edits: {} }, b))
     if (d.edits[blockId] !== undefined && tidy(d.edits[blockId]) === tidy(plain) && !b.ours) delete d.edits[blockId]

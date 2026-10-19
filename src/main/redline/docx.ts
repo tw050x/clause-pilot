@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from '@xmldom/xmldom'
 import type { DocBlock, DocReview, RedlineComment, RedlineStats, ReviewSession } from '@shared/types'
 import { labelsOf, parseLabel } from '../../shared/numbering'
-import { changeKey, changeSets, commentResolved, segmentsOf, statusOf } from '../../shared/changes'
+import { changeKey, changeSets, commentResolved, marksFor, segmentsOf, shownText, statusOf } from '../../shared/changes'
 import { readNumbering } from '../ingest/docxTracked'
 import { diffWords } from '../../shared/diff'
 
@@ -59,6 +59,13 @@ export async function buildDocRedline(
   const parasOf = (b: DocBlock) =>
     source === 'original' ? (b.paras ?? []).map((n) => all[n]).filter(Boolean) : index.has(b.id) ? [all[index.get(b.id)!]].filter(Boolean) : []
   const where = (b: DocBlock) => (b.label ? `§${b.label.replace(/\.$/, '')}` : b.kind === 'row' ? b.text.split(' — ')[0] : 'Paragraph')
+  // Our wording for a paragraph: our edit, or for one whose changes were found by comparison (not in
+  // their file as changes) and decided, the text as decided, written as our edit. (In the copy for
+  // showing, those changes are written in as theirs and decided there, except a whole paragraph.)
+  const decided = (b: DocBlock) => segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)])
+  const editOf = (b: DocBlock): string | undefined =>
+    d.edits[b.id] ??
+    (b.untracked && !b.ours && decided(b) && (b.kind === 'deleted' ? d.resolved?.[changeKey(b.id, 0)] === 'rejected' : !opts.stampIds) ? shownText(marksFor(d, b)) : undefined)
   const m = new Markup(zip, doc, reviewer)
   await m.loadComments()
   const stats: RedlineStats = { source, replaced: 0, removed: 0, commentedOnly: 0, reinstated: 0, acceptedChanges: 0, comments: 0, unmatched: [] }
@@ -90,7 +97,7 @@ export async function buildDocRedline(
   // file; they go back in where they were, as their tracked deletion, so the page shows what went.
   if (opts.stampIds)
     for (const b of d.blocks) {
-      if (!(b.untracked && b.kind === 'deleted') || parasOf(b).length || d.edits[b.id] !== undefined) continue
+      if (!(b.untracked && b.kind === 'deleted') || parasOf(b).length || editOf(b) !== undefined) continue
       const at = d.blocks.indexOf(b)
       const prev = d.blocks.slice(0, at).reverse().map((x) => (added.has(x.id) ? [added.get(x.id)!] : parasOf(x))).find((p) => p.length)
       const next = d.blocks.slice(at + 1).map(parasOf).find((p) => p.length)
@@ -100,7 +107,7 @@ export async function buildDocRedline(
       if (p) added.set(b.id, p)
     }
   for (const b of d.blocks) {
-    const edit = d.edits[b.id]
+    const edit = editOf(b)
     if (edit === undefined) continue
     const paras = parasOf(b)
     if (b.ours) {

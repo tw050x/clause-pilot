@@ -876,7 +876,9 @@ table.t td:has(> .row-action) { padding-top: 4px; padding-bottom: 4px; }
 .ai-card-head { display: flex; align-items: flex-start; gap: 9px; flex: 1; min-width: 0; padding: 9px 11px; border: none; background: none; text-align: left; color: var(--text); font: inherit; }
 button.ai-card-head { cursor: pointer; }
 button.ai-card-head:hover { background: var(--surface-2); }
-.ai-card-ask { flex-shrink: 0; margin: 0 2px 0 4px; min-width: 46px; justify-content: center; }
+.ai-card-ask { flex-shrink: 0; margin: 0 2px 0 4px; min-width: 46px; justify-content: center; height: 26px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+/* Asking: a spinner in place of the word, the button the same size. */
+.ai-card-ask .spinner { width: 12px; height: 12px; flex-shrink: 0; }
 .ai-card-head svg { margin-top: 2px; color: var(--processing); flex-shrink: 0; }
 .ai-card-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; font-size: 13px; }
 .ai-card-text .faint { font-size: 12px; }
