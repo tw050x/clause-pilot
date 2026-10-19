@@ -146,6 +146,9 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       const p = g.blockIds.map((id) => byBlock.get(id)?.[0]).find(Boolean)
       return p ? [{ ...p, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles] }] : []
     })
+    // Two highlights in one paragraph: their markers one under the other, not on top of each other.
+    ai.sort((x, y) => x.top - y.top)
+    for (let i = 1; i < ai.length; i++) if (ai[i].top < ai[i - 1].top + 24) ai[i] = { ...ai[i], top: ai[i - 1].top + 24 }
     setGutter({ bars, runs, ai })
   }
 
