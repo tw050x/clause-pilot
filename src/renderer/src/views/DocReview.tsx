@@ -8,6 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
+import { Timeline } from '../components/Timeline'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
@@ -348,13 +349,14 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           onPick={(x) => onSelectChanges(x)}
         />
       ) : (
-        <section className="rc-section rc-empty">Click in the document to see that paragraph here: what changed in it, and its comments.</section>
+        // Nothing selected: the automated review, as a timeline.
+        <Timeline session={session} onChange={onChange} onJump={jumpTo} />
       )}
 
       {/* What's happened to the selected text (or the paragraph the caret is in), newest first. */}
       {!showHistory && !only && textIds.length > 0 && <TextHistory session={session} blockIds={textIds} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />}
 
-      {!showHistory && !only && (
+      {!showHistory && !only && highlight && (
         <AiSection
           session={session}
           highlight={highlight}

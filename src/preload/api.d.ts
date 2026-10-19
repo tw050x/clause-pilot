@@ -88,6 +88,13 @@ export interface Api {
     /** Nominate an accepted change's wording for the pre-approved library. */
     nominate(id: string, setId: string, note: string): Promise<ReviewSession>
   }
+  /** The automated review: started from the review column, shown there as a timeline (as session updates). */
+  pipeline: {
+    /** The cap a run starts with, and what the AI is set to. */
+    defaults(): Promise<{ provider: 'anthropic' | 'vllm'; model: string; budget: { tokens: number; usd?: number }; ready: boolean; why?: string }>
+    start(id: string, budget: { tokens: number; usd?: number }): Promise<ReviewSession>
+    stop(id: string): Promise<ReviewSession>
+  }
   redline: {
     /** Build the marked-up .docx without saving it (for the in-app preview). */
     preview(id: string): Promise<{ bytes: Uint8Array; stats: RedlineStats; comments: RedlineComment[]; name: string }>

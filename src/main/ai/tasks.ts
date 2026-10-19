@@ -135,6 +135,8 @@ export interface StructuredInput {
   question: string
   /** The schema as sent (see schemaToSend). */
   schema: Record<string, unknown>
+  /** What the answer is called (the schema's name where the server takes one). */
+  name?: string
 }
 
 export type TaskName = 'intent' | 'overrides' | 'position' | 'change' | 'structured'

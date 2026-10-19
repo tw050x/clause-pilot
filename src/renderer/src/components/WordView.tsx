@@ -129,12 +129,13 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[]; parts: (Placed & { text: string; tip: string; status: string })[] }>({
     bars: [],
     runs: [],
     ai: [],
     notes: [],
-    cards: []
+    cards: [],
+    parts: []
   })
 
   /**
@@ -394,7 +395,36 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
         }
       ]
     })
-    setGutter({ bars, runs, ai, notes, cards })
+    // Once the AI has read the structure: the left margin shows its parts instead (each part one
+    // bar, in its review status; a label naming what it is), not each paragraph's own state.
+    const partLabels: (Placed & { text: string; tip: string; status: string })[] = []
+    const parts = d.pipeline?.parts
+    if (parts?.length) {
+      const statusOf = new Map((d.pipeline!.steps.find((x) => x.id === 'review')?.children ?? []).map((c) => [c.partId, c.status]))
+      const partOf = new Map(parts.flatMap((p) => p.blockIds.map((id) => [id, p] as const)))
+      const statusFor = (p: (typeof parts)[number]) => statusOf.get(p.id) ?? (p.depth === 'skip' ? 'skipped' : 'waiting')
+      for (const bar of bars) {
+        const p = partOf.get(bar.blockId)
+        if (!p) continue
+        const st = statusFor(p)
+        bar.bar = `part part-${st} depth-${p.depth}${st === 'running' ? ' todo' : ''}`
+      }
+      // A part's paragraphs on a page: one bar, through the gaps between them.
+      const byTop = [...bars].sort((a, b) => a.top - b.top)
+      byTop.forEach((bar, i) => {
+        const next = byTop[i + 1]
+        if (next && partOf.get(next.blockId) === partOf.get(bar.blockId) && next.top - (bar.top + bar.height) < 60) bar.height = next.top - bar.top
+      })
+      runs.length = 0
+      const KIND: Record<string, string> = { title: 'Title', heading: 'Heading', parties: 'Parties', recitals: 'Recitals', definitions: 'Definitions', clause: 'Clause', schedule: 'Schedule', signature: 'Signatures', boilerplate: 'Boilerplate', other: 'Other' }
+      const DEPTH = { skip: 'Skipped: nothing to check', light: 'Read for language', full: 'Checked in full' }
+      for (const p of parts) {
+        const first = byTop.find((b) => p.blockIds.includes(b.blockId))
+        if (!first) continue
+        partLabels.push({ top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}` })
+      }
+    }
+    setGutter({ bars, runs, ai, notes, cards, parts: partLabels })
     // The page may have been drawn again: the picked changes' tint with it.
     tintPicks()
   }
@@ -872,8 +902,15 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
 
   // Lay the review out again when it changes: the new page is built out of sight and swapped in
   // when it's ready, so nothing flickers and the scroll position stays.
+  // What's drawn on the page: when only something else changed (the automated review's progress,
+  // AI answers, history), the page stays and only the margins are measured again.
+  const drawn = useRef('')
   useEffect(() => {
-    if (typed.current.has(session) && current.current) {
+    const d = session.doc!
+    const key = JSON.stringify([session.id, d.blocks, d.edits, d.resolved, d.comments, d.commentsDone, d.decisions])
+    if ((typed.current.has(session) || key === drawn.current) && current.current) {
+      // (Our own typing: the page already shows it, so it's what's drawn.)
+      if (typed.current.has(session)) drawn.current = key
       typed.current.delete(session)
       remeasure()
       return
@@ -947,6 +984,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
           window.setTimeout(() => void report(loaded, target, y), 120)
         })
         setLoading(false)
+        drawn.current = key
         remeasure()
       } catch (e) {
         // It can't be laid out (SuperDoc failed on it): the review goes on as text.
@@ -1083,6 +1121,13 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
           .filter((b) => lineSel.includes(b.blockId))
           .map((b, i) => (
             <div key={`s${i}`} className="wv-line-sel" style={{ top: b.top - 2, height: b.height + 4, left: b.left - 4, width: b.right - b.left + 8 }} />
+        ))}
+        {gutter.parts.map((r, i) => (
+          <div key={`pl${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>
+            <span className={`ed-unchanged wv-part-label ${r.status}`} data-tip={r.tip}>
+              {r.text}
+            </span>
+          </div>
         ))}
         {gutter.runs.map((r, i) => (
           <div key={`r${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>

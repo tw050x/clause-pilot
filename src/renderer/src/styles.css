@@ -1119,3 +1119,57 @@ body.past-open .rightbar { z-index: 45; }
 .restore-list { margin: 6px 0 10px; padding-left: 18px; }
 .ai-action-stale { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 6px; padding: 7px 9px; border-radius: 7px; background: color-mix(in srgb, #b45309 9%, var(--surface)); color: #92400e; font-size: 12px; line-height: 1.45; }
 .ai-action-stale svg { flex-shrink: 0; margin-top: 2px; }
+/* The automated review's timeline. */
+.tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tl-intro { margin: 0; line-height: 1.5; }
+.tl-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text-2); }
+.tl-pill.running { background: var(--processing-tint); color: var(--processing); }
+.tl-pill.done { background: var(--exact-tint); color: var(--exact); }
+.tl-pill.paused { background: color-mix(in srgb, #b45309 12%, var(--surface)); color: #92400e; }
+.tl-pill.error, .tl-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
+.tl-spin { width: 9px; height: 9px; border-width: 1.5px; }
+.tl-spent { display: flex; flex-direction: column; gap: 4px; }
+.tl-spent-bar { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.tl-spent-bar i { display: block; height: 100%; background: var(--processing); }
+.tl-note { margin: 0; padding: 7px 9px; border-radius: 7px; background: var(--surface-2); line-height: 1.45; }
+.tl-note.paused { background: color-mix(in srgb, #b45309 9%, var(--surface)); color: #92400e; }
+.tl-note.error { background: var(--rejected-tint); color: var(--rejected); }
+.tl-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.tl-steps > .tl-step { position: relative; padding: 0 0 10px; }
+/* The line joining the steps, through their icons. */
+.tl-steps > .tl-step:not(:last-child)::before { content: ''; position: absolute; left: 8px; top: 18px; bottom: 0; width: 1px; background: var(--border); }
+.tl-row { display: flex; gap: 9px; align-items: flex-start; }
+.tl-icon { flex-shrink: 0; width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--border-strong); background: var(--surface); color: var(--surface); font-size: 11px; line-height: 1; position: relative; z-index: 1; }
+.tl-icon.done { background: var(--exact); border-color: var(--exact); }
+.tl-icon.running { border-color: var(--processing); color: var(--processing); }
+.tl-icon.needs-you { background: #b45309; border-color: #b45309; }
+.tl-icon.error { background: var(--rejected); border-color: var(--rejected); }
+.tl-icon.skipped { border-style: dashed; color: var(--text-3); }
+.tl-body { min-width: 0; flex: 1; }
+.tl-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); line-height: 17px; }
+.tl-step.waiting > .tl-row .tl-title, .tl-step.skipped > .tl-row .tl-title { color: var(--text-3); font-weight: 500; }
+.tl-part { font: inherit; color: inherit; text-align: left; }
+.tl-count { font-size: 11px; font-weight: 500; }
+.tl-usage { margin-left: auto; font-size: 11px; font-weight: 400; }
+.tl-detail { font-size: 12px; line-height: 1.45; margin-top: 2px; }
+/* A step's sub-items: indented under it, their own list. */
+.tl-sub { margin: 8px 0 0 26px; }
+.tl-sub > .tl-step { padding-bottom: 7px; }
+.tl-sub .tl-title { font-size: 12.5px; }
+.tl-start { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tl-budget { display: flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.tl-budget input { width: 72px; }
+.tl-model { margin: 0; }
+/* The parts the AI read, in the left margin: one bar each, coloured by where its review is. */
+.wv-bar.part { width: 5px; }
+.wv-bar.part-waiting { background: #94a3b8; }
+.wv-bar.part-skipped { background: repeating-linear-gradient(to bottom, #cbd5e1 0 3px, transparent 3px 6px); }
+.wv-bar.part-running { background: var(--processing); }
+.wv-bar.part-done { background: var(--exact); }
+.wv-bar.part-needs-you { background: #d97706; }
+.wv-bar.part-error { background: var(--rejected); }
+.wv-part-label { color: var(--text-2); background: var(--surface-2); }
+.wv-part-label.skipped { color: var(--text-3); background: transparent; }
+.wv-part-label.running { color: var(--processing); background: var(--processing-tint); }
+.wv-part-label.done { color: var(--exact); background: var(--exact-tint); }
+.wv-part-label.needs-you { color: #92400e; background: color-mix(in srgb, #d97706 14%, var(--surface)); }

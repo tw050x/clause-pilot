@@ -43,8 +43,8 @@ export interface AiProvider {
   overrides(input: OverridesInput): Promise<OverridesOut>
   position(input: PositionInput): Promise<PositionOut>
   change(input: ChangeInput): Promise<ChangeOut>
-  /** An answer in the shape of the input's JSON Schema, checked against it. */
-  schemaAnswer(input: StructuredInput): Promise<unknown>
+  /** An answer in the shape of the input's JSON Schema, checked against it; what it used, reported to onUsage. */
+  schemaAnswer(input: StructuredInput, onUsage?: (u: ChatUsage) => void): Promise<unknown>
 }
 
 /** A change review is replayed by the contract and the change; the playbook and history it was given are context. */
@@ -134,7 +134,7 @@ export class AnthropicProvider implements AiProvider {
   }
 
   /** A question's own JSON Schema (not a Zod schema): the answer is parsed here and checked against it. */
-  async schemaAnswer(input: StructuredInput): Promise<unknown> {
+  async schemaAnswer(input: StructuredInput, onUsage?: (u: ChatUsage) => void): Promise<unknown> {
     const res = await this.client.beta.messages.create({
       model: this.model,
       max_tokens: 16000,
@@ -152,6 +152,7 @@ export class AnthropicProvider implements AiProvider {
         }
       ]
     })
+    onUsage?.({ input: res.usage.input_tokens + (res.usage.cache_creation_input_tokens ?? 0), cached: res.usage.cache_read_input_tokens ?? 0, output: res.usage.output_tokens })
     if (res.stop_reason === 'refusal') throw new AiRefusalError('The model declined this request.')
     if (res.stop_reason === 'max_tokens') throw new Error('The model response was cut off (max_tokens).')
     return checked(input.schema, res.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''))
@@ -293,7 +294,7 @@ export class VllmProvider implements AiProvider {
   change(input: ChangeInput): Promise<ChangeOut> {
     return this.structured('change_review', ChangeSchema, DOCUMENT_SYSTEM, `${paragraphsBlock(input.contract)}\n\n${changeQuestion(input)}`)
   }
-  async schemaAnswer(input: StructuredInput): Promise<unknown> {
+  async schemaAnswer(input: StructuredInput, onUsage?: (u: ChatUsage) => void): Promise<unknown> {
     const res = await this.post({
       messages: [
         { role: 'system', content: STRUCTURED_SYSTEM },
@@ -301,9 +302,15 @@ export class VllmProvider implements AiProvider {
       ] satisfies Msg[],
       temperature: 0,
       max_tokens: 8000,
-      response_format: { type: 'json_schema', json_schema: { name: 'answer', schema: input.schema, strict: true } }
+      response_format: { type: 'json_schema', json_schema: { name: input.name ?? 'answer', schema: input.schema, strict: true } }
     })
-    const body = (await res.json()) as { choices?: { message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }[] }
+    const body = (await res.json()) as {
+      choices?: { message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }[]
+      usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
+    }
+    const cached = body.usage?.prompt_tokens_details?.cached_tokens ?? 0
+    // (A server that doesn't report usage: estimated from the text, about four characters a token.)
+    onUsage?.(body.usage ? { input: (body.usage.prompt_tokens ?? 0) - cached, cached, output: body.usage.completion_tokens ?? 0 } : { input: Math.ceil((input.contract.length + input.question.length) / 4), cached: 0, output: Math.ceil((body.choices?.[0]?.message?.content ?? '').length / 4) })
     const choice = body.choices?.[0]
     if (choice?.message?.refusal) throw new AiRefusalError('The model declined this request.')
     if (choice?.finish_reason === 'length') throw new Error('The model response was cut off (max_tokens).')
@@ -482,7 +489,7 @@ export class RecordingProvider implements AiProvider {
   change(input: ChangeInput) {
     return this.rec('change', changeKey(input), () => this.inner.change(input))
   }
-  schemaAnswer(input: StructuredInput) {
-    return this.rec('structured', input, () => this.inner.schemaAnswer(input))
+  schemaAnswer(input: StructuredInput, onUsage?: (u: ChatUsage) => void) {
+    return this.rec('structured', input, () => this.inner.schemaAnswer(input, onUsage))
   }
 }

@@ -404,6 +404,8 @@ export interface DocReview {
   checked?: Record<string, CheckedMark>
   /** AI tasks run on highlighted text (the question cards in the review column), newest last. */
   aiRuns?: AiTaskRun[]
+  /** The automated review: its run (steps, parts, budget), as it goes and once done. */
+  pipeline?: PipelineRun
 }
 
 /**
@@ -763,4 +765,74 @@ export interface DraftProbe {
   approved: number
   /** Enough of it is our wording that it looks like our paper. */
   looksOurs: boolean
+}
+
+// ---- The automated review ----------------------------------------------------------------------
+
+/** What a part of the contract is, as the AI read its structure. */
+export type PartKind = 'title' | 'heading' | 'parties' | 'recitals' | 'definitions' | 'clause' | 'schedule' | 'signature' | 'boilerplate' | 'other'
+
+/** How closely a part is checked: not at all, for language and consistency only, or in full. */
+export type PartDepth = 'skip' | 'light' | 'full'
+
+/** One part of the contract: paragraphs that belong together, reviewed as one. */
+export interface ReviewPart {
+  id: string
+  /** As a lawyer would name it ("Clause 2.4 Residuals", "Recitals"). */
+  title: string
+  kind: PartKind
+  depth: PartDepth
+  /** Why it's checked this closely. */
+  reason: string
+  /** Its paragraphs, in order. */
+  blockIds: string[]
+}
+
+export type PipelineStatus = 'waiting' | 'running' | 'done' | 'skipped' | 'needs-you' | 'error'
+
+/** Tokens a step used (cached: read from the provider's cache), and what that cost on Claude. */
+export interface StepUsage {
+  input: number
+  cached: number
+  output: number
+  usd?: number
+}
+
+/**
+ * A step in the review's timeline. Top-level steps run in order; a step's children (a part's
+ * checks, say) are its own list, in their own order, however they interleave in time.
+ */
+export interface PipelineStep {
+  id: string
+  title: string
+  /** What it found or did, in a line. */
+  detail?: string
+  status: PipelineStatus
+  startedAt?: string
+  endedAt?: string
+  usage?: StepUsage
+  error?: string
+  /** The part it's about, if any. */
+  partId?: string
+  children?: PipelineStep[]
+}
+
+export interface PipelineRun {
+  id: string
+  by: string
+  startedAt: string
+  endedAt?: string
+  /** running; paused (budget reached, or waiting for the next phase); stopped by the user; done; error. */
+  status: 'running' | 'paused' | 'stopped' | 'done' | 'error'
+  /** Why it's paused or stopped, for the timeline. */
+  note?: string
+  provider: 'anthropic' | 'vllm'
+  model: string
+  /** The cap: tokens (input + output) and, on Claude, dollars. */
+  budget: { tokens: number; usd?: number }
+  spent: StepUsage
+  /** The estimate for what's next, once the structure is known. */
+  estimate?: { calls: number; tokens: number; usd?: number }
+  steps: PipelineStep[]
+  parts?: ReviewPart[]
 }

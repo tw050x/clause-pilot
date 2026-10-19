@@ -20,6 +20,7 @@ import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnsw
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
+import { DEFAULT_BUDGET, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1111,6 +1112,47 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
     .catch((e) => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) }))
     .finally(() => clearTimeout(limit))
   return { session: s, runId: run.id }
+})
+
+// ---- The automated review ------------------------------------------------------------------------
+
+const pipelineDeps = (): PipelineDeps => ({
+  provider,
+  persist: (s) => emitThrottled(s),
+  actor,
+  settings: () => {
+    const st = loadSettings()
+    return st.aiProvider === 'vllm' ? { kind: 'vllm', model: st.vllmModel ?? '' } : { kind: 'anthropic', model: st.model }
+  },
+  uid: (p) => uid(p)
+})
+
+ipcMain.handle('pipeline:defaults', () => {
+  const { kind, model } = pipelineDeps().settings()
+  const ai = provider()
+  return {
+    provider: kind,
+    model,
+    budget: kind === 'anthropic' ? { usd: DEFAULT_BUDGET.usd, tokens: DEFAULT_BUDGET.tokens * 4 } : { tokens: DEFAULT_BUDGET.tokens },
+    ready: ai.kind !== 'none',
+    why: ai.kind === 'none' ? 'The AI isn’t set up: add it in Settings.' : undefined
+  }
+})
+
+ipcMain.handle('pipeline:start', (_e, sessionId: string, budget: { tokens: number; usd?: number }) => {
+  const s = session(sessionId)
+  if (!s.doc) throw new Error('Not a document review.')
+  if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
+  startPipeline(s, pipelineDeps(), budget)
+  ws.audit.append(actor(), 'review.pipeline-started', s.id, { budget })
+  return s
+})
+
+ipcMain.handle('pipeline:stop', (_e, sessionId: string) => {
+  const s = session(sessionId)
+  stopPipeline(s, pipelineDeps())
+  ws.audit.append(actor(), 'review.pipeline-stopped', s.id, {})
+  return s
 })
 
 // ---- Questions asked of highlighted text ---------------------------------------------------------
