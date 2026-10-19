@@ -82,7 +82,8 @@ export function Home({
       {adding === 'clause' && <AddClauseModal onClose={() => setAdding(null)} onAdded={refreshWs} />}
       {adding === 'position' && <AddPositionModal onClose={() => setAdding(null)} onAdded={refreshWs} />}
 
-      {ws && !dismissed && (
+      {/* For a new team setting up: not in demo mode, whose workspace is already set up. */}
+      {ws && !dismissed && !settings?.demoMode && (
         <SetupChecklist
           onDismiss={dismiss}
           items={[
