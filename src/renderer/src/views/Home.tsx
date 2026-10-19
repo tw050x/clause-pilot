@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Account, ReviewSummary, Settings } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 import type { View } from '../components/NavDrawer'
+import { AddClauseModal, AddPositionModal } from '../components/SetupModals'
 
 export function Home({
   onNavigate,
@@ -20,7 +21,10 @@ export function Home({
   onOpenLive: () => void
   onNavigate: (v: View) => void
 }) {
-  const [ws, setWs] = useState<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number } | null>(null)
+  const [ws, setWs] = useState<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number; playbookProposed: number } | null>(null)
+  // Adding a clause or a playbook position from the setup steps.
+  const [adding, setAdding] = useState<'clause' | 'position' | null>(null)
+  const refreshWs = () => void window.api.workspace.summary().then(setWs)
   const [settings, setSettings] = useState<Settings | null>(null)
   // Until the first review, the setup checklist is the way in: it explains what opening a contract involves.
   const needsFirstReview = !!ws && ws.reviews === 0
@@ -75,6 +79,9 @@ export function Home({
 
       <InProgress onOpen={onOpenReview} />
 
+      {adding === 'clause' && <AddClauseModal onClose={() => setAdding(null)} onAdded={refreshWs} />}
+      {adding === 'position' && <AddPositionModal onClose={() => setAdding(null)} onAdded={refreshWs} />}
+
       {ws && !dismissed && (
         <SetupChecklist
           onDismiss={dismiss}
@@ -92,10 +99,19 @@ export function Home({
               cta: { label: 'Open Settings', onClick: () => onNavigate('settings') }
             },
             {
-              title: 'Add a playbook position',
-              detail: 'Your standard position on a topic (for example governing law or the liability cap). Every contract is checked against each approved position.',
+              title: 'Add a clause to the library',
+              detail: 'Our approved wording for a topic (for example governing law). Contracts are compared with it: matching wording needs no reading, and the AI checks whether anything else means the same.',
+              done: ws.library > 0,
+              cta: { label: 'Add a clause', onClick: () => setAdding('clause') }
+            },
+            {
+              title: 'Add to the playbook',
+              detail:
+                ws.playbook === 0 && ws.playbookProposed > 0
+                  ? 'Proposed, and waiting for approval: approve it on the Approvals page and it joins the playbook.'
+                  : 'Your standard position on a topic (for example governing law or the liability cap). Every contract is checked against each approved position.',
               done: ws.playbook > 0,
-              cta: { label: 'Open Playbook', onClick: () => onNavigate('playbook') }
+              cta: ws.playbook === 0 && ws.playbookProposed > 0 ? { label: 'Open Approvals', onClick: () => onNavigate('queue') } : { label: 'Add a position', onClick: () => setAdding('position') }
             },
             {
               title: 'Review your first contract',

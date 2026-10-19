@@ -319,8 +319,26 @@ ipcMain.handle('workspace:summary', () => ({
   precedents: ws.store.precedents().length,
   reviews: ws.store.listSessions().length,
   openAlerts: ws.store.securityAlerts().filter((a) => a.status === 'open').length,
-  nominations: ws.store.nominations().length
+  nominations: ws.store.nominations().length,
+  playbookProposed: ws.store.playbookProposals().filter((p) => p.status === 'pending' && p.kind === 'add').length
 }))
+
+/** Add a clause to the library by hand (approved by whoever adds it, as an import would be). */
+ipcMain.handle('kb:addClause', (_e, c: Pick<LibraryClause, 'title' | 'category' | 'contractType' | 'text'>) => {
+  if (!c.title.trim() || !c.text.trim()) throw new Error('A clause needs a title and its wording.')
+  const clause: LibraryClause = {
+    id: uid('lib'),
+    title: c.title.trim(),
+    category: c.category.trim() || 'General',
+    contractType: c.contractType,
+    text: c.text.trim().replace(/\s+/g, ' '),
+    approvedBy: actor(),
+    approvedOn: new Date().toISOString().slice(0, 10)
+  }
+  ws.store.addLibraryClause(clause)
+  ws.audit.append(actor(), 'library.clause-added', null, { id: clause.id, title: clause.title })
+  return ws.store.library()
+})
 
 function saveKey(file: string, key: string | null, envName: string) {
   if (!key) rmSync(file, { force: true })

@@ -21,7 +21,7 @@ export interface Api {
     run(id: string, task: { questionId: string; blockIds: string[]; quote: string }): Promise<{ session: ReviewSession; runId: string }>
   }
   workspace: {
-    summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number }>
+    summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number; playbookProposed: number }>
     /** Delete every account, contract, review and the knowledge base (settings and keys are kept); the window reloads. */
     clear(): Promise<boolean>
   }
@@ -133,6 +133,8 @@ export interface Api {
   }
   kb: {
     library(): Promise<LibraryClause[]>
+    /** Add a clause to the library by hand. */
+    addClause(c: Pick<LibraryClause, 'title' | 'category' | 'contractType' | 'text'>): Promise<LibraryClause[]>
     playbook(): Promise<PlaybookPosition[]>
     precedents(): Promise<Precedent[]>
     nominations(): Promise<Nomination[]>

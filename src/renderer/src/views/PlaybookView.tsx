@@ -131,7 +131,7 @@ export function PlaybookView({ onProposalsChanged }: { onProposalsChanged: () =>
   )
 }
 
-function PositionForm({ initial, onSubmit, onCancel }: { initial?: PlaybookPosition; onSubmit: (p: PlaybookPosition, reason: string) => void; onCancel: () => void }) {
+export function PositionForm({ initial, onSubmit, onCancel }: { initial?: PlaybookPosition; onSubmit: (p: PlaybookPosition, reason: string) => void; onCancel: () => void }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [appliesTo, setAppliesTo] = useState<ContractType[]>(initial?.appliesTo ?? ['nda', 'order-form'])
   const [standard, setStandard] = useState(initial?.standard ?? '')

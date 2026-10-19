@@ -92,6 +92,7 @@ const api: Api = {
   },
   kb: {
     library: () => invoke('kb:library'),
+    addClause: (c) => invoke('kb:addClause', c),
     playbook: () => invoke('kb:playbook'),
     precedents: () => invoke('kb:precedents'),
     nominations: () => invoke('kb:nominations'),
