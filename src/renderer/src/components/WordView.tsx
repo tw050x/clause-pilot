@@ -22,6 +22,8 @@ interface Props {
   reviewer: string
   onFocusBlock: (id: string | null) => void
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
+  /** Show the contract as text instead (when it can't be laid out). */
+  onShowText: () => void
 }
 
 type Loaded = { sd: SuperDoc; ids: Record<string, string>; host: HTMLDivElement }
@@ -31,7 +33,7 @@ type Placed = { top: number; height: number; left: number }
 const nodeId = (el: Element) => (el as HTMLElement).dataset.sourceNodeId ?? ''
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -229,7 +231,16 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges }: P
   return (
     <div className="wv-wrap" ref={wrap}>
       {loading && <div className="wv-loading">Laying out the document…</div>}
-      {error && <div className="banner danger" style={{ margin: 16 }}>The document couldn’t be shown in Word layout: {error}</div>}
+      {error && (
+        <div className="banner danger" style={{ margin: 16 }}>
+          <span>
+            This document couldn’t be laid out as in Word ({error}). Everything else works: review it as text.
+          </span>
+          <button className="btn sm" onClick={onShowText}>
+            Show as text
+          </button>
+        </div>
+      )}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
         {gutter.bars.map((b, i) => (
