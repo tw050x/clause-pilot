@@ -148,6 +148,13 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
    * again whenever the page is drawn again.
    */
   const pads = useRef(new Map<string, { top: number; bottom: number }>())
+  /**
+   * The room added to each page, by page number. SuperDoc draws only the pages near the screen
+   * (the rest are blank pages of their own height); a blank page keeps the room it had when it was
+   * drawn, so pages coming and going as you scroll don't move what's under them.
+   */
+  const pageRoom = useRef(new Map<string, number>())
+  useEffect(() => pageRoom.current.clear(), [session.id])
   const sizer = useRef<HTMLDivElement | null>(null)
   const makeRoom = (loaded: Loaded) => {
     const d = model.current
@@ -203,6 +210,15 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       lastOf.set(x.blockId, x.f)
     }
     pages.forEach((page, i) => {
+      const pageKey = page.dataset.pageIndex ?? String(i)
+      // A page not drawn now: the room it had when it was.
+      if (!frags[i].length) {
+        const h = orig(page, 'height')
+        const room = pageRoom.current.get(pageKey) ?? 0
+        put(page, 'height', h, h + room)
+        put(page, 'minHeight', h, h + room)
+        return
+      }
       let off = 0
       for (const x of frags[i]) {
         const pad = next.get(x.blockId)
@@ -215,6 +231,7 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           const top = orig(f, 'top')
           put(f, 'top', top, top + off)
         }
+      pageRoom.current.set(pageKey, off)
       const h = orig(page, 'height')
       put(page, 'height', h, h + off)
       put(page, 'minHeight', h, h + off)
