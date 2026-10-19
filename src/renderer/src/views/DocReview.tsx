@@ -357,9 +357,11 @@ export function DocReview({ session, panel, bar, foot, reviewer, onChange, alert
       {layout === 'word' ? (
         <WordView key={session.id} session={session} reviewer={reviewer} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
-          onComment={(blockId, quote) => {
+          onOpenComments={(blockId) => {
+            // The comments, with the selection kept (so a new one can go on the selected text).
             setFocus(blockId)
-            setDraft({ blockId, quote })
+            setCommentsFor(blockId)
+            requestAnimationFrame(() => document.querySelector('.rightbar .rc-comments-h')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
           }}
           onShowComments={(id) => {
             setFocus(id)

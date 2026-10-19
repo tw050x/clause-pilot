@@ -27,8 +27,8 @@ interface Props {
   onSelectChanges: (x: SelectedChange[] | null, hl?: Highlight) => void
   /** Apply a change to the review (the session it returns becomes the review). */
   act: (p: Promise<ReviewSession>) => Promise<boolean>
-  /** Comment on selected text (the margin button beside a selection). */
-  onComment: (blockId: string, quote: string) => void
+  /** Show a paragraph's comments with the selection kept (the margin button beside it). */
+  onOpenComments: (blockId: string) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
   /** Show the contract as text instead: called when it can't be laid out, with why. */
@@ -91,12 +91,12 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onComment, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act, onOpenComments, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onComment, onShowText })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onComment, onShowText }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onShowText })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onShowText }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
   /** A paragraph's comments, theirs and ours. */
@@ -405,7 +405,13 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
       if (w && fragment) {
         const base = w.getBoundingClientRect()
         const r = fragment.getBoundingClientRect()
-        setBubble({ top: y - base.top - 15, left: r.right - base.left + 14, blockId: loaded.ids[nodeId(fragment)] ?? blockIds[0], quote: sel.quotedText })
+        // Centred on the line the selection ended on, as far from the text as the AI markers; below
+        // an AI marker it would cover.
+        const line = [...fragment.querySelectorAll('.superdoc-line')].map((l) => l.getBoundingClientRect()).find((l) => y >= l.top && y <= l.bottom)
+        let top = (line ? line.top + line.height / 2 : y) - base.top - 8
+        const marker = gutter.ai.find((m) => Math.abs(m.top + 2 - top) < 18)
+        if (marker) top = marker.top + 2 + 20
+        setBubble({ top, left: r.right - base.left + 12, blockId: loaded.ids[nodeId(fragment)] ?? blockIds[0], quote: sel.quotedText })
       }
       cb.current.onFocusBlock(blockIds[0])
       cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
@@ -580,13 +586,10 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
           <button
             className="ed-gutter-btn out wv-comment"
             style={{ top: bubble.top, left: bubble.left }}
-            title={`Comment on the selected text (in the right-hand column)${commentCount(bubble.blockId) ? `. This paragraph has ${commentLabel(commentCount(bubble.blockId))}.` : ''}`}
-            aria-label="Comment on the selected text"
+            title={commentCount(bubble.blockId) ? `${commentLabel(commentCount(bubble.blockId))} on this paragraph: show them (and add one) in the right-hand column` : 'Comments: show them (and add one) in the right-hand column'}
+            aria-label="Show comments"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              cb.current.onComment(bubble.blockId, bubble.quote)
-              setBubble(null)
-            }}
+            onClick={() => cb.current.onOpenComments(bubble.blockId)}
           >
             <CommentIcon size={10} />
             {commentCount(bubble.blockId) > 0 && <span>{commentCount(bubble.blockId)}</span>}
