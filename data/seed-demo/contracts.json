@@ -1,0 +1,23 @@
+[
+  {
+    "id": "ct-demo-brightwater",
+    "accountId": "ac-demo-brightwater",
+    "title": "Mutual NDA",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-kestrel",
+    "accountId": "ac-demo-kestrel",
+    "title": "Confidentiality Agreement",
+    "contractType": "nda",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
+    "id": "ct-demo-harbourline",
+    "accountId": "ac-demo-harbourline",
+    "title": "Master Services Agreement",
+    "contractType": "general",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  }
+]

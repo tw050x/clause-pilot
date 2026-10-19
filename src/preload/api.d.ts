@@ -12,6 +12,8 @@ export interface Api {
     save(patch: Partial<Omit<Settings, 'hasApiKey' | 'hasVllmKey'>>): Promise<Settings>
     setApiKey(key: string | null): Promise<Settings>
     setVllmKey(key: string | null): Promise<Settings>
+    /** Demo mode on or off: the other workspace opens and the window reloads. */
+    setDemoMode(on: boolean): Promise<Settings>
   }
   ai: {
     vllmModels(url: string): Promise<string[]>

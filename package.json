@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "demo:build": "tsx --tsconfig tsconfig.node.json scripts/demo/build.ts",
     "demo:server": "node demo-server/server.mjs",
+    "demo:seed": "tsx --tsconfig tsconfig.node.json scripts/demo/seed.ts",
     "release": "electron-vite build && electron-builder",
     "pack": "electron-vite build && electron-builder --dir",
     "icon": "electron scripts/icon.mjs",

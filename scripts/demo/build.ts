@@ -19,6 +19,7 @@ import { libraryFile, playbookFile } from '../../src/main/transfer'
 import { LIBRARY } from './library'
 import { PLAYBOOK } from './playbook'
 import { MSA_FILE, msaDocx } from './msa'
+import { writeDemoSeed } from './seed'
 import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, type Block, type ContractFile } from './contracts'
 
 const DEMOS = [
@@ -158,7 +159,8 @@ async function main() {
       files.push(MSA_FILE)
     }
     console.log(`${demo.dir}: library.json (${LIBRARY.length} clauses), playbook.json (${PLAYBOOK.length} positions), ${files.join(', ')}`)
-  }
+  }  // The demo workspace's starting data, from the same library and playbook.
+  writeDemoSeed()
 }
 
 main().catch((e) => {

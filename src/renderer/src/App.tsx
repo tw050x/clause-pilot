@@ -97,8 +97,10 @@ export function App() {
   }, [])
 
   // ---- active account (remembered) ----
-  const accountKey = 'clausepilot.activeAccount.live'
+  // The account last used, remembered per workspace (demo mode has its own).
+  const accountKey = `clausepilot.activeAccount.${settings?.demoMode === false ? 'live' : 'demo'}`
   const accountKeyRef = useRef(accountKey)
+  accountKeyRef.current = accountKey
   const refreshAccounts = useCallback(
     () => Promise.all([window.api.accounts.list().then(setAccounts), window.api.contracts.list().then(setContracts)]),
     []
@@ -174,6 +176,25 @@ export function App() {
           <SidebarIcon side="left" open={navOpen} />
         </button>
         <div className="spacer" />
+        {settings && (
+          // Demo mode: its own workspace (the demos' data) and the demo server as the AI.
+          <button
+            className={`demo-switch has-tip ${settings.demoMode ? 'on' : ''}`}
+            role="switch"
+            aria-checked={settings.demoMode}
+            onClick={() => void window.api.settings.setDemoMode(!settings.demoMode)}
+          >
+            <span className="demo-switch-track">
+              <span className="demo-switch-knob" />
+            </span>
+            Demo mode
+            <span className="tip" role="tooltip">
+              {settings.demoMode
+                ? 'On: the demo workspace (PortSwigger’s library and playbook, and an account and contract for each demo), with the demo server answering as the AI. Turn off for your own workspace and AI.'
+                : 'Off: your own workspace, with the AI chosen in Settings. Turn on for the demo workspace and the demo server.'}
+            </span>
+          </button>
+        )}
         {!online && (
           <span className="mode-pill offline has-tip" tabIndex={0}>
             Offline
@@ -188,7 +209,7 @@ export function App() {
             {aiLabel(settings)}
             <span className="tip" role="tooltip">
               {aiReady(settings)
-                ? `AI steps (questions on highlighted text, change review, the Agent) use ${settings.aiProvider === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : settings.aiProvider === 'demo' ? `the demo server at ${settings.demoUrl}` : 'Claude'}, and only when you ask. Click to change.`
+                ? `AI steps (questions on highlighted text, change review, the Agent) use ${aiOf(settings) === 'vllm' ? `your vLLM server at ${settings.vllmUrl}` : aiOf(settings) === 'demo' ? `the demo server at ${settings.demoUrl} (demo mode)` : 'Claude'}, and only when you ask. Click to change.`
                 : 'No AI set up: reviewing, editing, the marked-up copy and the email all work, but the AI steps will say what’s missing. Click to set it up in Settings.'}
             </span>
           </button>
@@ -369,13 +390,15 @@ export function App() {
 }
 
 /** Is an AI set up for the AI steps? */
-const aiReady = (s: Settings) => (s.aiProvider === 'vllm' ? !!(s.vllmUrl && s.vllmModel) : s.aiProvider === 'demo' ? !!s.demoUrl : s.hasApiKey)
+/** The AI the AI steps use: the demo server in demo mode, otherwise the one chosen in Settings. */
+export const aiOf = (s: Settings) => (s.demoMode ? 'demo' : s.aiProvider === 'demo' ? 'claude' : s.aiProvider)
+const aiReady = (s: Settings) => (aiOf(s) === 'vllm' ? !!(s.vllmUrl && s.vllmModel) : aiOf(s) === 'demo' ? !!s.demoUrl : s.hasApiKey)
 const aiLabel = (s: Settings) =>
-  s.aiProvider === 'demo'
+  aiOf(s) === 'demo'
     ? aiReady(s)
       ? 'Demo server'
       : 'Demo server · not set up'
-    : s.aiProvider === 'vllm'
+    : aiOf(s) === 'vllm'
       ? aiReady(s)
         ? `vLLM · ${s.vllmModel}`
         : 'vLLM · not set up'

@@ -16,6 +16,8 @@ This demo shows the app on our own paper. Most of the document is our approved w
 
 ## Setup (about 2 minutes)
 
+**In demo mode (the default; the switch in the top bar), skip this setup:** the library, playbook, account and contract are already there, and the demo server answers as the AI. Choose the account in the sidebar and go to the review. The steps below are for a workspace of your own (demo mode off).
+
 1. Open **Settings**. Under **AI**, choose **Claude** and paste an Anthropic API key, or choose **vLLM**, enter your server's address, press **Connect** and pick a model. The AI steps need this; everything else works without it.
 2. Open **Library** and press **Import…**. Choose `library.json`. The page should say *Imported: 38 clauses added.*
 3. Open **Playbook** and press **Import…**. Choose `playbook.json`. The page should say *Imported: 11 positions added.*

@@ -61,28 +61,27 @@ export function SettingsView({ settings, onChange }: { settings: Settings; onCha
       <div className="field">
         <label>AI provider</label>
         <div className="seg">
-          <button className={settings.aiProvider === 'claude' ? 'on' : ''} onClick={() => save({ aiProvider: 'claude' })}>
+          <button className={settings.aiProvider !== 'vllm' ? 'on' : ''} onClick={() => save({ aiProvider: 'claude' })}>
             Claude
           </button>
           <button className={settings.aiProvider === 'vllm' ? 'on' : ''} onClick={() => save({ aiProvider: 'vllm' })}>
             vLLM
           </button>
-          <button className={settings.aiProvider === 'demo' ? 'on' : ''} onClick={() => save({ aiProvider: 'demo' })}>
-            Demo server
-          </button>
         </div>
         <span className="hint">
           {settings.aiProvider === 'vllm'
             ? 'Your own model on a vLLM server (OpenAI-compatible API), for example on your local network. Contract text is sent to that server.'
-            : settings.aiProvider === 'demo'
-              ? 'Demo mode: the Clause Pilot demo server answers in place of a model, so demos run without an AI. Contract text is sent to the demo server.'
-              : 'Claude, through the Anthropic API. Contract text is sent to Anthropic.'}
+            : 'Claude, through the Anthropic API. Contract text is sent to Anthropic.'}
         </span>
       </div>
 
-      {settings.aiProvider === 'demo' ? (
-        <DemoServer settings={settings} save={save} />
-      ) : settings.aiProvider === 'claude' ? (
+      {settings.demoMode && (
+        <div className="banner info" style={{ marginBottom: 12 }}>
+          Demo mode is on (top bar): the demo server answers as the AI, and the choice below applies when demo mode is off.
+        </div>
+      )}
+      {settings.demoMode && <DemoServer settings={settings} save={save} />}
+      {settings.aiProvider !== 'vllm' ? (
         <>
           <div className="field">
             <label>Anthropic API key</label>

@@ -20,6 +20,8 @@ This demo shows a contract reviewed as it looks in Word, pages and all, however 
 
 ## Setup (about 2 minutes)
 
+**In demo mode (the default; the switch in the top bar), skip this setup:** the library, playbook, account and contract are already there, and the demo server answers as the AI. Choose the account in the sidebar and go to the review. The steps below are for a workspace of your own (demo mode off).
+
 1. Open **Library** and press **Import…**. Choose `library.json`. Then open **Playbook**, press **Import…** and choose `playbook.json`.
 
    If you've already imported them for another demo, the pages say they're already up to date. That's fine.

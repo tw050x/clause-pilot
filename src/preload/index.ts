@@ -15,7 +15,8 @@ const api: Api = {
     get: () => invoke('settings:get'),
     save: (patch) => invoke('settings:save', patch),
     setApiKey: (key) => invoke('settings:setApiKey', key),
-    setVllmKey: (key) => invoke('settings:setVllmKey', key)
+    setVllmKey: (key) => invoke('settings:setVllmKey', key),
+    setDemoMode: (on) => invoke('mode:set', on)
   },
   ai: {
     vllmModels: (url) => invoke('ai:vllmModels', url),

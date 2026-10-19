@@ -57,9 +57,23 @@ interface Workspace {
   recordings: RecordingStore
 }
 
+/**
+ * Demo mode (on unless turned off): its own workspace, seeded with the demo data; otherwise the
+ * team's own. Read straight from the settings file (it's needed before the rest of the settings).
+ */
+function demoMode(): boolean {
+  try {
+    const f = join(userDir, 'settings.json')
+    return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')).demoMode !== false : true
+  } catch {
+    return true
+  }
+}
+const workspaceDir = () => join(userDir, 'workspaces', demoMode() ? 'demo' : 'live')
+
 function openWorkspace(): Workspace {
-  const dir = join(userDir, 'workspaces', 'live')
-  const store = new Store(dir, join(appRoot, 'data/seed-empty'))
+  const dir = workspaceDir()
+  const store = new Store(dir, join(appRoot, demoMode() ? 'data/seed-demo' : 'data/seed-empty'))
   const recordings = new RecordingStore([join(dir, 'recordings')], join(dir, 'recordings'))
   return { dir, store, audit: new AuditLog(join(dir, 'audit.jsonl')), recordings }
 }
@@ -79,6 +93,7 @@ type StoredSettings = Omit<Settings, 'hasApiKey' | 'hasVllmKey'>
 function loadSettings(): StoredSettings {
   const defaults: StoredSettings = {
     reviewerName: userInfo().username,
+    demoMode: true,
     aiProvider: 'claude',
     model: DEFAULT_MODEL,
     vllmUrl: '',
@@ -104,9 +119,13 @@ const vllmKey = () => process.env.VLLM_API_KEY || readKey(vllmKeyFile)
  * The OpenAI-compatible server the AI steps use, for vLLM and for the demo server (demo mode: the
  * demo server answers in place of a model); null if it isn't set up; undefined for Claude.
  */
+/** The AI the AI steps use: in demo mode, the demo server; otherwise the one chosen in Settings. */
+const aiOf = (s: StoredSettings) => (s.demoMode ? 'demo' : s.aiProvider === 'demo' ? 'claude' : s.aiProvider)
+
 function openAiServer(s = loadSettings()): VllmServer | null | undefined {
-  if (s.aiProvider === 'vllm') return s.vllmUrl && s.vllmModel ? { url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() } : null
-  if (s.aiProvider === 'demo') return s.demoUrl ? { url: s.demoUrl, model: DEMO_MODEL } : null
+  const p = aiOf(s)
+  if (p === 'vllm') return s.vllmUrl && s.vllmModel ? { url: s.vllmUrl, model: s.vllmModel, apiKey: vllmKey() } : null
+  if (p === 'demo') return s.demoUrl ? { url: s.demoUrl, model: DEMO_MODEL } : null
   return undefined
 }
 
@@ -115,11 +134,11 @@ function provider(): AiProvider {
   const s = loadSettings()
   let ai: AiProvider
   const server = openAiServer(s)
-  if (server === null) return noAiProvider(s.aiProvider === 'demo' ? 'No demo server set up. Add its address in Settings.' : 'No vLLM server set up. Add its address and model in Settings.')
+  if (server === null) return noAiProvider(aiOf(s) === 'demo' ? 'No demo server set up. Add its address in Settings.' : 'No vLLM server set up. Add its address and model in Settings.')
   if (server) {
     ai = new VllmProvider(server)
     // (The demo server's answers aren't worth recording.)
-    if (s.aiProvider === 'demo') return ai
+    if (aiOf(s) === 'demo') return ai
   } else {
     const key = apiKey()
     if (!key) return noAiProvider('No Anthropic API key. Add one in Settings, or switch to a vLLM server.')
@@ -255,13 +274,30 @@ ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
 })
 
 /**
+ * Demo mode on or off: the setting saved, the other workspace opened (each keeps its own data;
+ * the demo one starts from the demo data), the demo server started if it's needed, and the
+ * window reloaded.
+ */
+ipcMain.handle('mode:set', (_e, demo: boolean) => {
+  const next = { ...loadSettings(), demoMode: demo }
+  writeFileSync(settingsFile, JSON.stringify(next, null, 2))
+  sessions.clear()
+  sessionWs.clear()
+  Object.assign(ws, openWorkspace())
+  ws.audit.append(actor(), demo ? 'mode.demo-on' : 'mode.demo-off', null, {})
+  void ensureDemoServer()
+  win?.webContents.reload()
+  return settings()
+})
+
+/**
  * Clear all data: every account, contract, review, the library, playbook, precedents, approvals,
  * security alerts, recorded AI answers and the audit log, and the AI settings (provider, model,
  * vLLM server, both API keys) so the AI has to be set up again. Your name and the other settings
  * are kept. The workspace starts again empty and the window reloads.
  */
 ipcMain.handle('workspace:clear', () => {
-  const dir = join(userDir, 'workspaces', 'live')
+  const dir = workspaceDir()
   sessions.clear()
   sessionWs.clear()
   rmSync(dir, { recursive: true, force: true })
@@ -317,7 +353,7 @@ ipcMain.handle('ai:vllmModels', async (_e, url: string) => {
 let demoServer: Promise<unknown> | null = null
 function ensureDemoServer(): Promise<unknown> {
   const s = loadSettings()
-  if (s.aiProvider !== 'demo') return Promise.resolve()
+  if (aiOf(s) !== 'demo') return Promise.resolve()
   if (demoServer) return demoServer
   let at: URL
   try {
@@ -1184,7 +1220,7 @@ const pipelineDeps = (): PipelineDeps => ({
 ipcMain.handle('pipeline:defaults', () => {
   const { kind, model } = pipelineDeps().settings()
   const ai = provider()
-  const p = loadSettings().aiProvider
+  const p = aiOf(loadSettings())
   return {
     provider: kind,
     name: p === 'demo' ? 'Demo server' : p === 'vllm' ? 'vLLM' : 'Claude',
@@ -1339,7 +1375,7 @@ ipcMain.handle('redline:open', async (_e, path: string) => {
 
 const chatKey = (s: ReviewSession) => s.contractId ?? s.id
 const NO_MODEL = () => {
-  const p = loadSettings().aiProvider
+  const p = aiOf(loadSettings())
   return p === 'vllm' ? 'No vLLM server set up. Add its address and model in Settings.' : p === 'demo' ? 'No demo server set up. Add its address in Settings.' : 'No Anthropic API key. Add one in Settings, or switch to a vLLM server.'
 }
 
@@ -1362,7 +1398,7 @@ function addChat(s: ReviewSession, e: Omit<ChatEntry, 'id' | 'at' | 'sessionId' 
 async function chatRequestFor(s: ReviewSession, model: NonNullable<ReturnType<typeof chatModel>>): Promise<ChatMessage[]> {
   const store = wsFor(s).store
   const c = store.chat(chatKey(s))
-  const budget = HISTORY_BUDGET[loadSettings().aiProvider === 'claude' ? 'anthropic' : 'vllm']
+  const budget = HISTORY_BUDGET[aiOf(loadSettings()) === 'claude' ? 'anthropic' : 'vllm']
   // The question just added stays out of the summary.
   const before: ChatConversation = { ...c, entries: c.entries.slice(0, -1) }
   if (needsCompacting(before, budget)) {
@@ -1399,7 +1435,7 @@ ipcMain.handle('chat:send', async (_e, sessionId: string, question: string, requ
   }
   // What Debug mode shows: who answered, how much was sent, and what came back.
   const conf = loadSettings()
-  const raw: Record<string, unknown> = { provider: conf.aiProvider, model: conf.aiProvider === 'vllm' ? conf.vllmModel : conf.aiProvider === 'demo' ? DEMO_MODEL : conf.model }
+  const raw: Record<string, unknown> = { provider: aiOf(conf), model: aiOf(conf) === 'vllm' ? conf.vllmModel : aiOf(conf) === 'demo' ? DEMO_MODEL : conf.model }
   let streamed = ''
   try {
     const request = await chatRequestFor(s, model)

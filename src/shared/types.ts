@@ -689,7 +689,13 @@ export interface Settings {
   reviewerName: string
   /** Can resolve security alerts and release a review from security hold. */
   securityReviewer: boolean
-  /** Which AI answers the AI steps: Claude (Anthropic API), a vLLM server, or the demo server (demo mode). */
+  /**
+   * Demo mode (the default): the demo workspace (its own data, seeded with PortSwigger's library,
+   * playbook and the demos' accounts and contracts), with the demo server as the AI. Off: the
+   * team's own workspace and the AI chosen below.
+   */
+  demoMode: boolean
+  /** Which AI answers the AI steps outside demo mode: Claude (Anthropic API) or a vLLM server. ('demo': the demo server.) */
   aiProvider: 'claude' | 'vllm' | 'demo'
   /** Claude model. */
   model: string
