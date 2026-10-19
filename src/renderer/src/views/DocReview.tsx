@@ -74,6 +74,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
   const [showKey, setShowKey] = useState(false)
+  const closeKey = useCallback(() => setShowKey(false), [])
   /**
    * Explain changes: hovering a change shows what it is. Off until turned on (it can get in the
    * way), and off again at the next click or key press anywhere but its button.
@@ -489,7 +490,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {panel && createPortal(column, panel)}
       {showKey && panel?.parentElement &&
         createPortal(
-          <KeyDialog onClose={() => setShowKey(false)}>
+          <KeyDialog onClose={closeKey}>
             {KEY}
           </KeyDialog>,
           panel.parentElement
@@ -564,13 +565,24 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
 
 /** The key, filling the review column above its foot. Escape, the close button or Hide key closes it. */
 function KeyDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    // A click anywhere but the key (or its Show / Hide key button, which toggles it) closes it.
+    const away = (e: PointerEvent) => {
+      const t = e.target as Element
+      if (panel.current?.contains(t) || t.closest?.('.bottombar-key')) return
+      onClose()
+    }
     document.addEventListener('keydown', esc)
-    return () => document.removeEventListener('keydown', esc)
+    document.addEventListener('pointerdown', away, true)
+    return () => {
+      document.removeEventListener('keydown', esc)
+      document.removeEventListener('pointerdown', away, true)
+    }
   }, [onClose])
   return (
-    <div className="key-panel" role="dialog" aria-labelledby="key-title">
+    <div className="key-panel" ref={panel} role="dialog" aria-labelledby="key-title">
       <div className="key-head">
         <h3 id="key-title">Key</h3>
         <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={onClose}>
