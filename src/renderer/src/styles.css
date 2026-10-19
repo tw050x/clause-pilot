@@ -959,8 +959,11 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-doc .ed-ai-preview { background: color-mix(in srgb, var(--processing) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--processing) 30%, transparent); border-radius: 2px; }
 
 /* ---- the Word layout (SuperDoc) ---- */
-/* Pages on a grey desk, as in Word; our bars, labels and markers in the margin beside each paragraph. */
-.wv-wrap { position: relative; min-height: 100%; background: var(--surface-2); padding: 8px 0 24px; }
+/* The pages on white, with no edges or shadows, so the document reads as one continuous sheet (pages
+   are white whatever the theme, so the pane behind them is too); our bars, labels and markers sit in
+   the margin beside each paragraph. */
+.wv-wrap { position: relative; min-height: 100%; background: #fff; padding: 8px 0 24px; }
+.wv-wrap .superdoc-page { box-shadow: none !important; border: none !important; outline: none !important; }
 .wv-stage { position: relative; }
 .wv-host.loading { position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none; }
 .wv-loading { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 12.5px; color: var(--text-3); }
