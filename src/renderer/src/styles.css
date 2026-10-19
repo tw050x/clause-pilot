@@ -1080,7 +1080,11 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .rc-close { font-weight: 600; border-color: var(--text-2); color: var(--text); }
 .rc-close:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 .wv-ai .wv-ai-spin { width: 9px; height: 9px; border-width: 1.5px; flex-shrink: 0; }
-.bottombar-explain { margin-left: auto; }
+.bottombar-final { margin-left: auto; }
 .bottombar .btn.bottombar-explain.on { background: var(--processing-tint); border-color: var(--processing); color: var(--processing); }
 /* Explain changes on, like an inspector: a help cursor over the page until the next click or key. */
 .wv-wrap.explaining, .wv-wrap.explaining * { cursor: help !important; }
+.bottombar .btn.bottombar-final.on { background: var(--processing-tint); border-color: var(--processing); color: var(--processing); }
+/* New draft only: inserted text reads as plain text, not marked. */
+.wv-wrap.final [data-track-change-kind], .wv-wrap.final [data-track-change-kind] * { text-decoration: none !important; border-color: transparent !important; color: inherit !important; }
+.wv-wrap.final :where([data-track-change-kind], [data-track-change-kind] *) { background-color: transparent !important; }

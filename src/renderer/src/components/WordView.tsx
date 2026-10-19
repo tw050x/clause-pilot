@@ -32,6 +32,8 @@ interface Props {
   onOpenComments: (blockId: string) => void
   /** Explain changes is on: hovering a change shows its tooltip. */
   explain: boolean
+  /** New draft only: the page with every change applied, no struck or marked text. */
+  final: boolean
   /** Show only the questions asked of some text (the AI marker beside it). */
   onOpenAi: (hl: Highlight) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
@@ -108,7 +110,7 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, explain, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
+export function WordView({ session, reviewer, explain, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -134,6 +136,26 @@ export function WordView({ session, reviewer, explain, onFocusBlock, onSelectCha
     notes: [],
     cards: []
   })
+
+  /**
+   * New draft only: SuperDoc lays the page out with every change applied (their changes and ours,
+   * removed text gone), or with the redline again. The page as it is is kept either way.
+   */
+  const finalRef = useRef(final)
+  finalRef.current = final
+  const setMode = (sd: SuperDoc, on: boolean) => {
+    try {
+      sd.setTrackedChangesPreferences({ mode: on ? 'final' : 'review' })
+    } catch (e) {
+      console.warn('Could not change how tracked changes are shown:', e)
+    }
+  }
+  useEffect(() => {
+    const loaded = current.current
+    if (!loaded) return
+    setMode(loaded.sd, final)
+    remeasure()
+  }, [final])
 
   /** Where each review paragraph is on the page (its fragments, one per page it's on). */
   const measuring = useRef(0)
@@ -319,7 +341,8 @@ export function WordView({ session, reviewer, explain, onFocusBlock, onSelectCha
       // Asked of wording the paragraph no longer has (changed since): says so, and hovering it
       // shows the paragraph as a whole.
       const top = lineOf(g.blockIds, g.quote)
-      return p ? [{ ...p, top: top ?? p.top, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale: top === null, running: g.running }] : []
+      // (In the new draft only, struck wording isn't shown, so a question on it isn't "earlier".)
+      return p ? [{ ...p, top: top ?? p.top, blockIds: g.blockIds, quote: g.quote, titles: [...g.titles], stale: top === null && !finalRef.current, running: g.running }] : []
     })
     // Paragraphs with comments still open: their count, always shown, beside the first line one
     // is on (a reply, where the comment it answers is).
@@ -885,6 +908,8 @@ export function WordView({ session, reviewer, explain, onFocusBlock, onSelectCha
           host.remove()
           return
         }
+        // New draft only: laid out with every change applied before it's shown.
+        if (finalRef.current) setMode(sd, true)
         const old = current.current
         const loaded: Loaded = { sd, ids, host, texts: new Map(), pending: new Map() }
         loaded.texts = await pageTexts(loaded)
@@ -967,7 +992,7 @@ export function WordView({ session, reviewer, explain, onFocusBlock, onSelectCha
 
   return (
     <div
-      className={`wv-wrap ${explain ? 'explaining' : ''}`}
+      className={`wv-wrap ${explain ? 'explaining' : ''} ${final ? 'final' : ''}`}
       ref={wrap}
       onMouseMove={hoverAt}
       onMouseLeave={() => {

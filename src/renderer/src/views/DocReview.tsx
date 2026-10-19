@@ -79,6 +79,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
    * way), and off again at the next click or key press anywhere but its button.
    */
   const [explain, setExplain] = useState(false)
+  /** New draft only: the page with every change applied, to read it as it would be. */
+  const [finalView, setFinalView] = useState(false)
   const explainBtn = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!explain) return
@@ -423,7 +425,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -510,6 +512,16 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
           <Icon name="mail" size={14} /> Draft response
         </button>
             </div>
+            {layout === 'word' && (
+              <button
+                className={`btn sm bottombar-final ${finalView ? 'on' : ''}`}
+                aria-pressed={finalView}
+                onClick={() => setFinalView((v) => !v)}
+                title="Read the draft as it would be: every change applied, nothing struck through or marked"
+              >
+                <Icon name="file" size={14} /> New draft only
+              </button>
+            )}
             {layout === 'word' && (
               <button
                 ref={explainBtn}
