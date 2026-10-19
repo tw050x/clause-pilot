@@ -124,7 +124,7 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .rightbar { position: relative; width: var(--rightbar-w); flex-shrink: 0; margin: 10px 12px 12px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; transition: width 0.25s ease; }
 .rightbar[hidden] { display: none; }
 /* Its foot, level with the bar under the page: Accept / Reject for the selected changes, and the key. */
-.rightbar-foot { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; min-height: 44px; box-sizing: border-box; border-top: 1px solid var(--border); }
+.rightbar-foot { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; min-height: 44px; box-sizing: border-box; margin: 0 -1px; border: 1px solid var(--border); border-bottom: 0; border-radius: 12px 12px 0 0; } /* its top corners rounded into the card's sides */
 .rightbar-switch { padding: 12px 16px 4px; }
 .rightbar-body { flex: 1; min-height: 0; overflow-y: auto; }
 .rightbar-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
