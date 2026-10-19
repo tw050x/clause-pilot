@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell } from 'electron'
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
@@ -122,10 +122,13 @@ const actor = () => loadSettings().reviewerName
 // ---- window ---------------------------------------------------------------------
 
 function createWindow() {
+  const MIN_WIDTH = 1500
   win = new BrowserWindow({
-    width: 1480,
+    width: Math.min(MIN_WIDTH + 20, screen.getPrimaryDisplay().workAreaSize.width),
     height: 940,
-    minWidth: 1080,
+    // Wide enough for both sidebars and a whole page between them (232 + 794 + 420, with their
+    // margins), so the page is never cut off; never wider than the screen allows.
+    minWidth: Math.min(MIN_WIDTH, screen.getPrimaryDisplay().workAreaSize.width),
     minHeight: 640,
     title: 'Clause Pilot',
     // Windows and Linux in development (packaged builds use the executable's icon).
