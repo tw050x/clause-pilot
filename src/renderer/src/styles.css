@@ -997,6 +997,7 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 /* A wider target than the bar itself, to click or drag from. */
 .wv-bar::before { content: ''; position: absolute; inset: 0 -5px; }
 .wv-bar:hover, .wv-bar.picked { box-shadow: 0 0 0 2px color-mix(in srgb, var(--processing) 35%, transparent); }
+.wv-wrap .wv-picked, .wv-wrap .wv-picked * { background-color: color-mix(in srgb, var(--processing) 22%, transparent) !important; border-radius: 2px; }
 .wv-line-sel { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--processing) 12%, transparent); pointer-events: none; }
 .wv-bar.chg-theirs { background: color-mix(in srgb, #1d4ed8 45%, transparent); }
 .wv-bar.chg-ours { background: color-mix(in srgb, var(--rejected) 60%, transparent); }

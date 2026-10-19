@@ -218,6 +218,8 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     const column = [...ai.map((m) => ({ m, kind: 0 })), ...notes.map((m) => ({ m, kind: 1 }))].sort((x, y) => x.m.top - y.m.top || x.kind - y.kind)
     for (let i = 1; i < column.length; i++) if (column[i].m.top < column[i - 1].m.top + 19) column[i].m.top = column[i - 1].m.top + 19
     setGutter({ bars, runs, ai, notes })
+    // The page may have been drawn again: the picked changes' tint with it.
+    tintPicks()
   }
 
   /** The page's paragraphs in order, as text with all changes applied (Word's own numbers aren't part of it). */
@@ -330,14 +332,19 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   }
 
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
-  const theirChange = async (loaded: Loaded, id: string, blockId: string | undefined, picked: SelectedChange[]) => {
+  const theirChange = async (loaded: Loaded, id: string, blockId: string | undefined, picked: SelectedChange[], shown: string[] = []) => {
     const c = await Promise.resolve(loaded.sd.activeEditor?.doc?.trackChanges.get({ id })).catch(() => null)
     if (!c || c.author === reviewer) return
     const at = (c as { navigationTarget?: { blockId?: string } }).navigationTarget?.blockId ?? ''
     const b = model.current.blocks.find((x) => x.id === (loaded.ids[at] ?? blockId))
     if (!b) return
-    const seg = segmentsOf(b).findIndex((x) => x.op !== 'same' && [c.insertedText, c.deletedText].some((t) => t && tidy(t) === tidy(x.text)))
+    // The change's text, with the paragraph's number when the whole paragraph went ("3.3 …").
+    const same = (t: string | null | undefined, x: string) => !!t && (tidy(t) === tidy(x) || (!!b.label && tidy(t) === tidy(`${b.label} ${x}`)))
+    let seg = segmentsOf(b).findIndex((x) => x.op !== 'same' && [c.insertedText, c.deletedText].some((t) => same(t, x.text)))
+    // A paragraph they deleted is one change, however the page splits it.
+    if (seg < 0 && b.kind === 'deleted' && c.deletedText) seg = 0
     if (seg < 0) return
+    shown.push(id)
     // A replacement is one change (its deletion and insertion are decided together), as in the text view.
     const first = groupOf(b, seg)[0] ?? seg
     if (!picked.some((p) => p.kind === 'theirs' && p.blockId === b.id && groupOf(b, p.seg).includes(first))) picked.push({ blockId: b.id, kind: 'theirs', seg: first })
@@ -414,6 +421,22 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   })
 
   /**
+   * Their changes picked on the page (SuperDoc's ids), tinted there as selected text is: a click
+   * in a change selects nothing of the page's own, and a deletion can't be selected as text.
+   */
+  const picks = useRef<string[]>([])
+  const tintPicks = () => {
+    const loaded = current.current
+    if (!loaded) return
+    for (const el of loaded.host.querySelectorAll('.wv-picked')) el.classList.remove('wv-picked')
+    for (const id of picks.current) for (const el of loaded.host.querySelectorAll(`[data-track-change-id="${CSS.escape(id)}"]`)) el.classList.add('wv-picked')
+  }
+  const pick = (ids: string[]) => {
+    picks.current = ids
+    tintPicks()
+  }
+
+  /**
    * What was clicked or selected on the page, as the review knows it. A selection: its paragraphs,
    * its text (for the AI questions) and their changes in it. A click: its paragraph, and the change
    * of theirs it's in, if any (read from the page, since a click selects nothing in this view).
@@ -421,18 +444,23 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
   const report = async (loaded: Loaded, clicked: Element | null, y: number) => {
     const sel = loaded.sd.ui?.selection.getSnapshot()
     const picked: SelectedChange[] = []
-    if (sel && !sel.empty && sel.target && sel.quotedText.trim()) {
+    const shown: string[] = []
+    // A selection; one of only deleted words has no text of its own, but is still their change.
+    if (sel && !sel.empty && sel.target && (sel.quotedText.trim() || sel.activeChangeIds.length)) {
       const blockIds = [...new Set(sel.target.segments.map((x) => loaded.ids[x.blockId]).filter(Boolean))]
-      for (const id of sel.activeChangeIds) await theirChange(loaded, id, blockIds[0], picked)
+      for (const id of sel.activeChangeIds) await theirChange(loaded, id, blockIds[0], picked, shown)
       if (!blockIds.length) return
+      pick(shown)
+      const quote = sel.quotedText.trim() ? sel.quotedText : picked.map((p) => (p.kind === 'theirs' ? segmentsOf(model.current.blocks.find((b) => b.id === p.blockId)!)[p.seg]?.text : p.text) ?? '').join(' ')
       cb.current.onFocusBlock(blockIds[0])
-      cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote: sel.quotedText })
+      cb.current.onSelectChanges(picked, { blockId: blockIds[0], blockIds, quote })
       return
     }
     const fragment = clicked?.closest('[data-source-node-id]')
     const blockId = fragment ? loaded.ids[nodeId(fragment)] : undefined
     const change = (clicked?.closest('[data-track-change-id]') as HTMLElement | null)?.dataset.trackChangeId
-    if (change) await theirChange(loaded, change, blockId, picked)
+    if (change) await theirChange(loaded, change, blockId, picked, shown)
+    pick(shown)
     // Text a comment is on, not in a change: its comments, as clicking a highlight does in the text view.
     if (!picked.length && blockId && clicked?.closest('[data-comment-ids]')) return cb.current.onShowComments(blockId)
     caretIn.current = blockId ?? null
