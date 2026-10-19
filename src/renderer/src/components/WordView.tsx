@@ -224,6 +224,37 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
     }
   }
 
+  /**
+   * Tint the text an AI marker's answers are about (hovering the marker), as the text view does:
+   * the page's text runs in its paragraphs that the highlighted words cover.
+   */
+  const preview = (a: { blockIds: string[]; quote: string } | null) => {
+    const loaded = current.current
+    if (!loaded) return
+    for (const el of loaded.host.querySelectorAll('.wv-ai-preview')) el.classList.remove('wv-ai-preview')
+    if (!a) return
+    const want = new Set(a.blockIds)
+    const runs = [...loaded.host.querySelectorAll('[data-source-node-id]')]
+      .filter((x) => want.has(loaded.ids[nodeId(x)]))
+      .flatMap((x) => [...x.querySelectorAll('.superdoc-text-run')].filter((r) => !r.closest('[data-track-change-kind="delete"]')))
+    let text = ''
+    const spans = runs.map((r) => {
+      const from = text.length
+      text += r.textContent ?? ''
+      return { r, from, to: text.length }
+    })
+    // Find the words in the runs' text, ignoring whitespace (paragraph breaks, Word's numbers' tabs).
+    const solid: number[] = []
+    for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i])) solid.push(i)
+    const hay = solid.map((i) => text[i]).join('')
+    const needle = a.quote.replace(/\s+/g, '')
+    const at = needle ? hay.indexOf(needle) : -1
+    if (at < 0) return
+    const from = solid[at]
+    const to = solid[at + needle.length - 1] + 1
+    for (const x of spans) if (x.from < to && x.to > from) x.r.classList.add('wv-ai-preview')
+  }
+
   /** One of their tracked changes on the page (SuperDoc's id), as the review's change in that paragraph. */
   const theirChange = async (loaded: Loaded, id: string, blockId: string | undefined, picked: SelectedChange[]) => {
     const c = await Promise.resolve(loaded.sd.activeEditor?.doc?.trackChanges.get({ id })).catch(() => null)
@@ -427,9 +458,12 @@ export function WordView({ session, reviewer, onFocusBlock, onSelectChanges, act
             title={`AI answers for this text (${a.titles.map((t) => `“${t}”`).join(', ')}). Click to show them.`}
             aria-label="Show the AI answers for this text"
             onClick={() => {
+              preview(null)
               cb.current.onFocusBlock(a.blockIds[0])
               cb.current.onSelectChanges([], { blockId: a.blockIds[0], blockIds: a.blockIds, quote: a.quote })
             }}
+            onMouseEnter={() => preview(a)}
+            onMouseLeave={() => preview(null)}
           >
             <Icon name="sparkle" size={12} stroke={2.2} />
           </button>
