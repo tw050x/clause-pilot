@@ -1362,3 +1362,10 @@ body.past-open .rightbar { z-index: 45; }
 .tl .tl-spot::after { content: ''; position: absolute; inset: -4px; border-radius: 10px; border: 2px solid var(--accent); pointer-events: none; opacity: 0; animation: tl-spot-ring 1.2s ease-out 3; }
 @keyframes tl-spot { 0%, 70% { outline-color: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); } 100% { outline-color: transparent; box-shadow: 0 0 0 5px transparent; } }
 @keyframes tl-spot-ring { 0% { opacity: 0.9; inset: -4px; border-radius: 10px; } 100% { opacity: 0; inset: -11px; border-radius: 16px; } }
+
+/* Text selection: the app's chrome (menus, headers, buttons, pages) isn't selectable, as in a
+   native app; what you'd read, quote or copy is: the document, the timeline, the chat and
+   comments, and anything you type into. */
+body { -webkit-user-select: none; user-select: none; }
+.wv-host, .ed-doc, .ProseMirror, .tl, .chat-log, .comment-pop, input, textarea, [contenteditable='true'] { -webkit-user-select: text; user-select: text; }
+.tl button, .tl .btn, .tl .tl-pill, .comment-pop button { -webkit-user-select: none; user-select: none; }
