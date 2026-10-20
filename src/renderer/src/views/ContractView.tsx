@@ -275,13 +275,18 @@ export function ReviewAction({ review }: { review: ReviewSummary }) {
   )
 }
 
-/** Where a draft's AI review stands, in a word (for a card's title). */
-export function StatePill({ state }: { state?: ReviewState }) {
+/**
+ * Where a draft's AI review stands, in a word: a pill (for a card's title), its spinner first; or
+ * plain (the sidebar), lined up with the text above it, its spinner after.
+ */
+export function StatePill({ state, plain }: { state?: ReviewState; plain?: boolean }) {
   if (!state) return null
+  const spin = (state.state === 'planning' || state.state === 'reviewing') && <span className="spinner tl-spin" />
   return (
-    <span className={`rs-pill ${state.state}`}>
-      {(state.state === 'planning' || state.state === 'reviewing') && <span className="spinner tl-spin" />}
+    <span className={`rs-pill ${state.state} ${plain ? 'plain' : ''}`}>
+      {!plain && spin}
       {state.label}
+      {plain && spin}
     </span>
   )
 }

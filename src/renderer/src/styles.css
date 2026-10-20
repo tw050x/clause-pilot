@@ -1261,4 +1261,6 @@ body.past-open .rightbar { z-index: 45; }
 .work-h-row .work-h { margin-bottom: 10px; }
 .work-h-row .btn { margin-top: 12px; }
 .nav-state { display: block; margin-top: 4px; }
-.nav-state .rs-pill { height: 18px; padding: 0 7px; font-size: 10.5px; }
+.nav-state .rs-pill { height: 16px; font-size: 11px; }
+/* Plain: just the coloured words (no pill), so they line up with the text above. */
+.rs-pill.plain { background: none; padding: 0; gap: 6px; }

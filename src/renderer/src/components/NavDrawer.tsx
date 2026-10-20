@@ -84,7 +84,7 @@ export function NavDrawer(p: Props) {
                   {/* Where its latest draft's AI review stands (AI reviewing, Planned, Ready for manual review…). */}
                   {v?.ai && !v.closed && (
                     <span className="nav-state">
-                      <StatePill state={v.ai} />
+                      <StatePill state={v.ai} plain />
                     </span>
                   )}
                 </span>
