@@ -21,7 +21,8 @@ import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { setQuick as demoQuick, startDemoServer } from '../../demo-server/server.mjs'
-import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEMOS, type DemoId, type DemoLanding, type DemoSetup } from '@shared/demos'
+import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -74,15 +75,11 @@ const workspaceDir = () => join(userDir, 'workspaces', demoMode() ? 'demo' : 'li
 function openWorkspace(): Workspace {
   const dir = workspaceDir()
   const store = new Store(dir, join(appRoot, demoMode() ? 'data/seed-demo' : 'data/seed-empty'))
-  // A demo workspace made before the seed grew: the demo's accounts and contracts it's missing.
-  if (demoMode()) {
-    const seed = <T,>(f: string): T[] => JSON.parse(readFileSync(join(appRoot, 'data/seed-demo', f), 'utf8'))
-    const accounts = store.accounts()
-    const missingA = seed<Account>('accounts.json').filter((a) => !accounts.some((x) => x.id === a.id))
-    if (missingA.length) store.saveAccounts([...accounts, ...missingA])
-    const contracts = store.contracts()
-    const missingC = seed<ContractRecord>('contracts.json').filter((c) => !contracts.some((x) => x.id === c.id))
-    if (missingC.length) store.saveContracts([...contracts, ...missingC])
+  // The demo workspace until a demo is loaded: our clauses and playbook, no clients (Demos
+  // chooses which: demo:load).
+  if (demoMode() && !existsSync(join(dir, 'demo-current.json')) && store.accounts().length) {
+    store.saveAccounts([])
+    store.saveContracts([])
   }
   const recordings = new RecordingStore([join(dir, 'recordings')], join(dir, 'recordings'))
   return { dir, store, audit: new AuditLog(join(dir, 'audit.jsonl')), recordings }
@@ -233,8 +230,11 @@ app.on('window-all-closed', () => process.platform !== 'darwin' && app.quit())
 const send = (channel: string, payload: unknown) => win?.webContents.send(channel, payload)
 
 const wsFor = (s: ReviewSession) => sessionWs.get(s.id) ?? ws
+/** Reviews from a workspace that's been reset (a run may still be finishing): never saved again. */
+const retired = new WeakSet<ReviewSession>()
 
 function persist(s: ReviewSession) {
+  if (retired.has(s)) return
   wsFor(s).store.saveSession(s)
   send('session:update', s)
 }
@@ -248,7 +248,7 @@ function emitThrottled(s: ReviewSession) {
     s.id,
     setTimeout(() => {
       persistTimers.delete(s.id)
-      wsFor(s).store.saveSession(s)
+      if (!retired.has(s)) wsFor(s).store.saveSession(s)
     }, 400)
   )
 }
@@ -300,19 +300,11 @@ ipcMain.handle('settings:save', (_e, patch: Partial<StoredSettings>) => {
   return settings()
 })
 
-// ---- demo quick starts ----------------------------------------------------------------------
-// In demo mode, the Start page offers things to explore. Starting one adds what it needs to the
-// demo workspace (a draft opened as a review, items waiting for approval) and is recorded, so it
-// isn't added again: starting it again just opens it.
+// ---- demos ----------------------------------------------------------------------------------
+// In demo mode, the Demos dialog sets the app up for one thing to show (shared/demos.ts): the
+// demo workspace reset, only that demo's clients and contracts kept (with their history), the
+// scene set (a draft uploaded, items to approve), and where it starts.
 
-type QuickStartId = 'round-1' | 'round-2' | 'client-paper' | 'approvals' | 'markup'
-interface QuickStartDone {
-  at: string
-  /** The review it opened, if any. */
-  sessionId?: string
-}
-const quickStartFile = () => join(ws.dir, 'demo-quickstarts.json')
-const quickStarts = (): Partial<Record<QuickStartId, QuickStartDone>> => (existsSync(quickStartFile()) ? JSON.parse(readFileSync(quickStartFile(), 'utf8')) : {})
 const demoFile = (name: string) => join(appRoot, 'data/demo-files', name)
 const DEMO_FILES = {
   v0: 'Brightwater-Mutual-NDA-v0-original-we-sent.docx',
@@ -321,8 +313,138 @@ const DEMO_FILES = {
   kestrel: 'Kestrel-Confidentiality-Agreement-client-paper.docx',
   msa: 'Harbourline-Master-Services-Agreement.docx'
 }
+/** The demo loaded in the demo workspace (none until one is chosen). */
+const demoCurrentFile = () => join(ws.dir, 'demo-current.json')
+const demoCurrent = (): { id: DemoId; at: string } | null => (existsSync(demoCurrentFile()) ? JSON.parse(readFileSync(demoCurrentFile(), 'utf8')) : null)
+ipcMain.handle('demo:current', () => (demoMode() ? demoCurrent() : null))
+/** The window starts again (the page can't reload itself: navigation is blocked), once a demo is loaded. */
+ipcMain.handle('demo:reload', () => win?.webContents.reload())
 
-ipcMain.handle('demo:quickstarts', () => quickStarts())
+/**
+ * The workspace started again from its seed: runs stopped, reviews in memory retired (a run
+ * finishing never writes into the new one), planning for the old one dropped, its folder removed.
+ */
+function resetWorkspace() {
+  stopAllPipelines()
+  for (const s of sessions.values()) retired.add(s)
+  for (const t of persistTimers.values()) clearTimeout(t)
+  persistTimers.clear()
+  planWaiting = []
+  wsGen++
+  sessions.clear()
+  sessionWs.clear()
+  rmSync(workspaceDir(), { recursive: true, force: true })
+  Object.assign(ws, openWorkspace())
+}
+
+/** Load a demo: where the window goes next (the review it starts in, or a page), and whose. */
+ipcMain.handle('demo:load', async (_e, id: DemoId): Promise<DemoLanding> => {
+  if (!demoMode()) throw new Error('Demos are for demo mode.')
+  const def = DEMOS.find((x) => x.id === id)
+  if (!def) throw new Error('Unknown demo.')
+  resetWorkspace()
+  // Only its contracts (every one with history, for the busy team) and their clients.
+  const seed = <T,>(f: string): T[] => JSON.parse(readFileSync(join(appRoot, 'data/seed-demo', f), 'utf8'))
+  const withHistory = new Set(seed<{ contractId: string }>('history.json').map((h) => h.contractId))
+  const contracts = seed<ContractRecord>('contracts.json').filter((c) => (def.contracts ? def.contracts.includes(c.id) : withHistory.has(c.id)))
+  ws.store.saveContracts(contracts)
+  ws.store.saveAccounts(seed<Account>('accounts.json').filter((a) => contracts.some((c) => c.accountId === a.id)))
+  await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+  const out = await demoSetup(def.setup, contracts)
+  writeFileSync(demoCurrentFile(), JSON.stringify({ id, at: new Date().toISOString() }, null, 2))
+  ws.audit.append(actor(), 'demo.loaded', out.sessionId ?? null, { id })
+  settleInterrupted()
+  void planAll()
+  return out
+})
+
+/** A demo's scene, and where it starts: its review, or a page. */
+async function demoSetup(setup: DemoSetup | undefined, contracts: ContractRecord[]): Promise<DemoLanding> {
+  const review = async (file: string, contractId: string, origin?: DraftOrigin) => {
+    const s = await startReview(ws, demoFile(file), contractId, origin)
+    persist(s)
+    planOnOpen(s)
+    return s
+  }
+  const open = (s: ReviewSession): DemoLanding => ({ view: 'review', sessionId: s.id, accountId: s.accountId })
+  if (setup === 'round-1') return open(await review(DEMO_FILES.v1, 'ct-demo-brightwater', { kind: 'original', path: demoFile(DEMO_FILES.v0) }))
+  if (setup === 'round-2') {
+    // Round 1 decided and closed; their next draft is compared with what we sent back.
+    const r1 = await startReview(ws, demoFile(DEMO_FILES.v1), 'ct-demo-brightwater', { kind: 'original', path: demoFile(DEMO_FILES.v0) })
+    decideForDemo(r1, 'all', new Date(Date.now() - 6 * 86_400_000).toISOString())
+    r1.closed = { by: actor(), at: new Date(Date.now() - 5 * 86_400_000).toISOString() }
+    persist(r1)
+    return open(await review(DEMO_FILES.v2, 'ct-demo-brightwater'))
+  }
+  if (setup === 'client-paper') return open(await review(DEMO_FILES.kestrel, 'ct-demo-kestrel', { kind: 'theirs' }))
+  if (setup === 'approvals') {
+    // A clause nominated for Clauses and a new playbook position, by a colleague, to approve.
+    const at = new Date().toISOString()
+    ws.store.saveNominations([
+      {
+        id: uid('nom'),
+        text: 'Each party may disclose Confidential Information to its professional advisers, auditors and insurers who are bound by duties of confidentiality no less protective than those in this Agreement.',
+        category: 'Confidentiality',
+        contractType: 'nda',
+        fromDoc: 'Kestrel-Data-Sharing-Agreement.docx',
+        counterparty: 'Kestrel Health Systems',
+        nominatedBy: 'Priya Shah',
+        nominatedAt: at,
+        note: 'Agreed with Kestrel; clearer than our current wording on advisers. Worth adding to Clauses.',
+        status: 'pending'
+      }
+    ])
+    ws.store.savePlaybookProposals([
+      {
+        id: uid('pp'),
+        kind: 'add',
+        positionId: null,
+        before: null,
+        after: {
+          id: '',
+          title: 'Data protection',
+          appliesTo: ['nda', 'order-form'],
+          standard: 'Where personal data is shared, each party complies with UK GDPR and the Data Protection Act 2018, and personal data is shared only as the Purpose needs.',
+          acceptableFallback: 'A reference to applicable data protection law, with a data processing agreement to follow if personal data is processed.',
+          redFlags: ['No data protection wording where personal data will be shared', 'Personal data transferred outside the UK/EEA without safeguards']
+        },
+        reason: 'Health clients like Kestrel keep asking about personal data; we should have a standard position.',
+        proposedBy: 'Priya Shah',
+        proposedAt: at,
+        status: 'pending'
+      }
+    ])
+    return { view: 'queue', accountId: contracts[0]?.accountId }
+  }
+  if (setup === 'markup') {
+    // A supplier's agreement with the decisions made, ready for the marked-up copy and the email.
+    const s = await review(DEMO_FILES.msa, 'ct-demo-harbourline', { kind: 'theirs' })
+    tracked(s, 'demo:markup', () => {
+      const d = s.doc!
+      let first = true
+      for (const b of d.blocks) {
+        segmentsOf(b).forEach((x, i) => {
+          if (x.op === 'same') return
+          d.resolved ??= {}
+          // Their first change rejected, the rest accepted.
+          d.resolved[changeKey(b.id, i)] = first ? 'rejected' : 'accepted'
+          first = false
+        })
+      }
+      const target = d.blocks.find((b) => /liab/i.test(b.text)) ?? d.blocks.find((b) => b.label)
+      if (target) d.comments.push({ id: uid('oc'), blockId: target.id, text: 'We can accept this if the cap is raised to 150% of the fees paid in the year.', by: actor(), at: new Date().toISOString() })
+    })
+    persist(s)
+    return open(s)
+  }
+  // No scene of its own: one contract opens at its latest draft; the busy team at the queue.
+  if (contracts.length === 1) {
+    const latest = ws.store.versionsOf(contracts[0].id).filter((v) => !v.original).sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0]
+    if (latest) return open(session(latest.id))
+  }
+  return { view: 'work', accountId: contracts[0]?.accountId }
+}
+
 
 /**
  * The demo workspace's history, made the first time it opens: past rounds of other contracts,
@@ -393,110 +515,6 @@ function decideForDemo(s: ReviewSession, how: 'all' | 'half' | 'none', at: strin
 }
 
 /** Start a quick start (or, if it's done, find what it opened): where the window goes next. */
-ipcMain.handle('demo:quickstart', async (_e, id: QuickStartId): Promise<{ view: 'review' | 'queue'; sessionId?: string; accountId?: string }> => {
-  if (!demoMode()) throw new Error('Quick starts are for demo mode.')
-  const done = quickStarts()
-  const record = (x: QuickStartDone) => writeFileSync(quickStartFile(), JSON.stringify({ ...quickStarts(), [id]: x }, null, 2))
-  const open = (sid: string) => {
-    const s = session(sid)
-    return { view: 'review' as const, sessionId: sid, accountId: s.accountId }
-  }
-  if (done[id]) return done[id]!.sessionId ? open(done[id]!.sessionId!) : { view: 'queue' }
-  const review = async (file: string, contractId: string, origin?: DraftOrigin) => {
-    const s = await startReview(ws, demoFile(file), contractId, origin)
-    persist(s)
-    planOnOpen(s)
-    return s
-  }
-  const ndaVersions = () => ws.store.versionsOf('ct-demo-brightwater')
-  // Round 1: their redline of our NDA, compared with the original we sent.
-  const round1 = async () => {
-    const v1 = ndaVersions().find((v) => v.version === 1)
-    return v1 ?? (await review(DEMO_FILES.v1, 'ct-demo-brightwater', { kind: 'original', path: demoFile(DEMO_FILES.v0) }))
-  }
-  let out: { view: 'review' | 'queue'; sessionId?: string; accountId?: string }
-  if (id === 'round-1') {
-    const s = await round1()
-    record({ at: new Date().toISOString(), sessionId: s.id })
-    out = open(s.id)
-  } else if (id === 'round-2') {
-    // Their next draft, compared with what we sent back (round 1 first, if it isn't there).
-    const r1 = await round1()
-    if (!done['round-1']) writeFileSync(quickStartFile(), JSON.stringify({ ...quickStarts(), 'round-1': { at: new Date().toISOString(), sessionId: r1.id } }, null, 2))
-    const s = ndaVersions().find((v) => v.version === 2) ?? (await review(DEMO_FILES.v2, 'ct-demo-brightwater'))
-    record({ at: new Date().toISOString(), sessionId: s.id })
-    out = open(s.id)
-  } else if (id === 'client-paper') {
-    const s = await review(DEMO_FILES.kestrel, 'ct-demo-kestrel', { kind: 'theirs' })
-    record({ at: new Date().toISOString(), sessionId: s.id })
-    out = open(s.id)
-  } else if (id === 'approvals') {
-    // A clause nominated for Clauses and a new playbook position, by a colleague, to approve.
-    const at = new Date().toISOString()
-    ws.store.saveNominations([
-      ...ws.store.nominations(),
-      {
-        id: uid('nom'),
-        text: 'Each party may disclose Confidential Information to its professional advisers, auditors and insurers who are bound by duties of confidentiality no less protective than those in this Agreement.',
-        category: 'Confidentiality',
-        contractType: 'nda',
-        fromDoc: DEMO_FILES.kestrel,
-        counterparty: 'Kestrel Health Systems',
-        nominatedBy: 'Priya Shah',
-        nominatedAt: at,
-        note: 'Agreed with Kestrel; clearer than our current wording on advisers. Worth adding to Clauses.',
-        status: 'pending'
-      }
-    ])
-    ws.store.savePlaybookProposals([
-      ...ws.store.playbookProposals(),
-      {
-        id: uid('pp'),
-        kind: 'add',
-        positionId: null,
-        before: null,
-        after: {
-          id: '',
-          title: 'Data protection',
-          appliesTo: ['nda', 'order-form'],
-          standard: 'Where personal data is shared, each party complies with UK GDPR and the Data Protection Act 2018, and personal data is shared only as the Purpose needs.',
-          acceptableFallback: 'A reference to applicable data protection law, with a data processing agreement to follow if personal data is processed.',
-          redFlags: ['No data protection wording where personal data will be shared', 'Personal data transferred outside the UK/EEA without safeguards']
-        },
-        reason: 'Health clients like Kestrel keep asking about personal data; we should have a standard position.',
-        proposedBy: 'Priya Shah',
-        proposedAt: at,
-        status: 'pending'
-      }
-    ])
-    ws.audit.append('Priya Shah', 'demo.quickstart-approvals', null, {})
-    record({ at })
-    out = { view: 'queue' }
-  } else {
-    // A review with decisions made, ready for the marked-up copy and the email.
-    const s = await review(DEMO_FILES.msa, 'ct-demo-harbourline', { kind: 'theirs' })
-    tracked(s, 'demo:markup', () => {
-      const d = s.doc!
-      let first = true
-      for (const b of d.blocks) {
-        segmentsOf(b).forEach((x, i) => {
-          if (x.op === 'same') return
-          d.resolved ??= {}
-          // Their first change rejected, the rest accepted.
-          d.resolved[changeKey(b.id, i)] = first ? 'rejected' : 'accepted'
-          first = false
-        })
-      }
-      const target = d.blocks.find((b) => /liab/i.test(b.text)) ?? d.blocks.find((b) => b.label)
-      if (target) d.comments.push({ id: uid('oc'), blockId: target.id, text: 'We can accept this if the cap is raised to 150% of the fees paid in the year.', by: actor(), at: new Date().toISOString() })
-    })
-    persist(s)
-    record({ at: new Date().toISOString(), sessionId: s.id })
-    out = open(s.id)
-  }
-  ws.audit.append(actor(), 'demo.quickstart', out.sessionId ?? null, { id })
-  return out
-})
 
 /**
  * Demo mode on or off: the setting saved, the other workspace opened (each keeps its own data;
@@ -525,17 +543,10 @@ ipcMain.handle('mode:set', async (_e, demo: boolean) => {
  * are kept. The workspace starts again empty and the window reloads.
  */
 ipcMain.handle('workspace:clear', async () => {
-  const dir = workspaceDir()
-  sessions.clear()
-  sessionWs.clear()
-  rmSync(dir, { recursive: true, force: true })
-  Object.assign(ws, openWorkspace())
-  // Demo mode: the demo workspace starts again as new (its data and history); the AI settings,
-  // which are for the team's own workspace, are left alone.
+  resetWorkspace()
+  // Demo mode: the demo workspace starts again as new, with no demo loaded (the Demos dialog
+  // opens to choose one); the AI settings, which are for the team's own workspace, are left alone.
   if (demoMode()) {
-    await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
-    settleInterrupted()
-    void planAll()
     ws.audit.append(actor(), 'workspace.cleared', null, { demo: true })
     win?.webContents.reload()
     return true
@@ -815,12 +826,17 @@ ipcMain.handle('work:list', () => backgroundWork())
 let planningAll: Promise<void> | null = null
 /** The reviews planAll has still to plan, in order (the queue page shows them waiting). */
 let planWaiting: string[] = []
+/** Bumped when the workspace is reset: planning for the one before stops. */
+let wsGen = 0
+let planningGen = -1
 function planAll() {
-  planningAll ??= (async () => {
+  // One planning loop per workspace: after a reset, a new one (the old one stops at its next turn).
+  if (planningAll && planningGen === wsGen) return planningAll
+  const gen = (planningGen = wsGen)
+  const run: Promise<void> = (async () => {
     await ensureDemoServer()
-    const at = ws
-    const archived = new Set(at.store.contracts().filter((c) => c.archived).map((c) => c.id))
-    const all = at.store.listSessions()
+    const archived = new Set(ws.store.contracts().filter((c) => c.archived).map((c) => c.id))
+    const all = ws.store.listSessions()
     // Each contract's latest draft (an earlier round's was done with).
     const latest = new Map<string, number>()
     for (const r of all) if (r.contractId) latest.set(r.contractId, Math.max(latest.get(r.contractId) ?? 0, r.version ?? 0))
@@ -830,7 +846,7 @@ function planAll() {
       .filter((r) => !(r.original || r.closed || (r.contractId && (archived.has(r.contractId) || (r.version ?? 0) < (latest.get(r.contractId) ?? 0))) || r.ai?.state !== 'not-planned'))
       .map((r) => r.id)
     workChanged()
-    while (planWaiting.length && ws === at) {
+    while (planWaiting.length && wsGen === gen) {
       const s = session(planWaiting.shift()!)
       planOnOpen(s)
       workChanged()
@@ -839,12 +855,14 @@ function planAll() {
   })()
     .catch((e) => console.warn('Planning the reviews stopped:', e))
     .finally(() => {
+      if (gen !== wsGen) return
       demoQuick(false)
       planningAll = null
       planWaiting = []
       workChanged()
     })
-  return planningAll
+  planningAll = run
+  return run
 }
 
 function planOnOpen(s: ReviewSession) {

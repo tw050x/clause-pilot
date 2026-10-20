@@ -90,6 +90,12 @@ export function isRunning(sessionId: string) {
   return live.has(sessionId)
 }
 
+/** Stop every run (the workspace is being reset): each stops before its next AI call. */
+export function stopAll() {
+  for (const flag of live.values()) flag.stop = true
+  live.clear()
+}
+
 /** The reviews whose AI review is running now. */
 export function runningIds() {
   return [...live.keys()]

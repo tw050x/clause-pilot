@@ -1,3 +1,4 @@
+import type { DemoId, DemoLanding } from '../shared/demos'
 import type {
   BackgroundJob,
   Account, ContractRecord, AiTaskKind, AiQuestion,
@@ -99,8 +100,12 @@ export interface Api {
   }
   /** Demo mode's quick starts: which are done, and starting one (adds what it needs; where to go next). */
   demo: {
-    quickstarts(): Promise<Partial<Record<QuickStartId, { at: string; sessionId?: string }>>>
-    quickstart(id: QuickStartId): Promise<{ view: 'review' | 'queue'; sessionId?: string; accountId?: string }>
+    /** The demo loaded in the demo workspace (null until one is chosen, or not in demo mode). */
+    current(): Promise<{ id: DemoId; at: string } | null>
+    /** Reset the demo workspace to a demo: where the window goes next. */
+    load(id: DemoId): Promise<DemoLanding>
+    /** Start the window again (once a demo is loaded). */
+    reload(): Promise<void>
   }
   /** The automated review: started from the review column, shown there as a timeline (as session updates). */
   pipeline: {
@@ -167,7 +172,6 @@ export interface Api {
   }
 }
 
-export type QuickStartId = 'round-1' | 'round-2' | 'client-paper' | 'approvals' | 'markup'
 
 declare global {
   interface Window {

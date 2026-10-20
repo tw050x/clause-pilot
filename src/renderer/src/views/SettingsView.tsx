@@ -218,7 +218,7 @@ function ClearData({ demo }: { demo: boolean }) {
           <div>
             {demo ? (
               <>
-                <strong>Reset the demo workspace?</strong> It starts again as new: its clients, contracts and history as they first were, the quick starts not yet explored. What you’ve done in it is lost. Your own workspace and the AI settings aren’t touched.
+                <strong>Reset the demo workspace?</strong> It’s emptied, and Demos opens to choose a demo to load. What you’ve done in it is lost. Your own workspace and the AI settings aren’t touched.
               </>
             ) : (
               <>

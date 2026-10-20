@@ -5,8 +5,6 @@ export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review'
 
 interface Props {
   open: boolean
-  /** Demo mode: the start page is the demo's (its quick start). */
-  demoMode?: boolean
   view: View
   setView: (v: View) => void
   session: ReviewSession | null
@@ -53,7 +51,7 @@ export function NavDrawer(p: Props) {
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
-      {item('home', 'home', p.demoMode ? 'Demo' : 'Start')}
+      {item('home', 'home', 'Start')}
       <div className="nav-section">Contracts</div>
       {/* The active client's contracts fill the space between the top items and Knowledge. */}
       <div className="nav-recent">
@@ -80,12 +78,7 @@ export function NavDrawer(p: Props) {
                 <span style={{ minWidth: 0 }}>
                   <span className="recent-name">{c.title}</span>
                   <span className="sub">
-                    {v
-                      ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}`
-                      : // A demo contract without drafts is a quick start's: it opens from the Demo page.
-                        p.demoMode && c.id.startsWith('ct-demo-')
-                        ? 'Quick start · on the Demo page'
-                        : 'No drafts yet'}
+                    {v ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}` : 'No drafts yet'}
                   </span>
                 </span>
                 <span className="nav-chevron">

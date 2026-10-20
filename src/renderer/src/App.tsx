@@ -18,6 +18,8 @@ import { WorkView, forYou } from './views/WorkView'
 import { ContractView, ContractsListView, NewContractView } from './views/ContractView'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
+import { DEMO_LANDING_KEY, DemosModal } from './components/DemosModal'
+import type { DemoId, DemoLanding } from '@shared/demos'
 
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -40,6 +42,9 @@ export function App() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeAccountId, setActiveAccountIdState] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** Demo mode: the demo loaded (null: none yet), and its dialog (the demos, and its clients to pick from). */
+  const [demoCurrent, setDemoCurrent] = useState<DemoId | null>(null)
+  const [demosOpen, setDemosOpen] = useState(false)
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   /** The contract whose page is showing (view 'contract'). */
   const [contractPageId, setContractPageId] = useState<string | null>(null)
@@ -159,16 +164,37 @@ export function App() {
   }
   useEffect(() => {
     if (!settings) return
-    refreshAccounts().then(() => {
+    refreshAccounts().then(async () => {
       let saved: string | null = null
+      let landing: DemoLanding | null = null
       try {
         saved = localStorage.getItem(accountKey)
+        landing = JSON.parse(sessionStorage.getItem(DEMO_LANDING_KEY) ?? 'null')
+        sessionStorage.removeItem(DEMO_LANDING_KEY)
       } catch {
         saved = null
+      }
+      // Demo mode: the demo loaded; none yet, and its dialog opens to choose one.
+      if (settings.demoMode) {
+        const current = await window.api.demo.current()
+        setDemoCurrent(current?.id ?? null)
+        if (!current) setDemosOpen(true)
+      }
+      // Just loaded a demo: its client, and where it starts.
+      if (landing) {
+        if (landing.accountId) setActiveAccountId(landing.accountId)
+        else setActiveAccountIdState(saved)
+        if (landing.sessionId) void openSession(landing.sessionId)
+        else setView(landing.view)
+        return
       }
       setActiveAccountIdState(saved)
     })
   }, [!!settings])
+  const demoModeRef = useRef(false)
+  demoModeRef.current = !!settings?.demoMode
+  /** Choosing the client: demo mode's is in the Demos dialog (its clients are the demo's). */
+  const chooseAccount = () => (settings?.demoMode ? setDemosOpen(true) : setPickerOpen(true))
   // Forget an active account that no longer exists in this workspace.
   const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? null
   useEffect(() => {
@@ -186,7 +212,8 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setPickerOpen((o) => !o)
+        if (demoModeRef.current) setDemosOpen((o) => !o)
+        else setPickerOpen((o) => !o)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -250,6 +277,12 @@ export function App() {
         )}
         {settings && (
           // Demo mode: its own workspace (the demos' data) and the demo server as the AI.
+          <>
+          {settings.demoMode && (
+            <button className="demos-btn" onClick={() => setDemosOpen(true)} title="Choose a demo, or a client in this one">
+              Demos
+            </button>
+          )}
           <button
             className={`demo-switch has-tip ${settings.demoMode ? 'on' : ''}`}
             role="switch"
@@ -262,16 +295,16 @@ export function App() {
             Demo mode
             <span className="tip" role="tooltip">
               {settings.demoMode
-                ? 'On: the demo workspace (PortSwigger’s clauses and playbook, and an account and contract for each demo), with the demo server answering as the AI. Turn off for your own workspace and AI.'
+                ? 'On: the demo workspace (set up by the demo chosen in Demos), with the demo server answering as the AI. Turn off for your own workspace and AI.'
                 : 'Off: your own workspace, with the AI chosen in Settings. Turn on for the demo workspace and the demo server.'}
             </span>
           </button>
+          </>
         )}
       </header>
       <div className={`body ${navOpen ? '' : 'nav-closed'}`}>
         <NavDrawer
           open={navOpen}
-          demoMode={!!settings?.demoMode}
           view={view}
           setView={setView}
           session={session}
@@ -287,7 +320,7 @@ export function App() {
             setView('contract')
           }}
           onNewContract={() => setView('new-contract')}
-          onChooseAccount={() => setPickerOpen(true)}
+          onChooseAccount={chooseAccount}
         />
         {/* Beside the menu: the page, with the review's bar under it, and the review column. */}
         <div className="work">
@@ -301,11 +334,11 @@ export function App() {
           {view === 'home' && (
             <Home
               onOpenReview={openSession}
-              onOpenLive={() => (activeAccount ? setOpenModal({}) : setPickerOpen(true))}
+              onOpenLive={() => (activeAccount ? setOpenModal({}) : chooseAccount())}
               onNavigate={setView}
               account={activeAccount}
               accounts={accounts}
-              onChooseAccount={() => setPickerOpen(true)}
+              onChooseAccount={chooseAccount}
             />
           )}
           {reviewing && (
@@ -418,6 +451,19 @@ export function App() {
         </aside>
         </div>
       </div>
+      {demosOpen && settings?.demoMode && (
+        <DemosModal
+          current={demoCurrent}
+          accounts={accounts}
+          activeId={activeAccountId}
+          onPickAccount={(id) => {
+            setActiveAccountId(id)
+            setDemosOpen(false)
+            setView('home')
+          }}
+          onClose={() => setDemosOpen(false)}
+        />
+      )}
       {pickerOpen && (
         <AccountPicker
           accounts={accounts}
