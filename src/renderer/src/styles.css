@@ -1257,3 +1257,8 @@ body.past-open .rightbar { z-index: 45; }
 .ic-fact dd { margin: 0; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
 .ic-list.compact .ic-facts { margin-top: 6px; padding-top: 6px; }
 .audit-payload { font-size: 11.5px; color: var(--text-2); word-break: break-word; }
+.work-h-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.work-h-row .work-h { margin-bottom: 10px; }
+.work-h-row .btn { margin-top: 12px; }
+.nav-state { display: block; margin-top: 4px; }
+.nav-state .rs-pill { height: 18px; padding: 0 7px; font-size: 10.5px; }

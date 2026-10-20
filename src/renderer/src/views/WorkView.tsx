@@ -1,5 +1,7 @@
 import type { BackgroundJob, ReviewSummary } from '@shared/types'
+import { useState } from 'react'
 import { Icon } from '../lib/icons'
+import { ReviewAction } from './ContractView'
 import { CardList, ItemCard } from '../components/ItemCards'
 
 const KIND: Record<BackgroundJob['kind'], string> = { plan: 'Planning', review: 'AI review', ask: 'Question' }
@@ -23,6 +25,18 @@ export function WorkView({ jobs, reviews, onOpenReview }: { jobs: BackgroundJob[
     .filter((r) => !busy.has(r.id))
     .sort((a, b) => order.indexOf(a.ai!.state) - order.indexOf(b.ai!.state) || b.updatedAt.localeCompare(a.updatedAt))
     .map((r) => ({ id: `you:${r.id}`, kind: 'review', status: 'waiting', sessionId: r.id, accountName: r.accountName, contractTitle: r.contractTitle, version: r.version, docName: r.docName, title: r.ai!.label, detail: r.ai!.detail, startedAt: r.updatedAt }))
+  const byId = new Map(reviews.map((r) => [r.id, r]))
+  const planned = forYou(reviews).filter((r) => r.ai?.state === 'planned' && !busy.has(r.id))
+  const [starting, setStarting] = useState(false)
+  // Every planned review started at once: they run side by side in the background.
+  const startAll = async () => {
+    setStarting(true)
+    try {
+      await Promise.all(planned.map((r) => window.api.pipeline.continue(r.id).catch(() => null)))
+    } finally {
+      setStarting(false)
+    }
+  }
   const when = (j: BackgroundJob, you: boolean) =>
     j.startedAt ? (you ? new Date(j.startedAt).toLocaleDateString([], { day: 'numeric', month: 'short' }) : new Date(j.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : '–'
   const table = (list: BackgroundJob[], empty: string, you = false) =>
@@ -38,9 +52,12 @@ export function WorkView({ jobs, reviews, onOpenReview }: { jobs: BackgroundJob[
             badges={<span className={`work-kind ${you ? 'you' : j.status}`}>{you ? j.title : KIND[j.kind]}</span>}
             sub={[j.accountName, j.version !== undefined ? `Version ${j.version}` : null].filter(Boolean).join(' · ')}
             actions={
-              <button className="btn sm" onClick={() => onOpenReview(j.sessionId)}>
-                Open <Icon name="next" size={12} />
-              </button>
+              <>
+                {you && byId.get(j.sessionId) && <ReviewAction review={byId.get(j.sessionId)!} />}
+                <button className="btn sm" onClick={() => onOpenReview(j.sessionId)}>
+                  Open <Icon name="next" size={12} />
+                </button>
+              </>
             }
             facts={[
               { label: you ? 'Since' : 'Started', value: when(j, you) },
@@ -60,7 +77,14 @@ export function WorkView({ jobs, reviews, onOpenReview }: { jobs: BackgroundJob[
       {table(running, 'Nothing running now.')}
       <h3 className="work-h">Waiting its turn</h3>
       {table(waiting, 'Nothing waiting.')}
-      <h3 className="work-h">Waiting for you</h3>
+      <div className="work-h-row">
+        <h3 className="work-h">Waiting for you</h3>
+        {planned.length > 1 && (
+          <button className="btn sm primary" disabled={starting} onClick={startAll} title="Start the AI review of every planned draft: they run side by side in the background">
+            {starting ? <span className="spinner sm" /> : <Icon name="sparkle" size={13} />} Start all planned ({planned.length})
+          </button>
+        )}
+      </div>
       {table(mine, 'Nothing waiting for you.', true)}
     </div>
   )

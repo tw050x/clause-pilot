@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Account, ContractRecord, ReviewSummary, ReviewState } from '@shared/types'
 import { CardList, ItemCard } from '../components/ItemCards'
 import { Icon } from '../lib/icons'
@@ -94,15 +94,18 @@ export function ContractView({
                 }
                 sub={v.docName}
                 actions={
-                  <button
-                    className="btn sm"
-                    onClick={async () => {
-                      await window.api.review.close(v.id, !v.closed)
-                      onChanged()
-                    }}
-                  >
-                    {v.closed ? 'Reopen' : 'Close'}
-                  </button>
+                  <>
+                    <ReviewAction review={v} />
+                    <button
+                      className="btn sm"
+                      onClick={async () => {
+                        await window.api.review.close(v.id, !v.closed)
+                        onChanged()
+                      }}
+                    >
+                      {v.closed ? 'Reopen' : 'Close'}
+                    </button>
+                  </>
                 }
                 facts={[v.ai && { label: 'Review', value: v.ai.detail, wide: true }, { label: 'Uploaded', value: new Date(v.createdAt).toLocaleString() }]}
               />
@@ -211,15 +214,18 @@ export function ContractsListView({
                 }
                 sub={c.contractType === 'nda' ? 'NDA' : c.contractType === 'order-form' ? 'Order form' : 'Contract'}
                 actions={
-                  <button
-                    className="btn sm"
-                    onClick={async () => {
-                      await window.api.contracts.archive(c.id, !c.archived)
-                      onChanged()
-                    }}
-                  >
-                    {c.archived ? 'Unarchive' : 'Archive'}
-                  </button>
+                  <>
+                    {v && !c.archived && <ReviewAction review={v} />}
+                    <button
+                      className="btn sm"
+                      onClick={async () => {
+                        await window.api.contracts.archive(c.id, !c.archived)
+                        onChanged()
+                      }}
+                    >
+                      {c.archived ? 'Unarchive' : 'Archive'}
+                    </button>
+                  </>
                 }
                 facts={[
                   { label: 'Latest version', value: v ? `Version ${v.version}` : 'No drafts yet' },
@@ -232,6 +238,40 @@ export function ContractsListView({
         </CardList>
       )}
     </div>
+  )
+}
+
+/**
+ * The AI review's next step from a list, without opening the review (reviews run in the
+ * background, several at once): Start a planned one, Continue one that stopped or paused. A
+ * review ready for manual review is checked in the review itself, so it has none.
+ */
+export function ReviewAction({ review }: { review: ReviewSummary }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const state = review.ai?.state
+  const label = state === 'planned' ? 'Start AI review' : state === 'paused' || state === 'stopped' || state === 'failed' ? 'Continue AI review' : null
+  // Busy until the review's state moves on (the list catches up from the review's updates).
+  useEffect(() => setBusy(false), [state])
+  if (!label || review.original || review.closed) return null
+  return (
+    <button
+      className={`btn sm ${state === 'planned' ? 'primary' : ''}`}
+      disabled={busy}
+      title={error ?? (state === 'planned' ? 'Review the parts as planned, in the background: it runs on its own until the findings are ready for manual review' : 'Go on from where it stopped')}
+      onClick={async () => {
+        setBusy(true)
+        setError(null)
+        try {
+          await window.api.pipeline.continue(review.id)
+        } catch (e) {
+          setError(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''))
+          setBusy(false)
+        }
+      }}
+    >
+      {busy ? <span className="spinner sm" /> : <Icon name="sparkle" size={13} />} {error ? 'Couldn’t start' : label}
+    </button>
   )
 }
 

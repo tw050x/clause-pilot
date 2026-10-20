@@ -1,5 +1,6 @@
 import type { Account, ContractRecord, ReviewSession, ReviewSummary } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
+import { StatePill } from '../views/ContractView'
 
 export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'questions' | 'history' | 'queue' | 'security' | 'audit' | 'settings' | 'work'
 
@@ -80,6 +81,12 @@ export function NavDrawer(p: Props) {
                   <span className="sub">
                     {v ? `Version ${v.version} · ${new Date(v.createdAt).toLocaleDateString()}` : 'No drafts yet'}
                   </span>
+                  {/* Where its latest draft's AI review stands (AI reviewing, Planned, Ready for manual review…). */}
+                  {v?.ai && !v.closed && (
+                    <span className="nav-state">
+                      <StatePill state={v.ai} />
+                    </span>
+                  )}
                 </span>
                 <span className="nav-chevron">
                   <Chevron />

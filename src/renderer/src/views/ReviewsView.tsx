@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ReviewSummary } from '@shared/types'
 import { CardList, ItemCard } from '../components/ItemCards'
-import { StatePill } from './ContractView'
+import { ReviewAction, StatePill } from './ContractView'
 
 /**
  * Every review for the active client, newest first. Closed reviews, and reviews of archived
@@ -58,9 +58,12 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
               }
               sub={r.accountName ? r.docName : undefined}
               actions={
-                <button className="btn sm" onClick={() => toggle(r)}>
-                  {r.closed ? 'Reopen' : 'Close'}
-                </button>
+                <>
+                  <ReviewAction review={r} />
+                  <button className="btn sm" onClick={() => toggle(r)}>
+                    {r.closed ? 'Reopen' : 'Close'}
+                  </button>
+                </>
               }
               facts={[
                 { label: 'Type', value: r.contractType === 'nda' ? 'NDA' : r.contractType === 'order-form' ? 'Order form' : 'Contract' },
