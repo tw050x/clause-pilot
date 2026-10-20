@@ -50,7 +50,6 @@ export function Timeline({
         <RunControls session={session} onChange={onChange} disabled={onHold} />
         <RunStatus run={run} />
       </div>
-      <Spent run={run} />
       <p className={`dr-small tl-note ${run?.status ?? 'none'}`}>{noteOf(run, defaults)}</p>
 
       {(
@@ -140,7 +139,8 @@ function RunStatus({ run }: { run?: PipelineRun }) {
 
 const k = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
-function Spent({ run }: { run?: PipelineRun }) {
+/** What the AI review has used against its budget (fixed at the foot of the review column). */
+export function Spent({ run }: { run?: PipelineRun }) {
   if (!run)
     return (
       <div className="tl-spent">

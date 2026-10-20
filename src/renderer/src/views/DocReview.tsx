@@ -8,7 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
-import { Timeline } from '../components/Timeline'
+import { Spent, Timeline } from '../components/Timeline'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, stateAt, type ActionItem } from '@shared/history'
@@ -424,6 +424,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         !session.original &&
         createPortal(
           <>
+            {/* What the AI review has used, always here; Accept / Reject beside it while changes are picked. */}
+            <Spent run={session.doc?.pipeline} />
             <div className="bottombar-group" ref={setDecideSlot} />
           </>,
           foot

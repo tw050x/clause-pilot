@@ -1264,3 +1264,6 @@ body.past-open .rightbar { z-index: 45; }
 .nav-state .rs-pill { height: 16px; font-size: 11px; }
 /* Plain: just the coloured words (no pill), so they line up with the text above. */
 .rs-pill.plain { background: none; padding: 0; gap: 6px; }
+.rightbar-foot .tl-spent { flex: 1; min-width: 0; gap: 3px; }
+.rightbar-foot .tl-spent .dr-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rightbar-foot .bottombar-group:empty { display: none; }
