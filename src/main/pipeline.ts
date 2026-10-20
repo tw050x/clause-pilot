@@ -10,13 +10,18 @@ import { schemaToSend, type JsonSchema } from '@shared/schema'
  * a step's children (a part's checks) are its own list. Every AI call is charged to its step and
  * to the run: past the run's budget, nothing new starts and the run pauses (what's done is kept).
  *
- * It reads the contract's structure and plans the review (the parts, how closely each is checked,
- * what that's estimated to use), waits for the reviewer to go on, then reviews the parts, a few at
- * a time: each against our standards (approved wording, playbook) and against the rest of the
- * contract (conflicts, their tracked changes, language), with what needs no AI (unchanged since we
- * sent it, our approved wording word for word) skipped. A run picks up where it stopped: steps
- * and parts already done aren't done again. Bringing the findings together, the reviewer's
- * approval and the new draft are the later steps (shown waiting).
+ * One press starts it and it runs through on its own: it reads the contract's structure and plans
+ * the review (the parts, how closely each is checked, what that's estimated to use), reviews the
+ * parts a few at a time, each against our standards (approved wording, playbook) and against the
+ * rest of the contract (conflicts, their tracked changes, language), with what needs no AI
+ * (unchanged since we sent it, our approved wording word for word) skipped. What it finds is
+ * brought together into one change per part and applied to the draft (each one action in the
+ * review's history, so it can be undone); parts it changed are checked again, up to MAX_ROUNDS;
+ * then the new draft and the email are written, for the reviewer to check and send.
+ *
+ * It stops on its own only when a person must look first (text addressed to an AI reviewer) or
+ * the budget is reached. A part that fails is tried again once, then left for the reviewer. A run
+ * picks up where it stopped: steps and parts already done aren't done again.
  */
 
 const INJECTION = {
@@ -54,6 +59,11 @@ export interface PipelineDeps {
   redline: (s: ReviewSession) => Promise<RedlineStats>
   /** The email built from the reviewer's decisions (no AI): the facts the AI's email works from, and the fallback. */
   email: (s: ReviewSession) => EmailDraft
+  /**
+   * Make a proposal's changes to the draft (their changes decided, then our wording, then the
+   * comment), as one action in the review's history. Returns what couldn't be made.
+   */
+  apply: (s: ReviewSession, p: Proposal) => string[]
 }
 
 /** Parts reviewed at once. */
@@ -139,7 +149,7 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       step('plan', 'Plan the review'),
       step('review', 'Review each part'),
       step('consolidate', 'Bring the findings together'),
-      step('approve', 'Your approval'),
+      step('approve', 'Make the changes'),
       step('draft', 'New draft and email')
     ]
   }
@@ -236,8 +246,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         `About ${run.estimate.calls} AI calls and ${Math.round(run.estimate.tokens / 1000)}k tokens${run.estimate.usd !== undefined ? ` (about $${run.estimate.usd.toFixed(2)})` : ''} to review the parts.`
       )
     }
-    // The reviewer sees the estimate before the parts are reviewed.
-    if (!run.confirmed) return pause('The plan is ready. Check the parts and the estimate, then Continue to review them.')
+    run.confirmed = true
 
     // 4–6, a round: each part (this round's), what they found brought together into one
     // proposal per part, and the reviewer's decisions on them.
@@ -273,6 +282,13 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         }
       }
       await Promise.all(Array.from({ length: AT_ONCE }, worker))
+      // A part that failed: tried once more, then left for the reviewer (the rest goes on).
+      const retry = budgetHit ? [] : (review.children ?? []).filter((c) => c.status === 'error')
+      if (retry.length && !flag.stop) {
+        for (const c of retry) ((c.status = 'waiting'), (c.error = undefined))
+        queue.push(...retry)
+        await Promise.all(Array.from({ length: AT_ONCE }, worker))
+      }
       if (flag.stop) return
       if (budgetHit) {
         review.status = 'waiting'
@@ -281,8 +297,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       const kids = review.children ?? []
       const failed = kids.filter((c) => c.status === 'error').length
       const flagged = kids.filter((c) => c.status === 'needs-you').length
-      end(review, failed ? 'error' : 'done', `${kids.filter((c) => c.status !== 'skipped').length} reviewed${flagged ? `, ${flagged} with something for you` : ''}${failed ? `, ${failed} failed (Continue tries them again)` : ''}.`)
-      if (failed) return pause(`${failed} part${failed === 1 ? '' : 's'} couldn’t be reviewed. Continue to try ${failed === 1 ? 'it' : 'them'} again.`)
+      end(review, 'done', `${kids.filter((c) => c.status !== 'skipped').length} reviewed${flagged ? `, ${flagged} with changes to make` : ''}${failed ? `, ${failed} couldn’t be (left for you to read)` : ''}.`)
     }
 
     // Bring together: one proposal per part with something for the reviewer.
@@ -315,24 +330,35 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         deps.persist(s)
       }
       const failed = (cons.children ?? []).filter((c) => c.status === 'error').length
-      end(cons, failed ? 'error' : 'done', flaggedParts.length ? `${flaggedParts.length} proposal${flaggedParts.length === 1 ? '' : 's'}.` : 'Nothing to propose.')
-      if (failed) return pause('A proposal couldn’t be made. Continue to try again.')
+      end(cons, 'done', flaggedParts.length ? `${flaggedParts.length - failed} change${flaggedParts.length - failed === 1 ? '' : 's'} to make${failed ? `, ${failed} couldn’t be worked out (left for you)` : ''}.` : 'Nothing to change.')
     }
 
-    // The reviewer decides each proposal (from the timeline); the run waits.
+    // Each part's change made to the draft, straight on: one action each in the review's history.
     const appr = at(ids.approve)
     const proposals = flaggedParts.filter((p) => p.proposal?.round === r && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) > 0)
-    appr.children = proposals.map((p) => {
-      const old = appr.children?.find((c) => c.partId === p.id)
-      return old ?? { id: `${ids.approve}:${p.id}`, partId: p.id, title: p.title, status: 'needs-you', detail: p.proposal!.summary }
-    })
-    if (proposals.some((p) => p.proposal!.status === 'pending')) {
-      appr.status = 'needs-you'
-      appr.startedAt ??= now()
-      appr.detail = `${proposals.filter((p) => p.proposal!.status === 'pending').length} to decide.`
-      return pause('Waiting for you: approve, reject or ask for changes on each proposal.')
+    if (fresh(ids.approve)) {
+      begin(appr)
+      appr.children = proposals.map((p) => appr.children?.find((c) => c.partId === p.id) ?? { id: `${ids.approve}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.proposal!.summary })
+      for (const p of proposals) {
+        if (flag.stop) return
+        const c = appr.children.find((x) => x.partId === p.id)!
+        if (p.proposal!.status !== 'pending') continue
+        let missed: string[]
+        try {
+          missed = deps.apply(s, p.proposal!)
+        } catch (e) {
+          missed = [e instanceof Error ? e.message : String(e)]
+        }
+        p.proposal!.status = 'approved'
+        p.proposal!.decidedBy = 'AI review'
+        p.proposal!.decidedAt = now()
+        c.status = missed.length ? 'needs-you' : 'done'
+        c.detail = missed.length ? `${p.proposal!.summary} Not all of it could be made: ${missed.join(' ')}` : p.proposal!.summary
+        c.endedAt = now()
+        deps.persist(s)
+      }
+      end(appr, proposals.length ? 'done' : 'skipped', proposals.length ? `${proposals.length} change${proposals.length === 1 ? '' : 's'} made: each can be undone in History.` : 'Nothing to change.')
     }
-    if (fresh(ids.approve)) end(appr, proposals.length ? 'done' : 'skipped', proposals.length ? 'All decided.' : 'Nothing to decide.')
     // Another round for what changed or was sent back, straight on; or everything's decided.
     if (nextRound(s, run, deps)) return go(s, run, deps, flag)
     const leftOver = run.note?.startsWith('Rounds used up') ? run.note : undefined
@@ -369,11 +395,11 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       mail.status = 'done'
       mail.endedAt = now()
       mail.detail = run.email.subject
-      end(draft, 'done', 'Ready: open the marked-up copy and the email below.')
+      end(draft, 'done', 'Ready: Marked-up copy and Draft response, in the bar under the document.')
     }
     run.status = 'done'
     run.endedAt = now()
-    run.note = leftOver ?? 'Done. The new draft and the email are ready.'
+    run.note = leftOver ?? 'Done. Check the changes it made, then the new draft and the email.'
     deps.persist(s)
   } catch (e) {
     if (e instanceof Stopped) return
@@ -453,7 +479,7 @@ function nextRound(s: ReviewSession, run: PipelineRun, deps: PipelineDeps): bool
   const steps: PipelineStep[] = [
     { id: ids.review, title: `Round ${n} · Review what changed`, status: 'waiting', children: ready.map((p) => ({ id: `${ids.review}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.feedback ? `You asked: “${p.feedback}”` : 'Check what the change did.' })) },
     { id: ids.consolidate, title: `Round ${n} · Bring the findings together`, status: 'waiting' },
-    { id: ids.approve, title: `Round ${n} · Your approval`, status: 'waiting' }
+    { id: ids.approve, title: `Round ${n} · Make the changes`, status: 'waiting' }
   ]
   run.steps.splice(at < 0 ? run.steps.length : at, 0, ...steps)
   run.round = n

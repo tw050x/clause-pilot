@@ -119,6 +119,12 @@ button.mode-pill:hover { filter: brightness(0.96); }
 .bottombar-group { display: flex; align-items: center; gap: 8px; }
 .bottombar > div.bottombar-group:first-of-type { flex: 1; min-width: 0; }
 .bottombar-back { padding-right: 12px; margin-right: 2px; }
+/* Narrow: the view toggles, then History, show their icons only (their tooltips still name them). */
+.bottombar { container-type: inline-size; }
+.bottombar .btn { white-space: nowrap; flex-shrink: 0; }
+@container (max-width: 1000px) { .bottombar-final .bb-label, .bottombar-explain .bb-label { display: none; } }
+@container (max-width: 760px) { .bottombar .bb-label { display: none; } .bottombar .run-btn .bb-label { display: inline; } }
+.run-error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The original we sent: nothing but Back, at the start of the bar. */
 .bottombar-back:only-child { margin-right: auto; }
 

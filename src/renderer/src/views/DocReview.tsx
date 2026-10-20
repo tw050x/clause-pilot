@@ -8,7 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
-import { Timeline } from '../components/Timeline'
+import { RunButton, Timeline } from '../components/Timeline'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
@@ -311,7 +311,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {session.original ? null : showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : (
-        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} onMarkup={() => setRedlineOpen(true)} onEmail={() => setEmailOpen(true)} />
+        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} />
       )}
     </div>
   )
@@ -507,14 +507,15 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         createPortal(
           <>
             <div className="bottombar-group">
+        <RunButton session={session} onChange={onChange} disabled={onHold} />
         <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
-          <Icon name="history" size={14} /> History{d.history?.length ? ` (${d.history.length})` : ''}
+          <Icon name="history" size={14} /> <span className="bb-label">History{d.history?.length ? ` (${d.history.length})` : ''}</span>
         </button>
         <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
-          <Icon name="doc" size={14} /> Marked-up copy
+          <Icon name="doc" size={14} /> <span className="bb-label">Marked-up copy</span>
         </button>
-        <button className="btn sm primary" onClick={() => setEmailOpen(true)} disabled={onHold}>
-          <Icon name="mail" size={14} /> Draft response
+        <button className={`btn sm ${session.doc?.pipeline?.email ? 'primary' : ''}`} onClick={() => setEmailOpen(true)} disabled={onHold}>
+          <Icon name="mail" size={14} /> <span className="bb-label">Draft response</span>
         </button>
             </div>
             {layout === 'word' && (
@@ -524,7 +525,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
                 onClick={() => setFinalView((v) => !v)}
                 title="Read the draft as it would be: every change applied, nothing struck through or marked"
               >
-                <Icon name="file" size={14} /> New draft only
+                <Icon name="file" size={14} /> <span className="bb-label">New draft only</span>
               </button>
             )}
             {layout === 'word' && (
@@ -535,7 +536,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
                 onClick={() => setExplain((v) => !v)}
                 title="Hover over a change to see what it is, who made it and where it stands. Turns off when you click or type."
               >
-                <Icon name="question" size={14} /> Explain changes
+                <Icon name="question" size={14} /> <span className="bb-label">Explain changes</span>
               </button>
             )}
           </>,

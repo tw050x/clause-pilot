@@ -12,8 +12,28 @@ import { pathToFileURL } from 'node:url'
 
 const PORT = Number(process.env.PORT ?? 4321)
 const MODEL = 'clause-pilot-demo'
-/** A little delay, so the app's progress (spinners, the review's timeline) is visible. */
-const DELAY = Number(process.env.DEMO_DELAY ?? 500)
+/**
+ * How long a real model would take, so a demo runs at a believable pace: the request read in
+ * first (prefill, PREFILL tokens a second, one request at a time, as on one GPU, so requests sent
+ * together wait for each other), then the answer written (DECODE tokens a second, with THINK
+ * tokens of reasoning first). A mid-length contract's review takes some minutes, as it would.
+ * DEMO_SPEED scales it all (2: twice as fast; 0: no waiting); DEMO_DELAY instead waits that many
+ * milliseconds for every answer.
+ */
+const SPEED = Number(process.env.DEMO_SPEED ?? 1)
+const PREFILL = 800
+const DECODE = 25
+const THINK = 120
+let gpuFreeAt = 0
+async function modelTime(promptChars, answerChars) {
+  if (process.env.DEMO_DELAY !== undefined) return sleep(Number(process.env.DEMO_DELAY))
+  if (!(SPEED > 0)) return
+  const prefill = ((promptChars / 4) / PREFILL) * 1000
+  const start = Math.max(Date.now(), gpuFreeAt)
+  gpuFreeAt = start + prefill
+  const decode = ((THINK + answerChars / 4) / DECODE) * 1000
+  return sleep((gpuFreeAt - Date.now() + decode) / SPEED)
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a)
@@ -109,8 +129,9 @@ const handler = (req, res) => {
         // A structured answer, in the shape asked for.
         const { name, user, out } = structured(body)
         const content = JSON.stringify(out)
-        log(`${name}: asked ${user.length} chars, answered ${content.length}`)
-        await sleep(DELAY)
+        const t0 = Date.now()
+        await modelTime(raw.length, content.length)
+        log(`${name}: asked ${user.length} chars, answered ${content.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`)
         return res.end(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }], usage: usage(raw, content) }))
       }
       res.statusCode = 404

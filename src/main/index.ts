@@ -12,7 +12,7 @@ import { AnthropicProvider, RecordingProvider, RecordingStore, VllmProvider, noA
 import { docEmail } from './email'
 import { buildDocRedline } from './redline/docx'
 import { readBlocks } from './ingest/blocks'
-import { authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, needsReading, ourText, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
+import { groupOf, authorsOf, beforeTheirs, changeKey, changeSets, hasOpenChanges, intentCandidate, marksFor, needsReading, ourText, proposedText, segmentsOf, shownText, statusOf, textWithout, theyChanged, type ChangeSet } from '@shared/changes'
 import type { AiAnswerPart, AiQuestion, ChatConversation, ChatEntry, AiTaskKind, AiTaskRun, QuestionData, ChangeStatus, DocBlock, DocReview, ListStyle, OurComment } from '@shared/types'
 import type { ClauseRef, IntentInput, IntentOut } from './ai/tasks'
 import { HISTORY_BUDGET, SUMMARY_SYSTEM, chatRequest, needsCompacting, summaryRequest, toSummarise } from './conversation'
@@ -887,7 +887,7 @@ const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()
 const clean = (t: string) => t.replace(/\u00a0/g, ' ').replace(/[\r\n]+/g, ' ')
 
 /** Our wording for a paragraph (null clears our edit). Saving their wording unchanged clears it too. */
-ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string | null, group?: string) => {
+function docEdit(sessionId: string, blockId: string, text: string | null, group?: string) {
   const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
     const b = d.blocks.find((x) => x.id === blockId)
@@ -903,7 +903,8 @@ ipcMain.handle('doc:edit', (_e, sessionId: string, blockId: string, text: string
   })
   persist(session(sessionId))
   return out
-})
+}
+ipcMain.handle('doc:edit', (_e, ...a: Parameters<typeof docEdit>) => docEdit(...a))
 
 /**
  * Enter in the document: the paragraph keeps the text before the caret, and a new paragraph
@@ -994,7 +995,7 @@ ipcMain.handle('doc:check', (_e, sessionId: string, blockIds: string[], on: bool
   return out
 })
 
-ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string) => {
+function docResolve(sessionId: string, blockId: string, seg: number, outcome: 'accepted' | 'rejected' | null, group?: string) {
   const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
     const b = d.blocks.find((x) => x.id === blockId)
@@ -1027,7 +1028,8 @@ ipcMain.handle('doc:resolve', (_e, sessionId: string, blockId: string, seg: numb
   })
   persist(session(sessionId))
   return out
-})
+}
+ipcMain.handle('doc:resolve', (_e, ...a: Parameters<typeof docResolve>) => docResolve(...a))
 
 /** Undo one of our own changes (an insertion or deletion of ours) in a paragraph. */
 ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: number, group?: string) => {
@@ -1082,7 +1084,7 @@ ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: Chan
   return s
 })
 
-ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>, group?: string) => {
+function docComment(sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' | 'text' | 'replyTo'>, group?: string) {
   const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
     if (!c.text.trim()) throw new Error('Write a comment first.')
@@ -1095,7 +1097,8 @@ ipcMain.handle('doc:comment', (_e, sessionId: string, c: Pick<OurComment, 'block
   })
   persist(session(sessionId))
   return out
-})
+}
+ipcMain.handle('doc:comment', (_e, ...a: Parameters<typeof docComment>) => docComment(...a))
 
 /**
  * Resolve a comment thread (theirs or ours) or reopen it, as Word does: it stays in the document,
@@ -1450,7 +1453,28 @@ const pipelineDeps = (): PipelineDeps => ({
   uid: (p) => uid(p),
   knowledge: () => ({ library: ws.store.library(), playbook: ws.store.playbook(), questions: ws.store.questions() }),
   redline: async (s) => (await redline(s.id)).stats,
-  email: (s) => docEmail(s, actor())
+  email: (s) => docEmail(s, actor()),
+  apply: (s, p) => {
+    // Their changes first, then the new wording over them, then the comment: one action.
+    const group = `ai:${p.id}`
+    const missed: string[] = []
+    const tryTo = (what: string, fn: () => unknown) => {
+      try {
+        fn()
+      } catch (e) {
+        missed.push(`${what}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    for (const x of p.decisions) {
+      const b = s.doc?.blocks.find((y) => y.id === x.blockId)
+      if (!b) continue
+      const segs = groupOf(b, x.seg).length ? groupOf(b, x.seg) : [x.seg]
+      for (const seg of segs) tryTo(`their change in ${blockWhere(s, x.blockId)}`, () => docResolve(s.id, x.blockId, seg, x.outcome, group))
+    }
+    for (const w of p.wording) tryTo(`the wording of ${blockWhere(s, w.blockId)}`, () => docEdit(s.id, w.blockId, w.text, group))
+    if (p.comment) tryTo('the comment', () => docComment(s.id, { blockId: p.comment!.blockId, quote: '', text: p.comment!.text }, group))
+    return missed
+  }
 })
 
 ipcMain.handle('pipeline:defaults', () => {
