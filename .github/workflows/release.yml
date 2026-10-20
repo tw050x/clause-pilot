@@ -38,9 +38,55 @@ jobs:
       - name: Build app
         run: npm run build
 
+      # macOS: the Developer ID certificate and Apple's notarization credentials, from the
+      # repository's secrets (see docs/releasing.md). Without them the macOS build stops here,
+      # rather than publishing an app macOS won't open.
+      - name: Check macOS signing secrets
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          [ -n "$CSC_LINK" ] || missing+=(MAC_CERTIFICATE_P12_BASE64)
+          [ -n "$CSC_KEY_PASSWORD" ] || missing+=(MAC_CERTIFICATE_PASSWORD)
+          if [ -n "$APPLE_API_KEY_P8" ] || [ -n "$APPLE_API_KEY_ID" ]; then
+            [ -n "$APPLE_API_KEY_P8" ] || missing+=(APPLE_API_KEY_P8)
+            [ -n "$APPLE_API_KEY_ID" ] || missing+=(APPLE_API_KEY_ID)
+            [ -n "$APPLE_API_ISSUER" ] || missing+=(APPLE_API_ISSUER)
+          else
+            [ -n "$APPLE_ID" ] || missing+=("APPLE_API_KEY_P8 + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_ID")
+            [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] || missing+=(APPLE_APP_SPECIFIC_PASSWORD)
+            [ -n "$APPLE_TEAM_ID" ] || missing+=(APPLE_TEAM_ID)
+          fi
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::macOS signing and notarization need these repository secrets: ${missing[*]} (see docs/releasing.md)"
+            exit 1
+          fi
+          # The API key is a file for notarytool.
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple-api-key.p8"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/apple-api-key.p8" >> "$GITHUB_ENV"
+          fi
+
       - name: Package and publish
+        shell: bash
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Unsigned builds until signing certificates are configured.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # macOS signing and notarization (empty elsewhere: Windows and Linux stay unsigned).
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CERTIFICATE_P12_BASE64 || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

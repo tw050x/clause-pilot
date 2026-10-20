@@ -9,14 +9,21 @@ files:
   - out/**
   - data/**
   - package.json
-# Builds are unsigned for now; macOS will ask users to confirm on first open.
+# macOS: signed with the Developer ID certificate (CSC_LINK / CSC_KEY_PASSWORD) under the
+# hardened runtime, then notarized by Apple (APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER,
+# or APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID), so it opens without a warning.
+# The release workflow supplies these from the repository's secrets.
 mac:
   category: public.app-category.business
   icon: build/icon.icns
   target:
     - target: dmg
       arch: [arm64, x64]
-  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
 win:
   icon: build/icon.ico
   target:
