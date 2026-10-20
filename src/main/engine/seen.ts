@@ -1,4 +1,4 @@
-import type { DocBlock, Precedent, ReviewSession, SeenHit } from '@shared/types'
+import type { DocBlock, Precedent, Proposal, ReviewSession, SeenHit } from '@shared/types'
 import { beforeTheirs, changeSets, segmentsOf, statusOf, type ChangeSet } from '@shared/changes'
 import { PrecedentIndex } from './matcher'
 import { canonical } from './text'
@@ -97,3 +97,100 @@ export function seenBefore(s: ReviewSession, precedents: Precedent[]): Record<st
 }
 
 const theyAdded = (set: ChangeSet) => set.blocks.some((b) => segmentsOf(b).some((x) => x.op === 'ins'))
+
+type Response = NonNullable<Precedent['response']>
+
+/** How a proposal answers one of their change sets: its wording there, or its decisions on it. */
+function answerOf(p: Proposal, set: ChangeSet): Response | null {
+  const ids = new Set(set.blocks.map((b) => b.id))
+  const wording = p.wording.filter((w) => ids.has(w.blockId))
+  if (wording.length) {
+    if (wording.every((w) => !w.text.trim())) return 'struck'
+    const before = (id: string) => set.blocks.find((b) => b.id === id)
+    return wording.every((w) => canonical(w.text) === canonical(beforeTheirs(before(w.blockId)!))) ? 'restored' : 'countered'
+  }
+  const decisions = p.decisions.filter((x) => ids.has(x.blockId))
+  if (!decisions.length) return null
+  return decisions.every((x) => x.outcome === 'accepted') ? 'accepted' : 'restored'
+}
+
+/**
+ * An approved proposal made to the draft, as negotiation history: each of their change sets it
+ * answered, and how (so the same ask, answered the same way, can be suggested next time).
+ */
+export function precedentsForProposal(s: ReviewSession, p: Proposal, counterparty: string): Precedent[] {
+  const d = s.doc!
+  const touched = new Set([...p.wording.map((w) => w.blockId), ...p.decisions.map((x) => x.blockId)])
+  return changeSets(d)
+    .filter((set) => set.blocks.some((b) => touched.has(b.id)))
+    .flatMap((set) => {
+      const response = answerOf(p, set)
+      if (!response) return []
+      const at = p.decidedAt ?? new Date().toISOString()
+      return [
+        {
+          id: precedentId(s, set),
+          contractType: s.contractType,
+          category: categoryOf(s, set),
+          counterparty,
+          date: at.slice(0, 10),
+          text: proposedOf(set) || beforeOf(set),
+          outcome: response === 'accepted' ? ('accepted' as const) : ('rejected' as const),
+          notes: p.summary,
+          source: 'review' as const,
+          where: set.where,
+          before: beforeOf(set),
+          inserted: insertedOf(set) || undefined,
+          response,
+          ours: response === 'accepted' ? undefined : set.blocks.map((b) => p.wording.find((w) => w.blockId === b.id)?.text ?? null)
+        }
+      ]
+    })
+}
+
+/** An earlier change like one in a proposal, answered the same way. */
+export interface ApprovedBefore {
+  counterparty: string
+  contractType: Precedent['contractType']
+  date: string
+  where?: string
+  response: Response
+  match: 'identical' | 'similar'
+}
+
+const family = (r: Response) => (r === 'accepted' ? 'accepted' : 'answered')
+
+/**
+ * For each proposal waiting at the check: earlier changes of the same kind (the same ask, or a
+ * similar one) that were answered the same way on other contracts, so approving it is suggested.
+ * A proposal is suggested only when every change of theirs it answers has such a precedent.
+ */
+export function approvedBefore(s: ReviewSession, precedents: Precedent[], exclude: (p: Precedent) => boolean): Record<string, ApprovedBefore[]> {
+  const run = s.doc?.pipeline
+  const out: Record<string, ApprovedBefore[]> = {}
+  if (!run?.parts) return out
+  const seen = seenBefore(s, precedents.filter((p) => p.response && !exclude(p)))
+  const sets = changeSets(s.doc!)
+  for (const part of run.parts) {
+    const p = part.proposal
+    if (!p || (p.status !== 'pending' && p.status !== 'approved')) continue
+    const touched = new Set([...p.wording.map((w) => w.blockId), ...p.decisions.map((x) => x.blockId)])
+    const mine = sets.filter((set) => set.blocks.some((b) => touched.has(b.id)))
+    const hits: ApprovedBefore[] = []
+    let all = mine.length > 0
+    for (const set of mine) {
+      const answer = answerOf(p, set)
+      // The same ask word for word; or a similar one, in the same kind of clause (keyword overlap
+      // alone is too loose to suggest approving on).
+      const agree = answer ? (seen[set.id] ?? []).filter((h) => h.response && family(h.response) === family(answer) && (h.match === 'identical' || h.category === categoryOf(s, set))) : []
+      if (!agree.length) {
+        all = false
+        break
+      }
+      const h = agree[0]
+      hits.push({ counterparty: h.counterparty, contractType: h.contractType, date: h.date, where: h.where, response: h.response!, match: h.match })
+    }
+    if (all && hits.length) out[part.id] = hits
+  }
+  return out
+}

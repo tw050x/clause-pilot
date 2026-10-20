@@ -1269,9 +1269,7 @@ body.past-open .rightbar { z-index: 45; }
 /* The reviewer's check: each proposed change (keep / drop, a note to send it back), the questions to ask, the two ways on. */
 .ck { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .ck-item { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; background: var(--surface); }
-.ck-item.dropped { opacity: 0.55; }
-.ck-item.dropped .ck-summary, .ck-item.dropped .ck-detail { text-decoration: line-through; text-decoration-color: var(--text-3); }
-.ck-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.ck-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
 .ck-summary { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
 .ck-detail { margin-top: 5px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .ck-add-note { margin-top: 6px; font-size: 12px; }
@@ -1315,3 +1313,27 @@ body.past-open .rightbar { z-index: 45; }
 }
 .comment-pop .rc-comments-h { padding-right: 26px; }
 .comment-pop-x { position: absolute; top: 8px; right: 8px; }
+.wv-ai.wv-part-mark.change.pending { color: var(--warn, #b45309); border-color: color-mix(in srgb, var(--warn, #b45309) 45%, var(--border)); }
+.wv-ai.wv-part-mark.change.approved { color: var(--exact); border-color: color-mix(in srgb, var(--exact) 45%, var(--border)); }
+
+/* The check: each change approved (at its foot) or sent back. */
+.ck-item.approved { border-color: color-mix(in srgb, var(--exact) 40%, var(--border)); }
+.ck-item.folded { padding-top: 8px; padding-bottom: 8px; }
+.ck-item.folded .ck-summary { color: var(--text-2); }
+.ck-badge { font-size: 11px; font-weight: 500; color: var(--exact); background: var(--exact-tint); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+.ck-foot { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.ck-approve { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.ck-approve.on { color: var(--exact); }
+.ck-foot .ck-add-note { margin: 0; }
+.ck-like { margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; color: var(--exact); background: var(--exact-tint); display: block; }
+.ck-like svg { vertical-align: -2px; margin-right: 2px; }
+.ck-suggest { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; background: var(--exact-tint); color: var(--exact); }
+.ck-suggest .btn { flex-shrink: 0; }
+.ck-earlier { display: flex; flex-direction: column; gap: 8px; }
+.ck-left-out { margin-top: 6px; }
+.ck-item.focus, .tl-flash { animation: tl-flash 1.4s ease-out; }
+@keyframes tl-flash { 0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--processing) 45%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* Highlighted text: the timeline folded to what's about it. */
+.tl-filter { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 10px; margin-bottom: 8px; border-radius: 8px; background: var(--processing-tint); color: var(--processing); }
+.tl-filter .link-btn { flex-shrink: 0; }

@@ -175,7 +175,7 @@ export function reviewState(s: ReviewSession): ReviewState {
   const review = run.steps.filter((x) => /^review(-\d+)?$/.test(x.id)).at(-1)
   const kids = review?.children ?? []
   const reviewed = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
-  const changes = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved').length
+  const changes = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved' && (p.proposal.appliedAt || run.status === 'done')).length
   const found = (run.parts ?? []).filter((p) => (p.findings ?? []).some((f) => f.severity !== 'info')).length
   const atCheck = run.steps.some((x) => x.id === 'check' && x.status === 'needs-you')
   if (run.status === 'running' && !run.confirmed) return { state: 'planning', label: 'Planning', detail: 'Reading its structure and planning the review.' }
@@ -183,7 +183,7 @@ export function reviewState(s: ReviewSession): ReviewState {
   if (run.status === 'running') return { state: 'reviewing', label: 'AI reviewing', detail: kids.length ? `${reviewed} of ${kids.length} parts reviewed.` : 'Under way.' }
   const proposed = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending').length
   if (run.status === 'paused' && atCheck)
-    return { state: 'your-turn', label: 'Ready for manual review', detail: proposed ? `${proposed} change${proposed === 1 ? '' : 's'} proposed: keep, drop or send back.` : found ? `${found} part${found === 1 ? '' : 's'} with findings to look at.` : 'Nothing to change: check, then write the new draft.' }
+    return { state: 'your-turn', label: 'Ready for manual review', detail: proposed ? `${proposed} change${proposed === 1 ? '' : 's'} to approve or send back.` : found ? `${found} part${found === 1 ? '' : 's'} with findings to look at.` : 'Nothing to change: check, then write the new draft.' }
   if (run.status === 'paused') return { state: 'paused', label: 'Paused', detail: run.note ?? 'Waiting to go on.' }
   if (run.status === 'stopped') return { state: 'stopped', label: 'Stopped', detail: run.note ?? 'Stopped before it finished.' }
   if (run.status === 'error') return { state: 'failed', label: 'Failed', detail: run.note ?? 'Something went wrong.' }

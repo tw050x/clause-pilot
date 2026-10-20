@@ -442,9 +442,14 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     if (check && check.status !== 'done') {
       if (!run.draftConfirmed) {
         const pending = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending').length
+        const approved = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved' && !p.proposal.appliedAt).length
         check.status = 'needs-you'
         check.startedAt ??= now()
-        check.detail = pending ? `${pending} change${pending === 1 ? '' : 's'} proposed: keep or drop each, or send parts back with a note.` : 'Nothing to change: look through the findings, or send parts back with a note.'
+        check.detail = pending
+          ? `${pending} change${pending === 1 ? '' : 's'} to approve${approved ? ` (${approved} approved already)` : ''}: approve each, or send it back with a note.`
+          : approved
+            ? `No new changes: ${approved} approved already.`
+            : 'Nothing to change: look through the findings, or send parts back with a note.'
         run.status = 'paused'
         run.note = 'Ready for manual review: check the proposed changes, then apply them and write the new draft and the email, or run another round.'
         deps.persist(s)
@@ -452,9 +457,9 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       }
     }
 
-    // The changes kept at the check made to the draft: one action each in the review's history.
+    // The changes approved at the check made to the draft: one action each in the review's history.
     const appr = run.steps.find((x) => x.id === 'approve')
-    const kept = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending' && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) + (p.proposal.replies?.length ?? 0) > 0)
+    const kept = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved' && !p.proposal.appliedAt && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) + (p.proposal.replies?.length ?? 0) > 0)
     if (appr && fresh('approve')) {
       begin(appr)
       appr.children = kept.map((p) => ({ id: `approve:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.proposal!.summary }))
@@ -467,9 +472,9 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         } catch (e) {
           missed = [e instanceof Error ? e.message : String(e)]
         }
-        p.proposal!.status = 'approved'
-        p.proposal!.decidedBy = run.steps.find((x) => x.id === 'check')?.by ?? deps.actor()
-        p.proposal!.decidedAt = now()
+        p.proposal!.decidedBy ??= run.steps.find((x) => x.id === 'check')?.by ?? deps.actor()
+        p.proposal!.decidedAt ??= now()
+        p.proposal!.appliedAt = now()
         c.status = missed.length ? 'needs-you' : 'done'
         c.detail = missed.length ? `${p.proposal!.summary} Not all of it could be made: ${missed.join(' ')}` : p.proposal!.summary
         c.endedAt = now()
@@ -541,24 +546,39 @@ const roundIds = (r: number) =>
     : { review: `review-${r}`, crosscheck: `crosscheck-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` }
 
 /**
- * At the reviewer's check: the changes they dropped set aside, and the parts they sent back
- * (a note, or questions worth asking ticked for them) reviewed again with what they asked, their
- * changes proposed again, and the check again after. The changes not sent back or dropped wait,
- * as they were, to be made with the rest.
+ * The reviewer's approvals at a check, as they now stand: the changes ticked approved (kept as
+ * approved through later rounds, unless sent back), the rest waiting for them. The suggested
+ * questions shown and not ticked are set aside (not offered again).
+ */
+function settleCheck(run: PipelineRun, deps: PipelineDeps, approved: string[], asked: { questionId: string; partId: string }[]) {
+  const yes = new Set(approved)
+  for (const part of run.parts ?? []) {
+    const p = part.proposal
+    if (!p || p.appliedAt) continue
+    if (yes.has(part.id) && p.status === 'pending') Object.assign(p, { status: 'approved', decidedBy: deps.actor(), decidedAt: now() })
+    else if (!yes.has(part.id) && p.status === 'approved') Object.assign(p, { status: 'pending', decidedBy: undefined, decidedAt: undefined })
+  }
+  for (const q of run.questions ?? []) if (!q.asked && !asked.some((a) => a.questionId === q.questionId && a.partId === q.partId)) q.dismissed = true
+}
+
+/**
+ * At the reviewer's check: their approvals kept, and the parts they sent back (a note, or
+ * questions worth asking ticked for them) reviewed again with what they asked, their changes
+ * proposed again, and the check again after. What they approved isn't looked at again: the next
+ * check asks only about what changed in the new round.
  */
 export function iterate(
   s: ReviewSession,
   deps: PipelineDeps,
-  input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; dropped: string[] }
+  input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; approved: string[] }
 ) {
   const run = s.doc?.pipeline
   if (!run?.parts) throw new Error('No review to go on with.')
   if (live.has(s.id)) throw new Error('The review is already running.')
   const { questions } = deps.knowledge()
-  for (const id of input.dropped) {
-    const p = run.parts.find((x) => x.id === id)?.proposal
-    if (p?.status === 'pending') Object.assign(p, { status: 'rejected', decidedBy: deps.actor(), decidedAt: now() })
-  }
+  // Sent back wins over approved: the part is looked at again.
+  const sentBack = new Set([...Object.entries(input.notes).filter(([, n]) => n.trim()).map(([id]) => id), ...input.questions.map((q) => q.partId)])
+  settleCheck(run, deps, input.approved.filter((id) => !sentBack.has(id)), input.questions)
   // What the reviewer asked of each part: their note, and the questions they ticked for it.
   const asked = new Map<string, string[]>()
   for (const [partId, note] of Object.entries(input.notes)) if (note.trim()) asked.set(partId, [note.trim()])
@@ -573,7 +593,7 @@ export function iterate(
   if (!back.length) throw new Error('Write a note on a change, or tick a question, to send back.')
   for (const p of back) {
     p.feedback = asked.get(p.id)!.join('\n')
-    if (p.proposal && p.proposal.status === 'pending') Object.assign(p.proposal, { status: 'changes', decidedBy: deps.actor(), decidedAt: now() })
+    if (p.proposal && (p.proposal.status === 'pending' || (p.proposal.status === 'approved' && !p.proposal.appliedAt))) Object.assign(p.proposal, { status: 'changes', decidedBy: deps.actor(), decidedAt: now() })
   }
   const n = (run.round ?? 1) + 1
   const ids = roundIds(n)
@@ -596,14 +616,15 @@ export function iterate(
 }
 
 /**
- * At the reviewer's check: the changes they dropped set aside, and the rest made to the draft,
- * then the new draft and the email written.
+ * At the reviewer's check: the changes they approved made to the draft (those not approved are
+ * left out), then the new draft and the email written.
  */
-export function applyChecked(s: ReviewSession, deps: PipelineDeps, dropped: string[]) {
+export function applyChecked(s: ReviewSession, deps: PipelineDeps, approved: string[]) {
   const run = s.doc?.pipeline
   if (!run?.parts) throw new Error('No review to go on with.')
-  for (const id of dropped) {
-    const p = run.parts.find((x) => x.id === id)?.proposal
+  settleCheck(run, deps, approved, [])
+  for (const part of run.parts) {
+    const p = part.proposal
     if (p?.status === 'pending') Object.assign(p, { status: 'rejected', decidedBy: deps.actor(), decidedAt: now() })
   }
   continueReview(s, deps)

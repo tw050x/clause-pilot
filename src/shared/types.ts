@@ -843,9 +843,16 @@ export interface Proposal {
   comment?: { blockId: string; text: string }
   /** Replies to their comments in the part (by their comment's id): what we did about each. */
   replies?: { commentId: string; text: string }[]
+  /**
+   * pending (the reviewer hasn't approved it); approved (by the reviewer at a check: made to the
+   * draft with the rest, and not looked at again in a later round unless sent back); rejected
+   * (left out); changes (sent back for another round).
+   */
   status: 'pending' | 'approved' | 'rejected' | 'changes'
   decidedBy?: string
   decidedAt?: string
+  /** Made to the draft (after the check). */
+  appliedAt?: string
 }
 
 /** Something a part's review found: an issue, and what it suggests doing about it. */
@@ -928,7 +935,11 @@ export interface PipelineRun {
   steps: PipelineStep[]
   parts?: ReviewPart[]
   /** Other questions (of the reviewer's) the AI suggests asking, and why. */
-  questions?: { questionId: string; partId: string; why: string; asked?: boolean }[]
+  /**
+   * Other questions (of the reviewer's) the AI suggests asking, and why: asked (ticked at a check
+   * and sent back with the part), or set aside (shown at a check and not ticked: not offered again).
+   */
+  questions?: { questionId: string; partId: string; why: string; asked?: boolean; dismissed?: boolean }[]
   /** The round it's on: 1, then one more each time the reviewer's decisions send parts back. */
   round?: number
   /** Once everything is decided: the cover email to them (the marked-up copy is built from the review as it stands). */

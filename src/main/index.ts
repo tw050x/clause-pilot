@@ -29,7 +29,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem, reviewState } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, mergeQuestions, parseImport, playbookFile, questionsFile, type KnowledgeKind } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
-import { precedentFor, seenBefore } from './engine/seen'
+import { approvedBefore, precedentFor, precedentsForProposal, seenBefore } from './engine/seen'
 import { paperCheck } from './engine/baseline'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
 
@@ -1641,6 +1641,11 @@ const pipelineDeps = (): PipelineDeps => ({
       const on = s.doc?.blocks.find((b) => (b.comments ?? []).some((c) => c.id === r.commentId))
       if (on) tryTo('a reply to their comment', () => say('aiReplies', r.commentId, r.text, on.id, r.commentId))
     }
+    // Approved and made: negotiation history, so the same ask answered this way is suggested next time.
+    tryTo('the record of it', () => {
+      const w = wsFor(s)
+      for (const x of precedentsForProposal(s, p, counterpartyName(s))) w.store.upsertPrecedent(x)
+    })
     return missed
   }
 })
@@ -1682,21 +1687,33 @@ ipcMain.handle('pipeline:continue', (_e, sessionId: string, budget?: { tokens: n
   return s
 })
 
-/** At the reviewer's check: parts sent back for another round (notes, questions ticked), changes dropped. */
-ipcMain.handle('pipeline:iterate', (_e, sessionId: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; dropped: string[] }) => {
+/** At the reviewer's check: parts sent back for another round (notes, questions ticked), the approvals so far kept. */
+ipcMain.handle('pipeline:iterate', (_e, sessionId: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; approved: string[] }) => {
   const s = session(sessionId)
   iteratePipeline(s, pipelineDeps(), input)
-  ws.audit.append(actor(), 'review.sent-back', s.id, { parts: Object.keys(input.notes).length, questions: input.questions.length, dropped: input.dropped.length, notes: input.notes })
+  ws.audit.append(actor(), 'review.sent-back', s.id, { parts: Object.keys(input.notes).length, questions: input.questions.length, approved: input.approved.length, notes: input.notes })
   return s
 })
 
-/** At the reviewer's check: the changes kept made to the draft (the dropped ones aren't), then the draft and email. */
-ipcMain.handle('pipeline:apply', (_e, sessionId: string, dropped: string[]) => {
+/** At the reviewer's check: the changes approved made to the draft (the rest left out), then the draft and email. */
+ipcMain.handle('pipeline:apply', (_e, sessionId: string, approved: string[]) => {
   const s = session(sessionId)
   if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
-  applyChecked(s, pipelineDeps(), dropped)
-  ws.audit.append(actor(), 'review.changes-applied', s.id, { dropped })
+  applyChecked(s, pipelineDeps(), approved)
+  ws.audit.append(actor(), 'review.changes-applied', s.id, { approved })
   return s
+})
+
+/**
+ * At the check: for each change proposed, earlier changes like it (on other contracts) that were
+ * answered the same way, so approving it can be suggested.
+ */
+ipcMain.handle('pipeline:approved-before', (_e, sessionId: string) => {
+  const s = session(sessionId)
+  const w = wsFor(s)
+  // This contract's own reviews don't count: "before" is other contracts.
+  const own = s.contractId ? w.store.versionsOf(s.contractId).map((x) => `rv-${x.id.slice(0, 8)}-`) : []
+  return approvedBefore(s, w.store.precedents(), (p) => own.some((o) => p.id.startsWith(o)))
 })
 
 ipcMain.handle('pipeline:stop', (_e, sessionId: string) => {

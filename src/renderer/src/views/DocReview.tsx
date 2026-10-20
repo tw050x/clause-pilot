@@ -113,6 +113,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
     return () => window.removeEventListener('pointerup', at, true)
   }, [])
   useEffect(() => setCommentPop(null), [session.id])
+  /** A part's marker in the margin clicked: its change brought into view in the timeline (n: each click). */
+  const [partJump, setPartJump] = useState<{ partId: string; n: number } | null>(null)
   const showComments = (blockId: string) => {
     setFocus(blockId)
     setPicked(null)
@@ -295,7 +297,15 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {session.original ? null : showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : (
-        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} onHold={onHold} />
+        <Timeline
+          session={session}
+          onChange={onChange}
+          onJump={jumpTo}
+          focusBlock={focus}
+          onHold={onHold}
+          jump={partJump}
+          highlighted={highlight?.blockIds?.length ? highlight.blockIds : highlight ? [highlight.blockId] : null}
+        />
       )}
     </div>
   )
@@ -333,6 +343,11 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
             setOnly('ai')
           }}
           onShowComments={showComments}
+          onOpenPart={(partId) => {
+            setShowHistory(false)
+            setHighlight(null)
+            setPartJump((j) => ({ partId, n: (j?.n ?? 0) + 1 }))
+          }}
           onShowText={(why) => {
             setLayoutError(why)
             setLayout('text')

@@ -1,1 +1,163 @@
-[]
+[
+  {
+    "id": "seed-pr-01",
+    "contractType": "nda",
+    "category": "Obligations",
+    "counterparty": "Kestrel Health Systems",
+    "date": "2026-03-12",
+    "text": "The Recipient shall: (a) keep the Discloser's Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its and its Affiliates' employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement.",
+    "outcome": "rejected",
+    "notes": "The proposal removes the counterparty's insertion of 'and its Affiliates' from clause 2.1(c) to align with our approved wording, while accepting the rest of the clause as drafted. This keeps the disclosure circle tight and consistent with our standard position.",
+    "source": "seed",
+    "where": "§2.1",
+    "before": "The Recipient shall: (a) keep the Discloser's Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement.",
+    "inserted": "and its Affiliates'",
+    "response": "restored",
+    "ours": [
+      "The Recipient shall: (a) keep the Discloser's Confidential Information confidential; (b) use it only for the Purpose; and (c) not disclose it to any person except its employees, officers, professional advisers and subcontractors who need to know it for the Purpose and who are bound by confidentiality obligations no less protective than those in this Agreement."
+    ]
+  },
+  {
+    "id": "seed-pr-02",
+    "contractType": "nda",
+    "category": "Obligations",
+    "counterparty": "Northwind Logistics",
+    "date": "2026-05-28",
+    "text": "Notwithstanding clause 2.1, either party shall be free to use for any purpose the Residuals resulting from access to or work with the Confidential Information of the other party. \"Residuals\" means information in non-tangible form which may be retained in the unaided memory of persons who have had access to the Confidential Information.",
+    "outcome": "rejected",
+    "notes": "The proposal rejects the counterparty's residuals clause in clause 2.4 because it conflicts with the core confidentiality and limited-use obligations in clause 2.1, and instead deletes the clause entirely, preserving the approved protections.",
+    "source": "seed",
+    "where": "§2.4",
+    "before": "",
+    "inserted": "Notwithstanding clause 2.1, either party shall be free to use for any purpose the Residuals resulting from access to or work with the Confidential Information of the other party. \"Residuals\" means information in non-tangible form which may be retained in the unaided memory of persons who have had access to the Confidential Information.",
+    "response": "countered",
+    "ours": [
+      "[deleted by us]"
+    ]
+  },
+  {
+    "id": "seed-pr-03",
+    "contractType": "nda",
+    "category": "General",
+    "counterparty": "Kestrel Health Systems",
+    "date": "2026-03-12",
+    "text": "Neither party may assign or transfer this Agreement without the prior written consent of the other party, except that either party may assign this Agreement to a member of its group or to a successor to all or substantially all of its business.",
+    "outcome": "rejected",
+    "notes": "The proposal retains the reasonableness standard for consent to assignment by rejecting the counterparty's deletion, ensuring neither party can arbitrarily block assignment, and keeps the rest of clause 5.4 unchanged.",
+    "source": "seed",
+    "where": "§5.4",
+    "before": "Neither party may assign or transfer this Agreement without the prior written consent of the other party, such consent not to be unreasonably withheld, except that either party may assign this Agreement to a member of its group or to a successor to all or substantially all of its business.",
+    "response": "restored",
+    "ours": [
+      "Neither party may assign or transfer this Agreement without the prior written consent of the other party, such consent not to be unreasonably withheld, except that either party may assign this Agreement to a member of its group or to a successor to all or substantially all of its business."
+    ]
+  },
+  {
+    "id": "seed-pr-04",
+    "contractType": "nda",
+    "category": "General",
+    "counterparty": "Globex Retail",
+    "date": "2026-07-02",
+    "text": "This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the laws of the State of New York.",
+    "outcome": "rejected",
+    "notes": "The proposal rejects the counterparty's change of governing law from England and Wales to New York, restores the original singular 'law', and keeps the clause as our approved version, with a comment explaining our standard position.",
+    "source": "seed",
+    "where": "§5.8",
+    "before": "This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the law of England and Wales.",
+    "inserted": "laws of the State … New York.",
+    "response": "restored",
+    "ours": [
+      "This Agreement and any dispute or claim arising out of or in connection with it shall be governed by the law of England and Wales."
+    ]
+  },
+  {
+    "id": "seed-pr-05",
+    "contractType": "nda",
+    "category": "General",
+    "counterparty": "Globex Retail",
+    "date": "2026-07-02",
+    "text": "The state and federal courts located in New York County, New York shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.",
+    "outcome": "rejected",
+    "notes": "The proposal replaces the New York exclusive jurisdiction clause with exclusive jurisdiction in the courts of England and Wales, matching the governing law and our approved position, and rejects all of Globex Retail's tracked changes to that clause.",
+    "source": "seed",
+    "where": "§5.9",
+    "before": "The courts of England and Wales shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement.",
+    "inserted": "state and federal … located in New York County, New York",
+    "response": "restored",
+    "ours": [
+      "The courts of England and Wales shall have exclusive jurisdiction to settle any dispute or claim arising out of or in connection with this Agreement."
+    ]
+  },
+  {
+    "id": "seed-pr-06",
+    "contractType": "nda",
+    "category": "General",
+    "counterparty": "Initech Software",
+    "date": "2026-08-19",
+    "text": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
+    "outcome": "rejected",
+    "notes": "The proposal replaces the one-sided 24-month non-solicitation clause with a mutual 12-month clause that includes a carve-out for general job advertisements, and rejects the counterparty's insertion as drafted.",
+    "source": "seed",
+    "where": "§5.10",
+    "before": "",
+    "inserted": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
+    "response": "countered",
+    "ours": [
+      "Non-solicitation. During the term of this Agreement and for twelve (12) months after it ends, neither party shall directly or indirectly solicit, employ or engage any employee of the other party with whom it has had contact in connection with the Purpose, provided that this clause shall not apply to general job advertisements or to the hiring of any employee who has responded to such an advertisement."
+    ]
+  },
+  {
+    "id": "seed-pr-07",
+    "contractType": "order-form",
+    "category": "Term and fees",
+    "counterparty": "Acme Analytics",
+    "date": "2026-06-10",
+    "text": "The Customer shall pay the Fees within forty-five (45) days of receipt of a valid invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
+    "outcome": "rejected",
+    "notes": "The proposal aligns the payment deadline with our approved 30-day standard while accommodating the counterparty's 45-day AP cycle as a fallback, and confirms the fee-change notice period remains unchanged.",
+    "source": "seed",
+    "where": "§3.2",
+    "before": "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
+    "inserted": "forty-five (45) days of receipt of a valid",
+    "response": "restored",
+    "ours": [
+      "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date."
+    ]
+  },
+  {
+    "id": "seed-pr-08",
+    "contractType": "order-form",
+    "category": "Warranty and data",
+    "counterparty": "Harbourline Hosting",
+    "date": "2026-04-22",
+    "text": "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
+    "outcome": "rejected",
+    "notes": "We accept the 48-hour breach notification obligation but add the GDPR 'risk to rights and freedoms' qualifier to avoid over-notification for minor incidents, aligning with our approved data protection stance.",
+    "source": "seed",
+    "where": "§4.3",
+    "before": "",
+    "inserted": "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
+    "response": "countered",
+    "ours": [
+      "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data, provided that such notification shall not be required where the breach is unlikely to result in a risk to the rights and freedoms of natural persons."
+    ]
+  },
+  {
+    "id": "seed-pr-09",
+    "contractType": "order-form",
+    "category": "Liability",
+    "counterparty": "Acme Analytics",
+    "date": "2026-06-10",
+    "text": "Except for liability that cannot be limited by law, each party's total aggregate liability arising out of or in connection with this Agreement, whether in contract, tort (including negligence) or otherwise, shall not exceed two times (2x) the Fees paid or payable in the twelve (12) months preceding the event giving rise to the claim.",
+    "outcome": "rejected",
+    "notes": "The proposal aligns the aggregate liability cap with our approved standard of 1x annual fees, while acknowledging the counterparty's request for a higher cap and offering a fallback acceptance of 2x if it is a firm requirement.",
+    "source": "seed",
+    "where": "§5.1",
+    "before": "Except for liability that cannot be limited by law, each party's total aggregate liability arising out of or in connection with this Agreement, whether in contract, tort (including negligence) or otherwise, shall not exceed the Fees paid or payable in the twelve (12) months preceding the event giving rise to the claim.",
+    "inserted": "two times (2x)",
+    "response": "restored",
+    "ours": [
+      "Except for liability that cannot be limited by law, each party's total aggregate liability arising out of or in connection with this Agreement, whether in contract, tort (including negligence) or otherwise, shall not exceed the Fees paid or payable in the twelve (12) months preceding the event giving rise to the claim."
+    ]
+  }
+]

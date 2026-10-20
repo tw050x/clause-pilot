@@ -114,11 +114,12 @@ export interface Api {
     start(id: string, budget: { tokens: number; usd?: number }): Promise<ReviewSession>
     /** Go on with a paused run (after the estimate, the budget reached, or a failure), with a new budget if given. */
     continue(id: string, budget?: { tokens: number; usd?: number }): Promise<ReviewSession>
-    /** Decide a part's proposal (an approved one is applied by the window first, as one action). */
-    /** At the reviewer's check: parts sent back for another round (a note, questions ticked for them), changes dropped. */
-    iterate(id: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; dropped: string[] }): Promise<ReviewSession>
-    /** At the reviewer's check: the changes kept made to the draft (not the dropped ones), then the new draft and the email. */
-    apply(id: string, dropped: string[]): Promise<ReviewSession>
+    /** At the reviewer's check: parts sent back for another round (a note, questions ticked for them), with the changes approved so far (kept approved). */
+    iterate(id: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; approved: string[] }): Promise<ReviewSession>
+    /** At the reviewer's check: the changes approved made to the draft (the rest left out), then the new draft and the email. */
+    apply(id: string, approved: string[]): Promise<ReviewSession>
+    /** For each change waiting at the check (by part): earlier changes like it, on other contracts, answered the same way. */
+    approvedBefore(id: string): Promise<Record<string, { counterparty: string; contractType: string; date: string; where?: string; response: 'accepted' | 'countered' | 'restored' | 'struck'; match: 'identical' | 'similar' }[]>>
     stop(id: string): Promise<ReviewSession>
   }
   redline: {

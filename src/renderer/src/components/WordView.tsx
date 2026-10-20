@@ -36,6 +36,8 @@ interface Props {
   onOpenAi: (hl: Highlight) => void
   /** Show a paragraph's comments (its highlighted text was clicked). */
   onShowComments: (blockId: string) => void
+  /** A part's marker in the right margin clicked: its change (or findings) in the review column. */
+  onOpenPart: (partId: string) => void
   /** Show the contract as text instead: called when it can't be laid out, with why. */
   onShowText: (why: string) => void
   /** Only to look at (the original we sent): no bars or labels beside it, and no typing. */
@@ -110,12 +112,12 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText, reference }: Props) {
+export function WordView({ session, reviewer, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onOpenPart, onShowText, reference }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
-  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText })
-  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onShowText }
+  const cb = useRef({ onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onOpenPart, onShowText })
+  cb.current = { onFocusBlock, onSelectChanges, act, onShowComments, onOpenComments, onOpenAi, onOpenPart, onShowText }
   /** The paragraph last clicked into (where the caret is). */
   const caretIn = useRef<string | null>(null)
   /** A paragraph's comments not yet resolved, theirs and ours. */
@@ -129,7 +131,7 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
   const model = useRef<DocReview>(session.doc!)
   model.current = session.doc!
   const [loading, setLoading] = useState(true)
-  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[]; parts: (Placed & { text: string; tip: string; status: string; found: string[] })[] }>({
+  const [gutter, setGutter] = useState<{ bars: (Placed & { bar: string; blockId: string })[]; runs: (Placed & { state: GutterState })[]; ai: (Placed & { titles: string[]; blockIds: string[]; quote: string; stale: boolean; running: boolean })[]; notes: (Placed & { blockId: string; count: number; quotes: (string | undefined)[]; theirs: number; theirQuotes: (string | undefined)[] })[]; cards: Card[]; parts: (Placed & { partId: string; text: string; tip: string; status: string; found: string[]; change?: 'pending' | 'approved' })[] }>({
     bars: [],
     runs: [],
     ai: [],
@@ -397,7 +399,7 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
     })
     // Once the AI has read the structure: the left margin shows its parts instead (each part one
     // bar, in its review status; a label naming what it is), not each paragraph's own state.
-    const partLabels: (Placed & { text: string; tip: string; status: string; found: string[] })[] = []
+    const partLabels: (Placed & { partId: string; text: string; tip: string; status: string; found: string[]; change?: 'pending' | 'approved' })[] = []
     const parts = d.pipeline?.parts
     if (parts?.length) {
       const statusOf = new Map((d.pipeline!.steps.find((x) => x.id === 'review')?.children ?? []).map((c) => [c.partId, c.status]))
@@ -421,7 +423,9 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
       for (const p of parts) {
         const first = byTop.find((b) => p.blockIds.includes(b.blockId))
         if (!first) continue
-        partLabels.push({ top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title) })
+        // A change proposed for it and not made yet: waiting for the reviewer (or approved by them).
+        const pr = p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved') ? p.proposal.status : undefined
+        partLabels.push({ partId: p.id, top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title), change: pr })
       }
     }
     setGutter({ bars, runs, ai, notes, cards, parts: partLabels })
@@ -955,12 +959,18 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
             what it found that needs the reviewer. (The questions and comments that were here are
             part of the review now.) */}
         {gutter.parts
-          .filter((r) => r.status === 'running' || r.found.length)
+          .filter((r) => r.status === 'running' || r.found.length || r.change)
           .map((r, i) => (
-            <span key={`pm${i}`} className={`wv-ai wv-part-mark ${r.status}`} style={{ top: r.top, left: r.right + 12 }}>
-              {r.status === 'running' ? <span className="spinner wv-ai-spin" /> : <Icon name="alert" size={9} stroke={2.4} />}
-              <span>{r.status === 'running' ? 'Reviewing' : r.found.length}</span>
-            </span>
+            <button
+              key={`pm${i}`}
+              className={`wv-ai wv-part-mark ${r.status} ${r.change ? `change ${r.change}` : ''}`}
+              style={{ top: r.top, left: r.right + 12 }}
+              onClick={() => cb.current.onOpenPart(r.partId)}
+              title={r.change === 'pending' ? 'A change proposed here: show it in the review' : r.change === 'approved' ? 'A change you approved: show it in the review' : r.found.length ? `Found: ${r.found.join('; ')}. Show it in the review` : 'Show it in the review'}
+            >
+              {r.status === 'running' ? <span className="spinner wv-ai-spin" /> : <Icon name={r.change === 'approved' ? 'check' : 'alert'} size={9} stroke={2.4} />}
+              <span>{r.status === 'running' ? 'Reviewing' : r.change === 'pending' ? 'Change' : r.change === 'approved' ? 'Approved' : r.found.length}</span>
+            </button>
           ))}
       </div>
     </div>

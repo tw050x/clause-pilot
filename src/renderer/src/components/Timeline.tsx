@@ -18,7 +18,9 @@ export function Timeline({
   onChange,
   onJump,
   focusBlock,
-  onHold
+  onHold,
+  jump,
+  highlighted
 }: {
   session: ReviewSession
   onChange: (s: ReviewSession) => void
@@ -26,17 +28,37 @@ export function Timeline({
   focusBlock?: string | null
   /** On security hold: the AI review can't be started or gone on with. */
   onHold?: boolean
+  /** A part's marker in the document's margin clicked: its change (or its review), brought into view. */
+  jump?: { partId: string; n: number } | null
+  /** Text highlighted in the document (its paragraphs): the timeline folds to what's about it. */
+  highlighted?: string[] | null
 }) {
   const run = session.doc?.pipeline
   // A paragraph clicked in the document: its part, brought into view in the timeline.
   const box = useRef<HTMLElement>(null)
-  const focusPart = focusBlock ? run?.parts?.find((p) => p.blockIds.includes(focusBlock))?.id : undefined
+  const focusPart = jump?.partId ?? (focusBlock ? run?.parts?.find((p) => p.blockIds.includes(focusBlock))?.id : undefined)
   useEffect(() => {
     if (!focusPart) return
     const els = [...(box.current?.querySelectorAll<HTMLElement>(`[data-part="${focusPart}"]`) ?? [])]
     // The latest mention of it (its proposal, if it has one).
     els[els.length - 1]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [focusPart])
+  // Its marker clicked (again): its change brought into view, and marked for a moment.
+  useEffect(() => {
+    if (!jump) return
+    const els = [...(box.current?.querySelectorAll<HTMLElement>(`[data-part="${jump.partId}"]`) ?? [])]
+    const el = els.find((x) => x.classList.contains('ck-item')) ?? els[els.length - 1]
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.remove('tl-flash')
+    void el.offsetWidth
+    el.classList.add('tl-flash')
+  }, [jump?.n])
+  // Highlighted text: only the parts it's in (and the steps about them), until Show everything.
+  const [everything, setEverything] = useState(false)
+  const hlKey = highlighted?.join(',') ?? ''
+  useEffect(() => setEverything(false), [hlKey])
+  const only = highlighted?.length && !everything && run?.parts ? new Set(run.parts.filter((p) => p.blockIds.some((id) => highlighted.includes(id))).map((p) => p.id)) : null
   const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
   useEffect(() => void window.api.pipeline.defaults().then(setDefaults), [session.id])
   const [questions, setQuestions] = useState<{ id: string; title: string }[]>([])
@@ -53,22 +75,40 @@ export function Timeline({
         <RunStatus run={run} />
       </div>
       <p className={`dr-small tl-note ${run?.status ?? 'none'}`}>{noteOf(run, defaults)}</p>
+      {only && (
+        <div className="tl-filter dr-small">
+          <span>
+            Showing what’s about the highlighted text
+            {only.size ? `: ${[...only].map((id) => run?.parts?.find((p) => p.id === id)?.title).filter(Boolean).join(', ')}` : ' (no part of the review is about it)'}
+          </span>
+          <button className="link-btn" onClick={() => setEverything(true)}>
+            Show everything
+          </button>
+        </div>
+      )}
 
       {(
         <ol className="tl-steps">
-          {(run?.steps ?? PLANNED_STEPS).map((st) => (
-            GATES.has(st.id) ? (
-              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} questions={questions} onJump={onJump} />
-            ) : (
-              <Step key={st.id} step={st} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
-            )
-          ))}
+          {(run?.steps ?? PLANNED_STEPS)
+            .filter((st) => !only || about(st, only) || (st.id === 'check' && st.status === 'needs-you'))
+            .map((st) =>
+              GATES.has(st.id) ? (
+                <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} questions={questions} onJump={onJump} only={only} focusPart={focusPart} />
+              ) : (
+                <Step key={st.id} step={st} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} />
+              )
+            )}
         </ol>
       )}
 
       <p className="faint dr-small tl-model">{defaults ? `${defaults.name} · ${defaults.model}` : '\u00a0'}</p>
     </section>
   )
+}
+
+/** Whether a step (or one of its items) is about one of these parts. */
+function about(st: PipelineStep, parts: Set<string>): boolean {
+  return (!!st.partId && parts.has(st.partId)) || (st.children ?? []).some((c) => about(c, parts))
 }
 
 /** The steps a run has, before there is one (the draft not planned yet): shown waiting. */
@@ -148,12 +188,13 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
   return <span className={`tl-icon ${status}`}>{icon ? <Icon name={icon} size={11} stroke={2.6} /> : status === 'skipped' ? '–' : null}</span>
 }
 
-function Step({ step, run, session, onJump, onChange, focusPart }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string }) {
+function Step({ step, run, session, onJump, onChange, focusPart, only }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string; only?: Set<string> | null }) {
   // A step's items (a part's checks) on request; otherwise only failures (what was found is at the
-  // reviewer's check). Its progress is in its own line.
+  // reviewer's check), and the part asked about (its marker clicked; the highlighted text's). Its
+  // progress is in its own line.
   const [all, setAll] = useState(false)
   const kids = step.children ?? []
-  const shown = all ? kids : kids.filter((c) => c.status === 'error')
+  const shown = only ? kids.filter((c) => about(c, only)) : all ? kids : kids.filter((c) => c.status === 'error' || (c.partId && c.partId === focusPart))
   const finished = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
   const detail = step.status === 'running' && kids.length ? `${finished} of ${kids.length} done…` : (step.detail ?? aboutOf(step.id))
   const part = step.partId ? run.parts?.find((p) => p.id === step.partId) : undefined
@@ -161,6 +202,9 @@ function Step({ step, run, session, onJump, onChange, focusPart }: { step: Pipel
   // Under "Make the changes": what the part's change did (opened from its row).
   const [open, setOpen] = useState(false)
   const proposal = part?.proposal && /^approve(-\d+)?:/.test(step.id) && part.proposal.status === 'approved' ? part : undefined
+  useEffect(() => {
+    if (proposal && proposal.id === focusPart) setOpen(true)
+  }, [focusPart, !!proposal])
   return (
     <li className={`tl-step ${step.status} ${part && part.id === focusPart ? 'focus' : ''}`} data-part={part?.id}>
       <div className="tl-row">
@@ -198,7 +242,7 @@ function Step({ step, run, session, onJump, onChange, focusPart }: { step: Pipel
       {shown.length > 0 && (
         <ol className="tl-steps tl-sub">
           {shown.map((c) => (
-            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
+            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} />
           ))}
         </ol>
       )}
@@ -294,7 +338,9 @@ function Gate({
   onChange,
   disabled,
   questions,
-  onJump
+  onJump,
+  only,
+  focusPart
 }: {
   step: PipelineStep
   session: ReviewSession
@@ -302,6 +348,8 @@ function Gate({
   disabled?: boolean
   questions: { id: string; title: string }[]
   onJump: (blockId: string) => void
+  only?: Set<string> | null
+  focusPart?: string
 }) {
   const { busy, error, act } = useRunAct(onChange)
   const waiting = step.status === 'needs-you'
@@ -316,7 +364,7 @@ function Gate({
         <div className="tl-body">
           <div className="tl-title">{step.title}</div>
           <div className="tl-detail faint">{step.detail ?? aboutOf(step.id)}</div>
-          {step.id === 'check' && waiting && <CheckReview session={session} onChange={onChange} disabled={disabled} questions={questions} onJump={onJump} />}
+          {step.id === 'check' && waiting && <CheckReview session={session} onChange={onChange} disabled={disabled} questions={questions} onJump={onJump} only={only} focusPart={focusPart} />}
           {!(step.id === 'check' && waiting) && <div className="tl-gate-act">
             {passed ? (
               <span className="tl-gate-passed">
@@ -336,31 +384,49 @@ function Gate({
 }
 
 /**
- * The reviewer's check: every change proposed, to keep (ticked) or drop, each with a note to
- * send it back for another round; the questions the review suggests asking, to tick for that
- * round; then another round (for what was sent back) or the kept changes made and the draft written.
+ * The reviewer's check: every change proposed, each to approve (nothing is made to the draft
+ * unless approved) or send back with a note; the questions the review suggests asking, to tick
+ * for another round. What was approved in an earlier round stays approved, folded away: a later
+ * round asks only about what changed in it. Changes like ones approved before on other
+ * contracts (the same ask, answered the same way) are suggested for approval.
  */
 function CheckReview({
   session,
   onChange,
   disabled,
   questions,
-  onJump
+  onJump,
+  only,
+  focusPart
 }: {
   session: ReviewSession
   onChange: (s: ReviewSession) => void
   disabled?: boolean
   questions: { id: string; title: string }[]
   onJump: (blockId: string) => void
+  /** The parts the highlighted text is in: only their changes and questions shown. */
+  only?: Set<string> | null
+  focusPart?: string
 }) {
   const run = session.doc!.pipeline!
   const d = session.doc!
-  const proposed = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending')
-  const suggested = (run.questions ?? []).filter((q) => !q.asked)
-  const [dropped, setDropped] = useState<Set<string>>(new Set())
+  const round = run.round ?? 1
+  const waitingOn = (run.parts ?? []).filter((p) => p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved'))
+  // Approved in an earlier round and not sent back since: nothing new to look at.
+  const earlier = waitingOn.filter((p) => p.proposal!.status === 'approved' && p.proposal!.round < round)
+  const current = waitingOn.filter((p) => !earlier.includes(p))
+  const shownParts = (list: ReviewPart[]) => (only ? list.filter((p) => only.has(p.id)) : list)
+  // The same question suggested for several parts: one line, asked of all of them if ticked.
+  const suggested = groupQuestions((run.questions ?? []).filter((q) => !q.asked && !q.dismissed && (!only || only.has(q.partId))))
+  const [approved, setApproved] = useState<Set<string>>(() => new Set(waitingOn.filter((p) => p.proposal!.status === 'approved').map((p) => p.id)))
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [noting, setNoting] = useState<Set<string>>(new Set())
   const [ticked, setTicked] = useState<Set<string>>(new Set())
+  const [showEarlier, setShowEarlier] = useState(false)
+  const [before, setBefore] = useState<Awaited<ReturnType<typeof window.api.pipeline.approvedBefore>>>({})
+  useEffect(() => {
+    void window.api.pipeline.approvedBefore(session.id).then(setBefore).catch(() => setBefore({}))
+  }, [session.id, round])
   const { busy, error, act } = useRunAct(onChange)
   // Opened: brought into view (it's what's waiting).
   const box = useRef<HTMLDivElement>(null)
@@ -373,24 +439,32 @@ function CheckReview({
     else next.add(x)
     return next
   }
+  const noted = (id: string) => !!notes[id]?.trim()
+  const asked = suggested.filter((q) => ticked.has(q.questionId)).flatMap((q) => q.partIds.map((partId) => ({ questionId: q.questionId, partId })))
   const sentBack = Object.values(notes).filter((n) => n.trim()).length + ticked.size
-  const kept = proposed.filter((p) => !dropped.has(p.id)).length
+  const approving = waitingOn.filter((p) => approved.has(p.id) && !noted(p.id))
+  const unapproved = current.filter((p) => !approved.has(p.id) && !noted(p.id)).length
+  const suggestible = current.filter((p) => before[p.id] && !approved.has(p.id) && !noted(p.id))
   const block = (id: string) => d.blocks.find((b) => b.id === id)
   const where = (id: string) => (block(id)?.label ? `§${block(id)!.label!.replace(/\.$/, '')}` : 'Paragraph')
-  return (
-    <div className="ck" ref={box}>
-      {proposed.map((part) => {
-        const p = part.proposal!
-        const keep = !dropped.has(part.id)
-        return (
-          <div key={part.id} className={`ck-item ${keep ? '' : 'dropped'}`}>
-            <label className="ck-head">
-              <input type="checkbox" checked={keep} onChange={() => setDropped(flip(dropped, part.id))} />
-              <button className="link-btn tl-part" onClick={(e) => (e.preventDefault(), onJump(part.blockIds[0]))}>
-                {part.title}
-              </button>
-            </label>
-            <p className="ck-summary">{p.summary}</p>
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
+  const RESPONSE = { accepted: 'Accepted', countered: 'Answered with our wording', restored: 'Our wording kept', struck: 'Struck' } as const
+
+  const card = (part: ReviewPart, folded: boolean) => {
+    const p = part.proposal!
+    const ok = approved.has(part.id) && !noted(part.id)
+    const like = before[part.id]
+    return (
+      <div key={part.id} className={`ck-item ${ok ? 'approved' : ''} ${folded ? 'folded' : ''} ${part.id === focusPart ? 'focus' : ''}`} data-part={part.id}>
+        <div className="ck-head">
+          <button className="link-btn tl-part" onClick={() => onJump(part.blockIds[0])} title="Show it in the document">
+            {part.title}
+          </button>
+          {ok && <span className="ck-badge">{folded ? `Approved in round ${p.round}` : 'Approved'}</span>}
+        </div>
+        <p className="ck-summary">{p.summary}</p>
+        {!folded && (
+          <>
             {p.wording.map((w, i) => {
               const b = block(w.blockId)
               return (
@@ -415,35 +489,80 @@ function CheckReview({
                 <span className="faint">Reply to their comment:</span> “{r.text}”
               </div>
             ))}
-            {noting.has(part.id) ? (
-              <textarea
-                className="ck-note"
-                rows={2}
-                autoFocus
-                placeholder="What should change? It goes back for another round."
-                value={notes[part.id] ?? ''}
-                onChange={(e) => setNotes({ ...notes, [part.id]: e.target.value })}
-              />
-            ) : (
-              <button className="link-btn ck-add-note" onClick={() => setNoting(flip(noting, part.id))}>
-                Send back with a note
-              </button>
+            {like && (
+              <div className="ck-like">
+                <Icon name="history" size={12} /> Like {like.length === 1 ? 'a change' : 'changes'} approved before:{' '}
+                {like.map((h, i) => (
+                  <span key={i}>
+                    {i ? '; ' : ''}
+                    {RESPONSE[h.response].toLowerCase()} for {h.counterparty}
+                    {h.where ? ` (${h.where})` : ''}, {fmtDate(h.date)}
+                  </span>
+                ))}
+                .
+              </div>
             )}
-          </div>
-        )
-      })}
+          </>
+        )}
+        {noting.has(part.id) && (
+          <textarea
+            className="ck-note"
+            rows={2}
+            autoFocus
+            placeholder="What should change? It goes back for another round."
+            value={notes[part.id] ?? ''}
+            onChange={(e) => setNotes({ ...notes, [part.id]: e.target.value })}
+          />
+        )}
+        <div className="ck-foot">
+          <label className={`ck-approve ${ok ? 'on' : ''}`} title={noted(part.id) ? 'Sent back with your note: it’s reviewed again' : undefined}>
+            <input type="checkbox" checked={ok} disabled={noted(part.id)} onChange={() => setApproved(flip(approved, part.id))} /> Approve
+          </label>
+          {!folded && !noting.has(part.id) && (
+            <button className="link-btn ck-add-note" onClick={() => setNoting(flip(noting, part.id))}>
+              Send back with a note
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const now = shownParts(current)
+  const folded = shownParts(earlier)
+  return (
+    <div className="ck" ref={box}>
+      {suggestible.length > 0 && (
+        <div className="ck-suggest">
+          <span>
+            {suggestible.length === 1 ? 'One change is' : `${suggestible.length} changes are`} like ones approved before on other contracts.
+          </span>
+          <button className="btn sm" onClick={() => setApproved(new Set([...approved, ...suggestible.map((p) => p.id)]))}>
+            <Icon name="check" size={13} /> Approve {suggestible.length === 1 ? 'it' : `those ${suggestible.length}`}
+          </button>
+        </div>
+      )}
+      {now.map((part) => card(part, false))}
+      {only && !now.length && !folded.length && <p className="faint dr-small">No changes proposed for the highlighted text.</p>}
+      {folded.length > 0 && (
+        <div className="ck-earlier">
+          <button className="link-btn tl-count" onClick={() => setShowEarlier((v) => !v)}>
+            {showEarlier ? '▾' : '▸'} Approved in an earlier round ({folded.length}): nothing new in them
+          </button>
+          {showEarlier && folded.map((part) => card(part, true))}
+        </div>
+      )}
       {suggested.length > 0 && (
         <div className="ck-questions">
           <div className="dr-mini-h">Worth asking too</div>
           {suggested.map((q) => {
-            const part = run.parts?.find((p) => p.id === q.partId)
-            const key = `${q.questionId}|${q.partId}`
+            const parts = q.partIds.map((id) => run.parts?.find((p) => p.id === id)).filter((p): p is ReviewPart => !!p)
             return (
-              <label key={key} className="ck-question">
-                <input type="checkbox" checked={ticked.has(key)} onChange={() => setTicked(flip(ticked, key))} />
+              <label key={q.questionId} className="ck-question">
+                <input type="checkbox" checked={ticked.has(q.questionId)} onChange={() => setTicked(flip(ticked, q.questionId))} />
                 <span>
                   <strong>{questions.find((x) => x.id === q.questionId)?.title ?? q.questionId}</strong>
-                  {part && <span className="faint"> on {part.title}</span>}
+                  {parts.length > 0 && <span className="faint"> on {parts.length === 1 ? parts[0].title : `${parts.length} parts: ${parts.map((p) => p.title).join(', ')}`}</span>}
                   <span className="faint dr-small ck-why">{q.why}</span>
                 </span>
               </label>
@@ -455,26 +574,42 @@ function CheckReview({
         <button
           className="btn sm"
           disabled={busy || disabled || !sentBack}
-          title={sentBack ? 'Review what you sent back again, with your notes and questions, and propose its changes again' : 'Write a note on a change, or tick a question, to send it back'}
+          title={sentBack ? 'Review what you sent back again, with your notes and questions, and propose its changes again. Your approvals are kept.' : 'Write a note on a change, or tick a question, to send it back'}
           onClick={() =>
             act(
               window.api.pipeline.iterate(session.id, {
                 notes: Object.fromEntries(Object.entries(notes).filter(([, n]) => n.trim())),
-                questions: [...ticked].map((k) => ({ questionId: k.split('|')[0], partId: k.split('|')[1] })),
-                dropped: [...dropped]
+                questions: asked,
+                approved: approving.map((p) => p.id)
               })
             )
           }
         >
           Run another round{sentBack ? ` (${sentBack})` : ''}
         </button>
-        <button className="btn sm primary" disabled={busy || disabled} onClick={() => act(window.api.pipeline.apply(session.id, [...dropped]))}>
-          {busy ? <span className="spinner sm" /> : <Icon name="mail" size={13} />} {kept ? `Apply ${kept} change${kept === 1 ? '' : 's'} & write draft` : 'Write draft and email'}
+        <button className="btn sm primary" disabled={busy || disabled || sentBack > 0} title={sentBack ? 'Some changes are sent back: run another round first' : undefined} onClick={() => act(window.api.pipeline.apply(session.id, approving.map((p) => p.id)))}>
+          {busy ? <span className="spinner sm" /> : <Icon name="mail" size={13} />} {approving.length ? `Apply ${approving.length} approved & write draft` : 'Write draft and email'}
         </button>
       </div>
+      {unapproved > 0 && !sentBack && (
+        <p className="faint dr-small ck-left-out">
+          {unapproved} change{unapproved === 1 ? '' : 's'} not approved: left out of the draft if you apply now.
+        </p>
+      )}
       {error && <p className="dr-small dr-err">{error}</p>}
     </div>
   )
+}
+
+/** Suggested questions, one line each however many parts they're suggested for. */
+function groupQuestions(list: { questionId: string; partId: string; why: string }[]) {
+  const out: { questionId: string; partIds: string[]; why: string }[] = []
+  for (const q of list) {
+    const g = out.find((x) => x.questionId === q.questionId)
+    if (g) g.partIds.push(q.partId)
+    else out.push({ questionId: q.questionId, partIds: [q.partId], why: q.why })
+  }
+  return out
 }
 
 /** Their changes decided the same way in the same paragraph, together: how many, and the different reasons. */
