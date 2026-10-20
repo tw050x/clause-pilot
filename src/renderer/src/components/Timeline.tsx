@@ -52,7 +52,10 @@ export function Timeline({
     const els = [...(box.current?.querySelectorAll<HTMLElement>(`[data-part="${jump.partId}"]`) ?? [])]
     const el = els.find((x) => x.classList.contains('ck-item')) ?? els[els.length - 1]
     if (!el) return
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    // Its top at the top of the column (room left for the outline and its rings), filling as
+    // much of the column as it can.
+    el.style.scrollMarginTop = '16px'
+    el.scrollIntoView({ block: 'start', behavior: 'smooth' })
     for (const x of box.current?.querySelectorAll('.tl-spot') ?? []) x.classList.remove('tl-spot')
     void el.offsetWidth
     el.classList.add('tl-spot')
@@ -585,9 +588,9 @@ function CheckReview({
       {folded.length > 0 && (
         <div className="ck-earlier">
           <button className="link-btn tl-count" onClick={() => setShowEarlier((v) => !v)}>
-            {showEarlier ? '▾' : '▸'} Approved in an earlier round ({folded.length}): nothing new in them
+            {showEarlier || folded.some((p) => p.id === focusPart) ? '▾' : '▸'} Approved in an earlier round ({folded.length}): nothing new in them
           </button>
-          {showEarlier && folded.map((part) => card(part, true))}
+          {(showEarlier || folded.some((p) => p.id === focusPart)) && folded.map((part) => card(part, true))}
         </div>
       )}
       {suggested.length > 0 && (
