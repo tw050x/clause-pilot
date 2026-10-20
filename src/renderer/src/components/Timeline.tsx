@@ -389,7 +389,9 @@ function CheckReview({
   const { busy, error, act } = useRunAct(onChange)
   // Opened: brought into view (it's what's waiting).
   const box = useRef<HTMLDivElement>(null)
-  useEffect(() => box.current?.closest('.tl-gate')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), [])
+  useEffect(() => {
+    box.current?.closest('.tl-gate')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [])
   const flip = <T,>(set: Set<T>, x: T) => {
     const next = new Set(set)
     if (next.has(x)) next.delete(x)
