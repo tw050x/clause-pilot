@@ -4,21 +4,26 @@ import { segmentsOf } from '@shared/changes'
 import { Icon } from '../lib/icons'
 
 /**
- * The automated review, as a timeline in the review column (planned on upload, started from the
- * column's foot, RunButton): each step as it runs. Top-level steps run in order; a step's sub-items (a part's checks) are
- * indented under it, in their own order. What each step used is shown beside it, and the run's
- * total against its budget at the top.
+ * The automated review, as a timeline in the review column: planned on upload, then each step as
+ * it runs. Top-level steps run in order; a step's sub-items (a part's checks) are indented under
+ * it, in their own order. The reviewer's gates (start the review; check the findings before the
+ * new draft) are in the timeline, their button inline while waiting, then kept with who passed
+ * them and when. What each step used is shown beside it, and the run's total against its budget
+ * at the top.
  */
 export function Timeline({
   session,
   onChange,
   onJump,
-  focusBlock
+  focusBlock,
+  onHold
 }: {
   session: ReviewSession
   onChange: (s: ReviewSession) => void
   onJump: (blockId: string) => void
   focusBlock?: string | null
+  /** On security hold: the AI review can't be started or gone on with. */
+  onHold?: boolean
 }) {
   const run = session.doc?.pipeline
   // A paragraph clicked in the document: its part, brought into view in the timeline.
@@ -43,16 +48,21 @@ export function Timeline({
       </div>
       {!run && (
         <p className="faint dr-small tl-intro">
-          Each draft is planned when it’s uploaded. Start the AI review from the foot of this column: it reads the contract’s structure, checks each part as closely as it needs (skipping the parts with nothing to check), and makes the changes it finds are needed (each can be undone in History). Then it waits for you to check them before writing the new draft and the email.
+          Each draft is planned when it’s uploaded. The AI review reads the contract’s structure, checks each part as closely as it needs (skipping the parts with nothing to check), and makes the changes it finds are needed (each can be undone in History). Then it waits for you to check them before writing the new draft and the email.
         </p>
       )}
       {run && <Spent run={run} />}
       {run?.note && <p className={`dr-small tl-note ${run.status}`}>{run.note}</p>}
+      <RunControls session={session} onChange={onChange} disabled={onHold} />
 
       {run && (
         <ol className="tl-steps">
           {run.steps.map((st) => (
-            <Step key={st.id} step={st} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
+            GATES.has(st.id) ? (
+              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold} />
+            ) : (
+              <Step key={st.id} step={st} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
+            )
           ))}
         </ol>
       )}
@@ -227,16 +237,15 @@ function ProposalCard({ part, session, onJump }: { part: ReviewPart; session: Re
   )
 }
 
-/**
- * The AI review's button, at the foot of the review column. The draft is planned when it's
- * uploaded (Planning…); Start then runs the review on its own (Stop while it runs) as far as the
- * reviewer's check of the findings, where it waits: Write the new draft and email goes on. Continue
- * when it stopped (a reached budget is raised by the default again); Review again once it's done.
- */
-export function RunButton({ session, onChange, disabled }: { session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
-  const run = session.doc?.pipeline
-  const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
-  useEffect(() => void window.api.pipeline.defaults().then(setDefaults), [session.id])
+/** The reviewer's gates in the timeline: start the review (from the plan), check the findings (before the draft). */
+const GATES = new Set(['start', 'check'])
+const GATE_BUTTON: Record<string, { label: string; icon: string; tip: string }> = {
+  start: { label: 'Start AI review', icon: 'sparkle', tip: 'Review the parts as planned. It runs on its own until the findings are for you to check.' },
+  check: { label: 'Write new draft and email', icon: 'mail', tip: 'Write the new draft and the email to them, from the review as it now stands' }
+}
+
+/** Calls to the AI review from the timeline: the session it returns, or what went wrong. */
+function useRunAct(onChange: (s: ReviewSession) => void) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const act = async (p: Promise<ReviewSession>) => {
@@ -250,9 +259,60 @@ export function RunButton({ session, onChange, disabled }: { session: ReviewSess
       setBusy(false)
     }
   }
+  return { busy, error, act }
+}
+
+/**
+ * A gate: waiting, its button inline (going on is the reviewer's decision); passed, kept in the
+ * timeline with who passed it and when.
+ */
+function Gate({ step, session, onChange, disabled }: { step: PipelineStep; session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
+  const { busy, error, act } = useRunAct(onChange)
+  const waiting = step.status === 'needs-you'
+  const b = GATE_BUTTON[step.id]
+  return (
+    <li className={`tl-step tl-gate ${step.status}`}>
+      <div className="tl-row">
+        <StatusIcon status={waiting ? 'needs-you' : step.status} />
+        <div className="tl-body">
+          <div className="tl-title">{step.title}</div>
+          {step.status === 'done' && step.by ? (
+            <div className="tl-detail faint">
+              {step.id === 'start' ? 'Started' : 'Checked'} by {step.by} · {when(step.endedAt)}
+            </div>
+          ) : (
+            step.detail && <div className="tl-detail faint">{step.detail}</div>
+          )}
+          {waiting && b && (
+            <div className="tl-gate-act">
+              <button className="btn sm primary" disabled={busy || disabled} onClick={() => act(window.api.pipeline.continue(session.id))} title={b.tip}>
+                {busy ? <span className="spinner sm" /> : <Icon name={b.icon} size={14} />} {b.label}
+              </button>
+            </div>
+          )}
+          {error && <p className="dr-small dr-err">{error}</p>}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')
+
+/**
+ * The AI review's other controls, under its note: Stop while it runs, Continue when it stopped
+ * (a reached budget is raised by the default again), Review again once it's done, and Start for
+ * a draft that wasn't planned (no AI when it was uploaded). Waiting at a gate, the gate's button.
+ */
+function RunControls({ session, onChange, disabled }: { session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
+  const run = session.doc?.pipeline
+  const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
+  useEffect(() => void window.api.pipeline.defaults().then(setDefaults), [session.id])
+  const { busy, error, act } = useRunAct(onChange)
   if (!defaults || session.original) return null
   const off = busy || disabled || !defaults.ready
   const tip = !defaults.ready ? defaults.why : `${defaults.name} · ${defaults.model}`
+  const atGate = run?.steps.some((x) => GATES.has(x.id) && x.status === 'needs-you')
   // Going on: a budget that ran out is raised by the default again.
   const more = () => {
     if (!run) return undefined
@@ -260,48 +320,31 @@ export function RunButton({ session, onChange, disabled }: { session: ReviewSess
     const out = spent >= run.budget.tokens || (run.budget.usd !== undefined && (run.spent.usd ?? 0) >= run.budget.usd)
     return out ? { tokens: run.budget.tokens + defaults.budget.tokens, usd: run.budget.usd !== undefined ? run.budget.usd + (defaults.budget.usd ?? 0) : undefined } : undefined
   }
-  const go = () => act(window.api.pipeline.continue(session.id, more()))
   const button = (() => {
-    if (run?.status === 'running' && !run.confirmed)
-      return (
-        <button className="btn sm run-btn" disabled title="Reading the draft and planning its review">
-          <span className="spinner sm" /> Planning…
-        </button>
-      )
+    if (atGate || run?.status === 'planned') return null
     if (run?.status === 'running')
-      return (
-        <button className="btn sm run-btn" disabled={busy} onClick={() => act(window.api.pipeline.stop(session.id))} title="Stop the AI review: what it has done is kept">
-          <span className="spinner sm" /> Reviewing… Stop
+      return run.confirmed ? (
+        <button className="btn sm" disabled={busy} onClick={() => act(window.api.pipeline.stop(session.id))} title="Stop the AI review: what it has done is kept">
+          Stop
         </button>
-      )
-    if (run?.status === 'planned')
-      return (
-        <button className="btn sm primary run-btn" disabled={off} onClick={go} title={tip}>
-          <Icon name="sparkle" size={14} /> Start AI review
-        </button>
-      )
-    if (run?.status === 'paused' && run.steps.some((x) => x.id === 'check' && x.status === 'needs-you'))
-      return (
-        <button className="btn sm primary run-btn" disabled={off} onClick={go} title="Write the new draft and the email to them, from the review as it now stands">
-          <Icon name="mail" size={14} /> Write new draft and email
-        </button>
-      )
+      ) : null
     if (run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped'))
       return (
-        <button className="btn sm primary run-btn" disabled={off} onClick={go} title={tip}>
+        <button className="btn sm primary" disabled={off} onClick={() => act(window.api.pipeline.continue(session.id, more()))} title={tip}>
           <Icon name="sparkle" size={14} /> Continue AI review
         </button>
       )
     return (
-      <button className={`btn sm run-btn ${run ? '' : 'primary'}`} disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={tip}>
+      <button className={`btn sm ${run ? '' : 'primary'}`} disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={run ? 'Plan and review it again from the start' : tip}>
         <Icon name="sparkle" size={14} /> {run ? 'Review again' : 'Start AI review'}
       </button>
     )
   })()
+  if (!button && !error) return null
   return (
-    <>
+    <div className="tl-controls">
       {button}
-      {error && <span className="dr-small dr-err run-error" title={error}>{error}</span>}
-    </>
+      {error && <span className="dr-small dr-err">{error}</span>}
+    </div>
   )
 }

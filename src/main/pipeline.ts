@@ -112,8 +112,18 @@ export function continueReview(s: ReviewSession, deps: PipelineDeps, budget?: { 
   if (!run) throw new Error('No review to go on with.')
   if (live.has(s.id)) throw new Error('The review is already running.')
   if (budget) run.budget = run.provider === 'anthropic' ? budget : { tokens: budget.tokens }
-  // Waiting at the draft: going on is the reviewer's word to write it.
-  if (run.confirmed && run.steps.some((x) => x.id === 'check' && x.status === 'needs-you')) run.draftConfirmed = true
+  // At a gate, going on is the reviewer's decision: recorded on it, with who and when.
+  const pass = (id: string, detail: string) => {
+    const g = run.steps.find((x) => x.id === id)
+    if (g?.status !== 'needs-you') return false
+    g.status = 'done'
+    g.endedAt = now()
+    g.by = deps.actor()
+    g.detail = detail
+    return true
+  }
+  if (run.confirmed && pass('check', 'Checked: the new draft and the email to be written.')) run.draftConfirmed = true
+  pass('start', 'Started from the plan.')
   run.status = 'running'
   run.confirmed = true
   run.note = undefined
@@ -160,6 +170,8 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       step('security', 'Check for hidden instructions'),
       step('structure', 'Read the contract’s structure'),
       step('plan', 'Plan the review'),
+      // A gate: the reviewer starts the review from the plan (kept, with who and when).
+      step('start', 'Start the review'),
       step('review', 'Review each part'),
       step('consolidate', 'Bring the findings together'),
       step('approve', 'Make the changes'),
@@ -167,6 +179,8 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       step('draft', 'New draft and email')
     ]
   }
+  // Started straight away (Review again): the start gate passed now.
+  if (go_) Object.assign(run.steps.find((x) => x.id === 'start')!, { status: 'done', endedAt: now(), by: deps.actor(), detail: 'Started.' })
   d.pipeline = run
   deps.persist(s)
   const flag = { stop: false }
@@ -262,6 +276,12 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     }
     // Planned on upload: the review itself waits for the reviewer to start it.
     if (!run.confirmed) {
+      const gate = run.steps.find((x) => x.id === 'start')
+      if (gate) {
+        gate.status = 'needs-you'
+        gate.startedAt ??= now()
+        gate.detail = 'The plan is ready. Start the review when you are.'
+      }
       run.status = 'planned'
       run.note = `Planned: ${parts.filter((p) => p.depth !== 'skip').length} parts to review${run.estimate ? `, about ${run.estimate.calls} AI calls` : ''}. Start the AI review when you’re ready.`
       deps.persist(s)
@@ -400,7 +420,6 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         deps.persist(s)
         return
       }
-      end(check, 'done', `Checked by ${deps.actor()}.`)
     }
 
     // 7. The new draft (the marked-up copy, as the review now stands) and the email to them.

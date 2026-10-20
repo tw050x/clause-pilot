@@ -1139,8 +1139,10 @@ body.past-open .rightbar { z-index: 45; }
 .tl-pill.planned { background: var(--processing-tint); color: var(--processing); }
 .tl-note.planned { background: var(--processing-tint); color: var(--processing); }
 /* The review column's foot: the AI review's button, then Accept / Reject (when changes are picked), then the key. */
-.rightbar-foot .run-btn { flex-shrink: 0; }
-.rightbar-foot .run-error { max-width: 140px; }
+/* The reviewer's gates in the timeline: waiting, a card with its button; passed, who and when. */
+.tl-gate.needs-you > .tl-row { background: color-mix(in srgb, #b45309 7%, var(--surface)); border: 1px solid color-mix(in srgb, #b45309 30%, var(--border)); border-radius: 10px; padding: 10px 10px 12px; margin: 2px -10px; }
+.tl-gate-act { margin-top: 10px; }
+.tl-controls { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
 .tl-pill.error, .tl-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
 .tl-spin { width: 9px; height: 9px; border-width: 1.5px; }
 .tl-spent { display: flex; flex-direction: column; gap: 4px; }

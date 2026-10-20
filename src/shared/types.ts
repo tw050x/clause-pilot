@@ -868,6 +868,8 @@ export interface PipelineStep {
   /** The part it's about, if any. */
   partId?: string
   children?: PipelineStep[]
+  /** A gate (start, check) the reviewer passed: who (when is endedAt). */
+  by?: string
 }
 
 export interface PipelineRun {

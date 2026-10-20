@@ -8,7 +8,7 @@ import { EmailModal } from '../components/EmailModal'
 import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
-import { RunButton, Timeline } from '../components/Timeline'
+import { Timeline } from '../components/Timeline'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
@@ -311,7 +311,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       {session.original ? null : showHistory ? (
         <HistoryPanel session={session} act={act} onClose={() => setShowHistory(false)} onJump={jumpTo} onPast={(blockId, actionId) => setPast({ blockId, actionId })} />
       ) : (
-        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} />
+        <Timeline session={session} onChange={onChange} onJump={jumpTo} focusBlock={focus} onHold={onHold} />
       )}
     </div>
   )
@@ -570,7 +570,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         !session.original &&
         createPortal(
           <>
-            <RunButton session={session} onChange={onChange} disabled={onHold} />
             <div className="bottombar-group" ref={setDecideSlot} />
             <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
               {showKey ? 'Hide key' : 'Show key'}
