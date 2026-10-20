@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { SecurityAlert } from '@shared/types'
 import { Icon } from '../lib/icons'
 import { Highlighted } from '../components/Highlighted'
+import { CardList, ItemCard } from '../components/ItemCards'
 
 /**
  * Suspected prompt-injection attempts, for the security team. A review with an
@@ -47,26 +48,18 @@ export function SecurityView({
       {done.length > 0 && (
         <>
           <h3 className="approvals-h">Resolved</h3>
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <table className="t">
-              <tbody>
-                {done.map((a) => (
-                  <tr key={a.id} className="clickable" onClick={() => onOpenReview(a.sessionId)}>
-                    <td style={{ width: 170 }}>
-                      <span className={`pill ${a.status === 'malicious' ? 'high' : 'accepted'}`}>{a.status === 'malicious' ? 'confirmed attempt' : 'false positive'}</span>
-                    </td>
-                    <td>
-                      <strong>{a.docName}</strong> · {a.clauses.map((c) => c.label).join(', ')}
-                      {a.note && <div className="muted">{a.note}</div>}
-                    </td>
-                    <td className="muted" style={{ width: 220 }}>
-                      {a.resolvedBy} · {a.resolvedAt && new Date(a.resolvedAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CardList compact>
+            {done.map((a) => (
+              <ItemCard
+                key={a.id}
+                onClick={() => onOpenReview(a.sessionId)}
+                title={a.docName}
+                badges={<span className={`pill ${a.status === 'malicious' ? 'high' : 'accepted'}`}>{a.status === 'malicious' ? 'confirmed attempt' : 'false positive'}</span>}
+                sub={`${a.clauses.map((c) => c.label).join(', ')} · ${a.resolvedBy ?? ''}${a.resolvedAt ? ` · ${new Date(a.resolvedAt).toLocaleString()}` : ''}`}
+                body={a.note ? <span className="muted">{a.note}</span> : undefined}
+              />
+            ))}
+          </CardList>
         </>
       )}
     </div>

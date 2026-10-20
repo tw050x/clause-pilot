@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LibraryClause, Precedent } from '@shared/types'
 import { useTransfer } from '../components/Transfer'
+import { CardList, ItemCard } from '../components/ItemCards'
 
 /** Shared page frame: title, one-line explanation, count and a filter box. */
 function KnowledgePage({ title, lede, count, q, setQ, actions, children }: {
@@ -55,35 +56,23 @@ export function LibraryView() {
           No approved wording yet. Import a clauses file, or when you accept a change during a review, nominate its wording for Clauses and approve it on the Approvals page. From then on, drafts are compared with it.
         </div>
       )}
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <table className="t">
-          <thead>
-            <tr>
-              <th style={{ width: 200 }}>Clause</th>
-              <th>Approved wording</th>
-              <th style={{ width: 150 }}>Approved</th>
-            </tr>
-          </thead>
-          <tbody>
-            {library
-              .filter((c) => match(c.title, c.text, c.category))
-              .map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <strong>{c.title}</strong>
-                    <div className="faint mono">{c.id}</div>
-                    <span className="pill neutral">{c.contractType}</span>
-                  </td>
-                  <td style={{ fontFamily: 'var(--doc-font)', fontSize: 14 }}>{c.text}</td>
-                  <td className="muted">
-                    {c.approvedOn}
-                    <div className="faint">{c.approvedBy}</div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+      <CardList>
+        {library
+          .filter((c) => match(c.title, c.text, c.category))
+          .map((c) => (
+            <ItemCard
+              key={c.id}
+              title={c.title}
+              badges={<span className="pill neutral">{c.contractType}</span>}
+              sub={<span className="mono">{c.id}</span>}
+              body={<div className="doc">{c.text}</div>}
+              facts={[
+                { label: 'Category', value: c.category },
+                { label: 'Approved', value: [c.approvedOn, c.approvedBy].filter(Boolean).join(' · ') }
+              ]}
+            />
+          ))}
+      </CardList>
     </KnowledgePage>
   )
 }
@@ -104,48 +93,26 @@ export function HistoryView() {
       {history.length === 0 && (
         <div className="empty-state">No precedents yet. Every change you accept or answer in a review is added here, so the next reviewer can see how it was handled.</div>
       )}
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <table className="t">
-          <thead>
-            <tr>
-              <th style={{ width: 170 }}>Counterparty</th>
-              <th>Their wording</th>
-              <th style={{ width: 320 }}>Outcome</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...history]
-              .sort((a, b) => b.date.localeCompare(a.date))
-              .filter((p) => match(p.counterparty, p.text, p.notes, p.category))
-              .map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <strong>{p.counterparty}</strong>
-                    <div className="faint">
-                      {p.date} · {p.category}
-                    {p.where ? ` · ${p.where}` : ''}
-                    </div>
-                    {p.source === 'review' && <span className="pill intent">from a review</span>}
-                  </td>
-                  <td style={{ fontFamily: 'var(--doc-font)', fontSize: 14 }}>
-                    {p.text}
-                    {p.ours?.some((t) => t) && (
-                      <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-                        <strong>We answered:</strong> {p.ours.filter((t) => t).join(' ')}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`pill ${p.outcome}`}>{p.response ? { accepted: 'accepted', countered: 'countered', restored: 'restored ours', struck: 'struck' }[p.response] : p.outcome}</span>
-                    <div className="muted" style={{ marginTop: 4 }}>
-                      {p.notes}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+      <CardList>
+        {[...history]
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .filter((p) => match(p.counterparty, p.text, p.notes, p.category))
+          .map((p) => (
+            <ItemCard
+              key={p.id}
+              title={p.counterparty}
+              badges={
+                <>
+                  <span className={`pill ${p.outcome}`}>{p.response ? { accepted: 'accepted', countered: 'countered', restored: 'restored ours', struck: 'struck' }[p.response] : p.outcome}</span>
+                  {p.source === 'review' && <span className="pill intent">from a review</span>}
+                </>
+              }
+              sub={`${p.date} · ${p.category}${p.where ? ` · ${p.where}` : ''}`}
+              body={<div className="doc">{p.text}</div>}
+              facts={[p.ours?.some((t) => t) && { label: 'We answered', value: p.ours.filter((t) => t).join(' '), wide: true }, !!p.notes && { label: 'Why', value: p.notes, wide: true }]}
+            />
+          ))}
+      </CardList>
     </KnowledgePage>
   )
 }

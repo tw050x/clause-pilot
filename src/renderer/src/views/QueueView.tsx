@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Nomination, PlaybookPosition, PlaybookProposal } from '@shared/types'
 import { Icon } from '../lib/icons'
+import { CardList, ItemCard } from '../components/ItemCards'
 
 /**
  * Everything waiting for an owner's decision. Playbook changes and library
@@ -56,24 +57,16 @@ export function ApprovalsView({
           <h3 className="approvals-h" style={{ marginTop: 28 }}>
             Decided
           </h3>
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <table className="t">
-              <tbody>
-                {done.map((d, i) => (
-                  <tr key={i}>
-                    <td style={{ width: 110 }}>
-                      <span className={`pill ${d.status === 'approved' || d.status === 'promoted' ? 'accepted' : 'neutral'}`}>{d.status}</span>
-                    </td>
-                    <td>{d.what}</td>
-                    <td className="muted" style={{ width: 200 }}>
-                      {new Date(d.at).toLocaleString()}
-                      {d.by && ` · ${d.by}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CardList compact>
+            {done.map((d, i) => (
+              <ItemCard
+                key={i}
+                title={d.what}
+                badges={<span className={`pill ${d.status === 'approved' || d.status === 'promoted' ? 'accepted' : 'neutral'}`}>{d.status}</span>}
+                sub={`${new Date(d.at).toLocaleString()}${d.by ? ` · ${d.by}` : ''}`}
+              />
+            ))}
+          </CardList>
         </>
       )}
     </div>

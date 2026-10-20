@@ -1189,13 +1189,11 @@ body.past-open .rightbar { z-index: 45; }
 /* Demo mode's quick start: things to explore, as cards. */
 
 /* A draft's AI review state, in lists (the contract's page, All contracts). */
-.rs-cell { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .rs-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; white-space: nowrap; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text-2); }
 .rs-pill.planning, .rs-pill.planned, .rs-pill.reviewing { background: var(--processing-tint); color: var(--processing); }
 .rs-pill.your-turn, .rs-pill.paused { background: color-mix(in srgb, #b45309 12%, var(--surface)); color: #92400e; }
 .rs-pill.done { background: var(--exact-tint); color: var(--exact); }
 .rs-pill.failed, .rs-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
-.rs-detail { font-size: 12px; line-height: 1.4; }
 
 /* Background work: the header's pill (striped behind its text as it moves, as a bar with something to do) and the queue page. */
 .work-pill { font: 600 12px var(--ui-font); padding: 2px 10px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); color: var(--processing); cursor: pointer; background-color: var(--processing-tint); }
@@ -1233,3 +1231,29 @@ body.past-open .rightbar { z-index: 45; }
 .demos-accounts { display: flex; flex-wrap: wrap; gap: 8px; }
 .demos-account { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface); font: 500 13px var(--ui-font); cursor: pointer; }
 .demos-account.on { border-color: var(--processing); color: var(--processing); background: var(--processing-tint); }
+
+/* Lists on pages (ItemCards): a card per item; its details a grid of label / value pairs that wraps. */
+.ic-list { display: flex; flex-direction: column; gap: 10px; }
+.ic-list.compact { gap: 6px; }
+.ic-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.ic-list.compact .ic-card { padding: 9px 12px; }
+.ic-card.clickable { cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+.ic-card.clickable:hover { border-color: var(--border-strong); box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06); }
+.ic-card.muted-card { opacity: 0.65; }
+.ic-card.muted-card:hover { opacity: 0.9; }
+.ic-head { display: flex; align-items: flex-start; gap: 12px; }
+.ic-titles { flex: 1; min-width: 0; }
+.ic-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.ic-title { font-weight: 600; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.ic-title-row .pill, .ic-title-row .rs-pill, .ic-title-row .work-kind { flex-shrink: 0; }
+.ic-sub { margin-top: 2px; font-size: 12.5px; color: var(--text-3); overflow-wrap: anywhere; }
+.ic-actions { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.ic-body { margin-top: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.ic-body.doc, .ic-body .doc { font-family: var(--doc-font); font-size: 14px; }
+.ic-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 18px; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.ic-fact { min-width: 0; }
+.ic-fact.wide { grid-column: 1 / -1; }
+.ic-fact dt { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); margin-bottom: 2px; }
+.ic-fact dd { margin: 0; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.ic-list.compact .ic-facts { margin-top: 6px; padding-top: 6px; }
+.audit-payload { font-size: 11.5px; color: var(--text-2); word-break: break-word; }

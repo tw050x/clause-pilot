@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AuditEntry, ReviewSession } from '@shared/types'
 import { Icon } from '../lib/icons'
+import { CardList, ItemCard } from '../components/ItemCards'
 
 export function AuditView({ session }: { session: ReviewSession | null }) {
   const [scope, setScope] = useState<'session' | 'all'>(session ? 'session' : 'all')
@@ -45,35 +46,21 @@ export function AuditView({ session }: { session: ReviewSession | null }) {
           </button>
         )}
       </div>
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <table className="t">
-          <thead>
-            <tr>
-              <th style={{ width: 60 }}>#</th>
-              <th style={{ width: 170 }}>When</th>
-              <th style={{ width: 120 }}>Who</th>
-              <th style={{ width: 190 }}>Event</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((e) => (
-              <tr key={e.seq}>
-                <td className="mono faint">{e.seq}</td>
-                <td className="muted">{new Date(e.ts).toLocaleString()}</td>
-                <td>{e.actor === 'system' ? <span className="faint">system</span> : <strong>{e.actor}</strong>}</td>
-                <td>
-                  <code>{e.type}</code>
-                </td>
-                <td className="mono" style={{ fontSize: 11.5, wordBreak: 'break-word', color: 'var(--text-2)' }}>
-                  {JSON.stringify(e.payload)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!shown.length && <div className="empty" style={{ height: 120 }}>No entries yet.</div>}
-      </div>
+      {!shown.length ? (
+        <div className="empty-state">No entries yet.</div>
+      ) : (
+        <CardList compact>
+          {shown.map((e) => (
+            <ItemCard
+              key={e.seq}
+              title={<code>{e.type}</code>}
+              badges={e.actor === 'system' ? <span className="pill neutral">system</span> : <span className="pill intent">{e.actor}</span>}
+              sub={`#${e.seq} · ${new Date(e.ts).toLocaleString()}`}
+              body={<div className="mono audit-payload">{JSON.stringify(e.payload)}</div>}
+            />
+          ))}
+        </CardList>
+      )}
     </div>
   )
 }

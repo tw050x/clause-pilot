@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Account, ContractRecord, ReviewSummary, ReviewState } from '@shared/types'
+import { CardList, ItemCard } from '../components/ItemCards'
 import { Icon } from '../lib/icons'
 
 /**
@@ -66,58 +67,48 @@ export function ContractView({
           Upload the first draft to start reviewing this contract. Nothing leaves this computer unless you ask the AI about it.
         </div>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <table className="t">
-            <thead>
-              <tr>
-                <th style={{ width: 130 }}>Version</th>
-                <th>File</th>
-                <th style={{ width: 300 }}>Review</th>
-                <th style={{ width: 190 }}>Uploaded</th>
-                <th style={{ width: 100 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) =>
-                v.original ? (
-                  <tr key={v.id} className="clickable version-row" onClick={() => onOpenReview(v.id)}>
-                    <td>
-                      <strong>Original</strong>
-                      <span className="pill neutral" style={{ marginLeft: 6 }}>ours</span>
-                    </td>
-                    <td>{v.docName}</td>
-                    <td className="muted">What we sent: the first draft is compared with it</td>
-                    <td className="muted">{new Date(v.createdAt).toLocaleString()}</td>
-                    <td></td>
-                  </tr>
-                ) : (
-                <tr key={v.id} className="clickable version-row" onClick={() => onOpenReview(v.id)}>
-                  <td>
-                    <strong>Version {v.version}</strong>
-                    {v.closed && <span className="pill neutral" style={{ marginLeft: 6 }}>closed</span>}
-                  </td>
-                  <td>{v.docName}</td>
-                  <td>
-                    <ReviewStateCell state={v.ai} />
-                  </td>
-                  <td className="muted">{new Date(v.createdAt).toLocaleString()}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="btn sm row-action"
-                      onClick={async () => {
-                        await window.api.review.close(v.id, !v.closed)
-                        onChanged()
-                      }}
-                    >
-                      {v.closed ? 'Reopen' : 'Close'}
-                    </button>
-                  </td>
-                </tr>
-                )
-              )}
-            </tbody>
-          </table>
-        </div>
+        <CardList>
+          {versions.map((v) =>
+            v.original ? (
+              <ItemCard
+                key={v.id}
+                onClick={() => onOpenReview(v.id)}
+                title="Original"
+                badges={<span className="pill neutral">ours</span>}
+                sub={v.docName}
+                facts={[
+                  { label: 'What it is', value: 'What we sent: the first draft is compared with it', wide: true },
+                  { label: 'Uploaded', value: new Date(v.createdAt).toLocaleString() }
+                ]}
+              />
+            ) : (
+              <ItemCard
+                key={v.id}
+                onClick={() => onOpenReview(v.id)}
+                title={`Version ${v.version}`}
+                badges={
+                  <>
+                    <StatePill state={v.ai} />
+                    {v.closed && <span className="pill neutral">closed</span>}
+                  </>
+                }
+                sub={v.docName}
+                actions={
+                  <button
+                    className="btn sm"
+                    onClick={async () => {
+                      await window.api.review.close(v.id, !v.closed)
+                      onChanged()
+                    }}
+                  >
+                    {v.closed ? 'Reopen' : 'Close'}
+                  </button>
+                }
+                facts={[v.ai && { label: 'Review', value: v.ai.detail, wide: true }, { label: 'Uploaded', value: new Date(v.createdAt).toLocaleString() }]}
+              />
+            )
+          )}
+        </CardList>
       )}
     </div>
   )
@@ -203,63 +194,54 @@ export function ContractsListView({
       {!shown.length ? (
         <div className="empty-state">No {contracts.length ? 'open ' : ''}contracts with {account.name}{contracts.length ? '' : ' yet'}.</div>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Contract</th>
-                <th style={{ width: 120 }}>Type</th>
-                <th style={{ width: 150 }}>Latest version</th>
-                <th style={{ width: 280 }}>Review</th>
-                <th style={{ width: 160 }}>Updated</th>
-                <th style={{ width: 110 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((c) => {
-                const v = latest(c.id)
-                return (
-                  <tr key={c.id} className={`clickable ${c.archived ? 'row-hidden' : ''}`} onClick={() => onOpen(c.id)}>
-                    <td>
-                      <strong>{c.title}</strong>
-                      {c.archived && <span className="pill neutral" style={{ marginLeft: 6 }}>archived</span>}
-                    </td>
-                    <td className="muted">{c.contractType === 'nda' ? 'NDA' : c.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
-                    <td className="muted">{v ? `Version ${v.version}` : 'No drafts yet'}</td>
-                    <td>{v ? <ReviewStateCell state={v.ai} /> : <span className="muted">–</span>}</td>
-                    <td className="muted">{v ? new Date(v.createdAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="btn sm row-action"
-                        onClick={async () => {
-                          await window.api.contracts.archive(c.id, !c.archived)
-                          onChanged()
-                        }}
-                      >
-                        {c.archived ? 'Unarchive' : 'Archive'}
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <CardList>
+          {shown.map((c) => {
+            const v = latest(c.id)
+            return (
+              <ItemCard
+                key={c.id}
+                onClick={() => onOpen(c.id)}
+                muted={!!c.archived}
+                title={c.title}
+                badges={
+                  <>
+                    {v && <StatePill state={v.ai} />}
+                    {c.archived && <span className="pill neutral">archived</span>}
+                  </>
+                }
+                sub={c.contractType === 'nda' ? 'NDA' : c.contractType === 'order-form' ? 'Order form' : 'Contract'}
+                actions={
+                  <button
+                    className="btn sm"
+                    onClick={async () => {
+                      await window.api.contracts.archive(c.id, !c.archived)
+                      onChanged()
+                    }}
+                  >
+                    {c.archived ? 'Unarchive' : 'Archive'}
+                  </button>
+                }
+                facts={[
+                  { label: 'Latest version', value: v ? `Version ${v.version}` : 'No drafts yet' },
+                  { label: 'Updated', value: v ? new Date(v.createdAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString() },
+                  v?.ai && { label: 'Review', value: v.ai.detail, wide: true }
+                ]}
+              />
+            )
+          })}
+        </CardList>
       )}
     </div>
   )
 }
 
-/** Where a draft's AI review stands: its state, and a line on what's behind it. */
-export function ReviewStateCell({ state }: { state?: ReviewState }) {
-  if (!state) return <span className="muted">–</span>
+/** Where a draft's AI review stands, in a word (for a card's title). */
+export function StatePill({ state }: { state?: ReviewState }) {
+  if (!state) return null
   return (
-    <span className="rs-cell">
-      <span className={`rs-pill ${state.state}`}>
-        {(state.state === 'planning' || state.state === 'reviewing') && <span className="spinner tl-spin" />}
-        {state.label}
-      </span>
-      <span className="faint rs-detail">{state.detail}</span>
+    <span className={`rs-pill ${state.state}`}>
+      {(state.state === 'planning' || state.state === 'reviewing') && <span className="spinner tl-spin" />}
+      {state.label}
     </span>
   )
 }

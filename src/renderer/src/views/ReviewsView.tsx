@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { ReviewSummary } from '@shared/types'
+import { CardList, ItemCard } from '../components/ItemCards'
+import { StatePill } from './ContractView'
 
 /**
  * Every review for the active client, newest first. Closed reviews, and reviews of archived
@@ -40,42 +42,34 @@ export function ReviewsView({ reviews, accountName, onOpen, onChanged }: { revie
       ) : !shown.length ? (
         <p className="faint">No open reviews{q ? ' match the filter' : ''}.</p>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Contract</th>
-                <th style={{ width: 120 }}>Type</th>
-                <th style={{ width: 200 }}>Decided</th>
-                <th style={{ width: 190 }}>Started</th>
-                <th style={{ width: 110 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r) => (
-                <tr key={r.id} className={`clickable ${hidden(r) ? 'row-hidden' : ''}`} onClick={() => onOpen(r.id)}>
-                  <td>
-                    <strong>{r.accountName ? `${r.accountName} · ${r.contractTitle} · v${r.version}` : r.docName}</strong>
-                    {r.closed && <span className="pill neutral" style={{ marginLeft: 6 }}>closed</span>}
-                    {r.contractArchived && <span className="pill neutral" style={{ marginLeft: 6 }}>contract archived</span>}
-                    {r.accountName && <div className="faint">{r.docName}</div>}
-                  </td>
-                  <td className="muted">{r.contractType === 'nda' ? 'NDA' : r.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
-                  <td className="muted">
-                    {r.clauses ? `${r.decided} of ${r.clauses} changed paragraphs` : 'No changes'}
-                    {r.rejected > 0 && <span className="pill rejected" style={{ marginLeft: 6 }}>{r.rejected} rejected</span>}
-                  </td>
-                  <td className="muted">{new Date(r.createdAt).toLocaleString()}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn sm row-action" onClick={() => toggle(r)}>
-                      {r.closed ? 'Reopen' : 'Close'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <CardList>
+          {shown.map((r) => (
+            <ItemCard
+              key={r.id}
+              onClick={() => onOpen(r.id)}
+              muted={hidden(r)}
+              title={r.accountName ? `${r.accountName} · ${r.contractTitle} · v${r.version}` : r.docName}
+              badges={
+                <>
+                  <StatePill state={r.ai} />
+                  {r.closed && <span className="pill neutral">closed</span>}
+                  {r.contractArchived && <span className="pill neutral">contract archived</span>}
+                </>
+              }
+              sub={r.accountName ? r.docName : undefined}
+              actions={
+                <button className="btn sm" onClick={() => toggle(r)}>
+                  {r.closed ? 'Reopen' : 'Close'}
+                </button>
+              }
+              facts={[
+                { label: 'Type', value: r.contractType === 'nda' ? 'NDA' : r.contractType === 'order-form' ? 'Order form' : 'Contract' },
+                { label: 'Started', value: new Date(r.createdAt).toLocaleString() },
+                r.ai && { label: 'Review', value: r.ai.detail, wide: true }
+              ]}
+            />
+          ))}
+        </CardList>
       )}
     </div>
   )
