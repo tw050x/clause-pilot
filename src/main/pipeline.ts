@@ -392,28 +392,45 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     if (fresh(ids.consolidate)) {
       begin(cons)
       cons.children ??= []
-      for (const part of flaggedParts) {
-        if (part.proposal?.round === r) continue
-        const x: PipelineStep = { id: `${ids.consolidate}:${part.id}`, partId: part.id, title: part.title, status: 'running', startedAt: now() }
-        cons.children = [...cons.children.filter((c) => c.id !== x.id), x]
-        deps.persist(s)
-        try {
-          part.proposal = await propose(s, part, r, deps, (call) => ask(x, call))
-          x.status = 'done'
-          x.detail = part.proposal.summary
-        } catch (e) {
-          if (e instanceof Stopped) return
-          if (e instanceof BudgetReached) {
-            x.status = 'waiting'
-            x.detail = 'Not done yet: the budget was reached.'
-            cons.status = 'waiting'
-            return pause(`Paused: the budget was reached (${spentText(run)}). Raise it and Continue.`)
+      // Each part's proposal stands on its own: worked out a few at once, like the review.
+      const todo = flaggedParts.filter((part) => part.proposal?.round !== r)
+      let consBudgetHit = false
+      let stopped = false
+      const worker = async () => {
+        for (let part = todo.shift(); part; part = todo.shift()) {
+          const x: PipelineStep = { id: `${ids.consolidate}:${part.id}`, partId: part.id, title: part.title, status: 'running', startedAt: now() }
+          cons.children = [...(cons.children ?? []).filter((c) => c.id !== x.id), x]
+          deps.persist(s)
+          try {
+            part.proposal = await propose(s, part, r, deps, (call) => ask(x, call))
+            x.status = 'done'
+            x.detail = part.proposal.summary
+          } catch (e) {
+            if (e instanceof Stopped) {
+              stopped = true
+              todo.length = 0
+              return
+            }
+            if (e instanceof BudgetReached) {
+              x.status = 'waiting'
+              x.detail = 'Not done yet: the budget was reached.'
+              consBudgetHit = true
+              todo.length = 0
+              deps.persist(s)
+              return
+            }
+            x.status = 'error'
+            x.error = e instanceof Error ? e.message : String(e)
           }
-          x.status = 'error'
-          x.error = e instanceof Error ? e.message : String(e)
+          x.endedAt = now()
+          deps.persist(s)
         }
-        x.endedAt = now()
-        deps.persist(s)
+      }
+      await Promise.all(Array.from({ length: AT_ONCE }, worker))
+      if (stopped || flag.stop) return
+      if (consBudgetHit) {
+        cons.status = 'waiting'
+        return pause(`Paused: the budget was reached (${spentText(run)}). Raise it and Continue.`)
       }
       const failed = (cons.children ?? []).filter((c) => c.status === 'error').length
       end(cons, 'done', flaggedParts.length ? `${flaggedParts.length - failed} change${flaggedParts.length - failed === 1 ? '' : 's'} to make${failed ? `, ${failed} couldn’t be worked out (left for you)` : ''}.` : 'Nothing to change.')

@@ -97,15 +97,15 @@ const answers = {
 }
 
 /**
- * How long a recorded answer takes in a demo: what the model took, squeezed into 2 to 12 seconds
- * (a quick answer a few seconds, a long one ten or so, never instant and never a long wait;
- * recording ran several reviews at once, so its times include queueing too), give or take a
- * little, so no two runs are quite the same.
+ * How long a recorded answer takes in a demo: what the model took, squeezed into half a second to
+ * three seconds (a quick answer under a second or so, a long one a couple of seconds: never instant,
+ * but quick enough to get to the results in a demo; recording ran several reviews at once, so its
+ * times include queueing too), give or take a little, so no two runs are quite the same.
  */
 function demoPace(ms) {
   const s = Math.max(0, ms) / 1000
-  const pace = Math.min(12, 2 + 3 * Math.log(1 + s / 3))
-  return pace * (0.85 + Math.random() * 0.3) * 1000
+  const pace = Math.min(3, 0.5 + 0.8 * Math.log(1 + s / 3))
+  return pace * (0.8 + Math.random() * 0.4) * 1000
 }
 
 /** Real answers recorded from a model (recordings.mjs): replayed, or recorded with DEMO_RECORD. */
