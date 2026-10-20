@@ -46,7 +46,7 @@ export function Timeline({
     <section className="rc-section tl" ref={box}>
       {/* Everything here stays in place: the rows are there from the start and their text changes
           (a step's result, the run's state); only what results add (later rounds, a part's
-          problems, questions worth asking) is added, and nothing is taken away. */}
+          problems) is added, and nothing is taken away. */}
       <div className="tl-head">
         <div className="dr-mini-h">AI review</div>
         <RunControls session={session} onChange={onChange} disabled={onHold} />
@@ -64,31 +64,6 @@ export function Timeline({
             )
           ))}
         </ol>
-      )}
-
-      {run?.questions && run.questions.length > 0 && !run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') && (
-        <div className="tl-questions">
-          <div className="dr-mini-h">Worth asking too</div>
-          {run.questions.map((q, i) => {
-            const part = run.parts?.find((p) => p.id === q.partId)
-            return (
-              <div key={i} className="tl-question dr-small">
-                <strong>{questions.find((x) => x.id === q.questionId)?.title ?? q.questionId}</strong>
-                {part && (
-                  <>
-                    {' '}
-                    on{' '}
-                    <button className="link-btn" onClick={() => onJump(part.blockIds[0])}>
-                      {part.title}
-                    </button>
-                  </>
-                )}
-                <span className="faint">: {q.why}</span>
-                {q.asked && <span className="faint"> (asked)</span>}
-              </div>
-            )
-          })}
-        </div>
       )}
 
       <p className="faint dr-small tl-model">{defaults ? `${defaults.name} · ${defaults.model}` : '\u00a0'}</p>

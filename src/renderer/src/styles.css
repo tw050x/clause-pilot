@@ -705,7 +705,7 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-p .dr-label { user-select: none; }
 .ed-p del { cursor: default; }
 .rc { display: flex; flex-direction: column; min-height: 100%; }
-/* History, Marked-up copy, Draft response: pinned to the bottom of the column while the rest scrolls. */
+/* History, Marked-up copy, View response: pinned to the bottom of the column while the rest scrolls. */
 .rc-section { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .rc-title { font-weight: 600; font-size: 14px; }
 .rc-sub { font-size: 12px; margin-top: -4px; word-break: break-word; }
@@ -1160,8 +1160,6 @@ body.past-open .rightbar { z-index: 45; }
 .wv-part-label.running { color: var(--processing); background: var(--processing-tint); }
 .wv-part-label.done { color: var(--exact); background: var(--exact-tint); }
 .wv-part-label.needs-you { color: #92400e; background: color-mix(in srgb, #d97706 14%, var(--surface)); }
-.tl-questions { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; background: var(--surface-2); }
-.tl-question { line-height: 1.45; }
 .wv-part-mark { cursor: default; }
 .wv-part-mark.running { color: var(--processing); border-color: color-mix(in srgb, var(--processing) 45%, var(--border)); }
 .wv-part-mark.needs-you { color: #92400e; border-color: color-mix(in srgb, #d97706 55%, var(--border)); background: color-mix(in srgb, #d97706 10%, var(--surface)); }

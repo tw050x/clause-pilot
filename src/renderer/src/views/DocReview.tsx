@@ -370,8 +370,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         <button className="btn sm" onClick={() => setRedlineOpen(true)} disabled={onHold}>
           <Icon name="doc" size={14} /> <span className="bb-label">Marked-up copy</span>
         </button>
-        <button className={`btn sm ${session.doc?.pipeline?.email ? 'primary' : ''}`} onClick={() => setEmailOpen(true)} disabled={onHold}>
-          <Icon name="mail" size={14} /> <span className="bb-label">Draft response</span>
+        <button className={`btn sm ${session.doc?.pipeline?.email ? 'primary' : ''}`} onClick={() => setEmailOpen(true)} disabled={onHold} title="The email to the counterparty the AI wrote with the new draft">
+          <Icon name="mail" size={14} /> <span className="bb-label">View response</span>
         </button>
             </div>
             {layout === 'word' && (
