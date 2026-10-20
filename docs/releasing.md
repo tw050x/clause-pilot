@@ -21,6 +21,11 @@ publishing an app macOS won't open. (Windows and Linux builds are unsigned.)
 
 It needs an [Apple Developer Program](https://developer.apple.com/programs/) membership.
 
+**The quick way:** `scripts/set-release-secrets.sh` asks for each value below, checks it (the
+`.p12` opens with the password and holds a Developer ID certificate; Apple accepts the
+notarization credentials), and only then sets the secrets. `--dry-run` checks without setting
+anything.
+
 ### 1. The Developer ID certificate
 
 1. On a Mac, in Xcode → Settings → Accounts → your team → Manage Certificates, add a
