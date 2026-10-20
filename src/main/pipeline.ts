@@ -113,17 +113,17 @@ export function continueReview(s: ReviewSession, deps: PipelineDeps, budget?: { 
   if (live.has(s.id)) throw new Error('The review is already running.')
   if (budget) run.budget = run.provider === 'anthropic' ? budget : { tokens: budget.tokens }
   // At a gate, going on is the reviewer's decision: recorded on it, with who and when.
-  const pass = (id: string, detail: string) => {
+  // (Its line stays as it was, so the timeline doesn't move.)
+  const pass = (id: string) => {
     const g = run.steps.find((x) => x.id === id)
     if (g?.status !== 'needs-you') return false
     g.status = 'done'
     g.endedAt = now()
     g.by = deps.actor()
-    g.detail = detail
     return true
   }
-  if (run.confirmed && pass('check', 'Checked: the new draft and the email to be written.')) run.draftConfirmed = true
-  pass('start', 'Started from the plan.')
+  if (run.confirmed && pass('check')) run.draftConfirmed = true
+  pass('start')
   run.status = 'running'
   run.confirmed = true
   run.note = undefined
@@ -280,7 +280,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       if (gate) {
         gate.status = 'needs-you'
         gate.startedAt ??= now()
-        gate.detail = 'The plan is ready. Start the review when you are.'
+        gate.detail = 'The plan is ready.'
       }
       run.status = 'planned'
       run.note = `Planned: ${parts.filter((p) => p.depth !== 'skip').length} parts to review${run.estimate ? `, about ${run.estimate.calls} AI calls` : ''}. Start the AI review when you’re ready.`
@@ -412,9 +412,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         const made = run.parts?.filter((p) => p.proposal?.status === 'approved').length ?? 0
         check.status = 'needs-you'
         check.startedAt ??= now()
-        check.detail = made
-          ? `${made} change${made === 1 ? '' : 's'} made to the draft. Look through them (undo any in History), then write the new draft and the email.`
-          : 'Nothing was changed. Look through the findings, then write the new draft and the email.'
+        check.detail = made ? `${made} change${made === 1 ? '' : 's'} made: look through them.` : 'Nothing changed: look through the findings.'
         run.status = 'paused'
         run.note = leftOver ?? 'Your turn: check the findings and the changes, then write the new draft and the email.'
         deps.persist(s)
@@ -454,7 +452,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       mail.status = 'done'
       mail.endedAt = now()
       mail.detail = run.email.subject
-      end(draft, 'done', 'Ready: Marked-up copy and Draft response, in the bar under the document.')
+      end(draft, 'done', 'Ready: Marked-up copy and Draft response, below.')
     }
     run.status = 'done'
     run.endedAt = now()

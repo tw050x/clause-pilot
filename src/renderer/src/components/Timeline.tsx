@@ -42,26 +42,24 @@ export function Timeline({
 
   return (
     <section className="rc-section tl" ref={box}>
+      {/* Everything here stays in place: the rows are there from the start and their text changes
+          (a step's result, the run's state); only what results add (later rounds, a part's
+          problems, questions worth asking) is added, and nothing is taken away. */}
       <div className="tl-head">
         <div className="dr-mini-h">AI review</div>
-        {run && <RunStatus run={run} />}
+        <RunControls session={session} onChange={onChange} disabled={onHold} />
+        <RunStatus run={run} />
       </div>
-      {!run && (
-        <p className="faint dr-small tl-intro">
-          Each draft is planned when it’s uploaded. The AI review reads the contract’s structure, checks each part as closely as it needs (skipping the parts with nothing to check), and makes the changes it finds are needed (each can be undone in History). Then it waits for you to check them before writing the new draft and the email.
-        </p>
-      )}
-      {run && <Spent run={run} />}
-      {run?.note && <p className={`dr-small tl-note ${run.status}`}>{run.note}</p>}
-      <RunControls session={session} onChange={onChange} disabled={onHold} />
+      <Spent run={run} />
+      <p className={`dr-small tl-note ${run?.status ?? 'none'}`}>{noteOf(run, defaults)}</p>
 
-      {run && (
+      {(
         <ol className="tl-steps">
-          {run.steps.map((st) => (
+          {(run?.steps ?? PLANNED_STEPS).map((st) => (
             GATES.has(st.id) ? (
-              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold} />
+              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} />
             ) : (
-              <Step key={st.id} step={st} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
+              <Step key={st.id} step={st} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
             )
           ))}
         </ol>
@@ -91,24 +89,63 @@ export function Timeline({
         </div>
       )}
 
-      {defaults && !defaults.ready && <p className="dr-small dr-err">{defaults.why}</p>}
-      {defaults && (
-        <p className="faint dr-small tl-model">
-          {defaults.name} · {defaults.model}
-        </p>
-      )}
+      <p className="faint dr-small tl-model">{defaults ? `${defaults.name} · ${defaults.model}` : '\u00a0'}</p>
     </section>
   )
 }
 
-function RunStatus({ run }: { run: PipelineRun }) {
+/** The steps a run has, before there is one (the draft not planned yet): shown waiting. */
+const PLANNED_STEPS: PipelineStep[] = [
+  ['security', 'Check for hidden instructions'],
+  ['structure', 'Read the contract’s structure'],
+  ['plan', 'Plan the review'],
+  ['start', 'Start the review'],
+  ['review', 'Review each part'],
+  ['consolidate', 'Bring the findings together'],
+  ['approve', 'Make the changes'],
+  ['check', 'Your check of the findings'],
+  ['draft', 'New draft and email']
+].map(([id, title]) => ({ id, title, status: 'waiting' }))
+const EMPTY_RUN = { steps: [], parts: [] } as unknown as PipelineRun
+
+/** What each step does, shown until it has a result (so the row doesn't grow when one comes). */
+const ABOUT: Record<string, string> = {
+  security: 'Text addressed to an AI reviewer.',
+  structure: 'The parts, and how closely to check each.',
+  plan: 'What the review is estimated to use.',
+  start: 'Once the plan is ready.',
+  review: 'Each part against our standards.',
+  consolidate: 'One change per part, from the findings.',
+  approve: 'Each change made to the draft.',
+  check: 'Once the changes are made.',
+  draft: 'The marked-up copy and the email.'
+}
+const aboutOf = (id: string) => ABOUT[id.replace(/-\d+$/, '')] ?? ''
+
+/** The run's state in a sentence, in a line that's always there. */
+function noteOf(run: PipelineRun | undefined, defaults: { ready: boolean; why?: string } | null) {
+  if (!run) return defaults && !defaults.ready ? (defaults.why ?? 'The AI isn’t set up.') : 'The draft is planned when it’s uploaded or first opened.'
+  if (run.note) return run.note
+  if (run.status === 'running') return run.confirmed ? 'Reviewing: it runs on its own until the findings are for you to check.' : 'Reading the draft and planning its review…'
+  return { planned: 'Planned.', paused: 'Paused.', stopped: 'Stopped.', done: 'Done.', error: 'Something went wrong.' }[run.status] ?? ''
+}
+
+function RunStatus({ run }: { run?: PipelineRun }) {
+  if (!run) return <span className="tl-pill none">Not planned</span>
   const label = { running: run.confirmed ? 'Running' : 'Planning', planned: 'Planned', paused: run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') ? 'Your turn' : 'Paused', stopped: 'Stopped', done: 'Done', error: 'Failed' }[run.status]
   return <span className={`tl-pill ${run.status}`}>{run.status === 'running' && <span className="spinner tl-spin" />}{label}</span>
 }
 
 const k = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
-function Spent({ run }: { run: PipelineRun }) {
+function Spent({ run }: { run?: PipelineRun }) {
+  if (!run)
+    return (
+      <div className="tl-spent">
+        <div className="tl-spent-bar" />
+        <span className="faint dr-small">No AI used yet</span>
+      </div>
+    )
   const tokens = run.spent.input + run.spent.cached + run.spent.output
   const share = run.provider === 'anthropic' && run.budget.usd ? (run.spent.usd ?? 0) / run.budget.usd : tokens / run.budget.tokens
   return (
@@ -119,7 +156,7 @@ function Spent({ run }: { run: PipelineRun }) {
       <span className="faint dr-small">
         {run.provider === 'anthropic' ? `$${(run.spent.usd ?? 0).toFixed(2)} of $${(run.budget.usd ?? 0).toFixed(2)} · ` : ''}
         {k(tokens)} tokens{run.provider === 'anthropic' ? '' : ` of ${k(run.budget.tokens)}`}
-        {run.estimate && run.status === 'planned' && ` · the review: about ${run.estimate.calls} calls, ${k(run.estimate.tokens)} tokens${run.estimate.usd !== undefined ? `, $${run.estimate.usd.toFixed(2)}` : ''}`}
+        {run.estimate && ` · estimate ${k(run.estimate.tokens)}${run.estimate.usd !== undefined ? ` ($${run.estimate.usd.toFixed(2)})` : ''}`}
       </span>
     </div>
   )
@@ -132,13 +169,13 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
 }
 
 function Step({ step, run, session, onJump, onChange, focusPart }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string }) {
-  // A finished step shows only its items still needing something (for you, failed, running); the
-  // rest on request, so what's waiting for the reviewer isn't buried under what's done.
-  const done = step.status === 'done' || step.status === 'skipped'
-  const [chosen, setChosen] = useState<boolean | null>(null)
-  const all = chosen ?? !done
+  // A step's items (a part's checks) on request; otherwise only those with a result for the
+  // reviewer (something found, a failure): those stay. Its progress is in its own line.
+  const [all, setAll] = useState(false)
   const kids = step.children ?? []
-  const shown = all ? kids : kids.filter((c) => c.status === 'needs-you' || c.status === 'error' || c.status === 'running')
+  const shown = all ? kids : kids.filter((c) => c.status === 'needs-you' || c.status === 'error')
+  const finished = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
+  const detail = step.status === 'running' && kids.length ? `${finished} of ${kids.length} done…` : (step.detail ?? aboutOf(step.id))
   const part = step.partId ? run.parts?.find((p) => p.id === step.partId) : undefined
   const usage = step.usage && step.usage.input + step.usage.cached + step.usage.output
   // Under "Make the changes": what the part's change did (opened from its row).
@@ -158,7 +195,7 @@ function Step({ step, run, session, onJump, onChange, focusPart }: { step: Pipel
               step.title
             )}
             {kids.length > 0 && (
-              <button className="link-btn tl-count" onClick={() => setChosen(!all)} title={all ? 'Show only what needs something' : 'Show all of them'}>
+              <button className="link-btn tl-count" onClick={() => setAll(!all)} title={all ? 'Show only what needs something' : 'Show all of them'}>
                 {all ? `${kids.length} ▾` : shown.length ? `${shown.length} of ${kids.length} ▸` : `${kids.length} ▸`}
               </button>
             )}
@@ -168,7 +205,7 @@ function Step({ step, run, session, onJump, onChange, focusPart }: { step: Pipel
               </span>
             ) : null}
           </div>
-          {step.detail && <div className="tl-detail faint">{step.detail}</div>}
+          {detail ? <div className="tl-detail faint">{detail}</div> : null}
           {step.error && <div className="tl-detail dr-err">{step.error}</div>}
           {proposal && (
             <button className="link-btn tl-count" onClick={() => setOpen((v) => !v)}>
@@ -269,27 +306,28 @@ function useRunAct(onChange: (s: ReviewSession) => void) {
 function Gate({ step, session, onChange, disabled }: { step: PipelineStep; session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
   const { busy, error, act } = useRunAct(onChange)
   const waiting = step.status === 'needs-you'
+  const passed = step.status === 'done'
   const b = GATE_BUTTON[step.id]
+  // The same box in every state: its line, then its button (until reached: not yet; waiting: go
+  // on; passed: who and when, in the button's place).
   return (
     <li className={`tl-step tl-gate ${step.status}`}>
       <div className="tl-row">
-        <StatusIcon status={waiting ? 'needs-you' : step.status} />
+        <StatusIcon status={step.status} />
         <div className="tl-body">
           <div className="tl-title">{step.title}</div>
-          {step.status === 'done' && step.by ? (
-            <div className="tl-detail faint">
-              {step.id === 'start' ? 'Started' : 'Checked'} by {step.by} · {when(step.endedAt)}
-            </div>
-          ) : (
-            step.detail && <div className="tl-detail faint">{step.detail}</div>
-          )}
-          {waiting && b && (
-            <div className="tl-gate-act">
-              <button className="btn sm primary" disabled={busy || disabled} onClick={() => act(window.api.pipeline.continue(session.id))} title={b.tip}>
-                {busy ? <span className="spinner sm" /> : <Icon name={b.icon} size={14} />} {b.label}
+          <div className="tl-detail faint">{step.detail ?? aboutOf(step.id)}</div>
+          <div className="tl-gate-act">
+            {passed ? (
+              <span className="tl-gate-passed">
+                <Icon name="check" size={13} stroke={2.4} /> {step.by ? `${step.id === 'start' ? 'Started' : 'Checked'} by ${step.by} · ${when(step.endedAt)}` : 'Passed'}
+              </span>
+            ) : (
+              <button className={`btn sm ${waiting ? 'primary' : ''}`} disabled={!waiting || busy || disabled} onClick={() => act(window.api.pipeline.continue(session.id))} title={b?.tip}>
+                {busy ? <span className="spinner sm" /> : <Icon name={b?.icon ?? 'next'} size={14} />} {b?.label}
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {error && <p className="dr-small dr-err">{error}</p>}
         </div>
       </div>
@@ -309,7 +347,7 @@ function RunControls({ session, onChange, disabled }: { session: ReviewSession; 
   const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
   useEffect(() => void window.api.pipeline.defaults().then(setDefaults), [session.id])
   const { busy, error, act } = useRunAct(onChange)
-  if (!defaults || session.original) return null
+  if (!defaults || session.original) return <span className="tl-controls" />
   const off = busy || disabled || !defaults.ready
   const tip = !defaults.ready ? defaults.why : `${defaults.name} · ${defaults.model}`
   const atGate = run?.steps.some((x) => GATES.has(x.id) && x.status === 'needs-you')
@@ -321,30 +359,29 @@ function RunControls({ session, onChange, disabled }: { session: ReviewSession; 
     return out ? { tokens: run.budget.tokens + defaults.budget.tokens, usd: run.budget.usd !== undefined ? run.budget.usd + (defaults.budget.usd ?? 0) : undefined } : undefined
   }
   const button = (() => {
-    if (atGate || run?.status === 'planned') return null
+    if (atGate || run?.status === 'planned' || (run?.status === 'running' && !run.confirmed)) return null
     if (run?.status === 'running')
-      return run.confirmed ? (
-        <button className="btn sm" disabled={busy} onClick={() => act(window.api.pipeline.stop(session.id))} title="Stop the AI review: what it has done is kept">
+      return (
+        <button className="link-btn tl-ctl" disabled={busy} onClick={() => act(window.api.pipeline.stop(session.id))} title="Stop the AI review: what it has done is kept">
           Stop
         </button>
-      ) : null
+      )
     if (run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped'))
       return (
-        <button className="btn sm primary" disabled={off} onClick={() => act(window.api.pipeline.continue(session.id, more()))} title={tip}>
-          <Icon name="sparkle" size={14} /> Continue AI review
+        <button className="link-btn tl-ctl" disabled={off} onClick={() => act(window.api.pipeline.continue(session.id, more()))} title={tip}>
+          Continue
         </button>
       )
     return (
-      <button className={`btn sm ${run ? '' : 'primary'}`} disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={run ? 'Plan and review it again from the start' : tip}>
-        <Icon name="sparkle" size={14} /> {run ? 'Review again' : 'Start AI review'}
+      <button className="link-btn tl-ctl" disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={run ? 'Plan and review it again from the start' : tip}>
+        {run ? 'Review again' : 'Start'}
       </button>
     )
   })()
-  if (!button && !error) return null
   return (
-    <div className="tl-controls">
+    <span className="tl-controls" title={error ?? undefined}>
+      {error && <Icon name="alert" size={13} />}
       {button}
-      {error && <span className="dr-small dr-err">{error}</span>}
-    </div>
+    </span>
   )
 }

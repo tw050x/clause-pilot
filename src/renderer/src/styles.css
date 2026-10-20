@@ -1130,7 +1130,7 @@ body.past-open .rightbar { z-index: 45; }
 .ai-action-stale { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 6px; padding: 7px 9px; border-radius: 7px; background: color-mix(in srgb, #b45309 9%, var(--surface)); color: #92400e; font-size: 12px; line-height: 1.45; }
 .ai-action-stale svg { flex-shrink: 0; margin-top: 2px; }
 /* The automated review's timeline. */
-.tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 22px; }
 .tl-intro { margin: 0; line-height: 1.5; }
 .tl-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text-2); }
 .tl-pill.running { background: var(--processing-tint); color: var(--processing); }
@@ -1140,9 +1140,15 @@ body.past-open .rightbar { z-index: 45; }
 .tl-note.planned { background: var(--processing-tint); color: var(--processing); }
 /* The review column's foot: the AI review's button, then Accept / Reject (when changes are picked), then the key. */
 /* The reviewer's gates in the timeline: waiting, a card with its button; passed, who and when. */
-.tl-gate.needs-you > .tl-row { background: color-mix(in srgb, #b45309 7%, var(--surface)); border: 1px solid color-mix(in srgb, #b45309 30%, var(--border)); border-radius: 10px; padding: 10px 10px 12px; margin: 2px -10px; }
-.tl-gate-act { margin-top: 10px; }
-.tl-controls { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
+.tl-gate > .tl-row { border: 1px solid var(--border); border-radius: 10px; padding: 9px 9px 10px; margin: 0 -10px; }
+.tl-gate.needs-you > .tl-row { background: color-mix(in srgb, #b45309 7%, var(--surface)); border-color: color-mix(in srgb, #b45309 30%, var(--border)); }
+.tl-gate-act { margin-top: 8px; height: 28px; display: flex; align-items: center; }
+.tl-gate-passed { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--exact); }
+/* In the head, beside the state: Stop / Continue / Review again (it never moves anything). */
+.tl-controls { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--rejected); }
+.tl-ctl { font-size: 12px; }
+.tl-note { min-height: 2.9em; box-sizing: content-box; }
+.tl-pill.none { background: var(--surface-2); color: var(--text-3); }
 .tl-pill.error, .tl-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
 .tl-spin { width: 9px; height: 9px; border-width: 1.5px; }
 .tl-spent { display: flex; flex-direction: column; gap: 4px; }
@@ -1163,10 +1169,12 @@ body.past-open .rightbar { z-index: 45; }
 .tl-icon.error { background: var(--rejected); border-color: var(--rejected); }
 .tl-icon.skipped { border-style: dashed; color: var(--text-3); }
 .tl-body { min-width: 0; flex: 1; }
-.tl-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); line-height: 17px; }
+.tl-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); line-height: 17px; }
 .tl-step.waiting > .tl-row .tl-title, .tl-step.skipped > .tl-row .tl-title { color: var(--text-3); font-weight: 500; }
 .tl-part { font: inherit; color: inherit; text-align: left; }
 .tl-count { font-size: 11px; font-weight: 500; }
+/* What a result adds to a title (its count, what it used) fits the title's line: nothing moves. */
+.tl-title > * { line-height: 17px; height: 17px; padding-top: 0; padding-bottom: 0; }
 .tl-usage { margin-left: auto; font-size: 11px; font-weight: 400; }
 .tl-detail { font-size: 12px; line-height: 1.45; margin-top: 2px; }
 /* A step's sub-items: indented under it, their own list. */
