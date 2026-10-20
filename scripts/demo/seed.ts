@@ -4,7 +4,7 @@
  * as each demo folder's library.json and playbook.json), and an account and contract for each
  * demo. Written by npm run demo:build (and npm run demo:seed on its own).
  */
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Account, ContractRecord } from '../../src/shared/types'
 import { LIBRARY } from './library'
@@ -107,6 +107,11 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     ]
   },
   {
+    key: 'corvid',
+    account: 'Corvid Freight',
+    contracts: [{ key: 'corvid', title: 'Mutual NDA', type: 'nda' }]
+  },
+  {
     key: 'initech',
     account: 'Initech Software',
     contracts: [
@@ -124,7 +129,9 @@ const FILES = [
   '1-our-nda-two-rounds/Brightwater-Mutual-NDA-v1-client-redline.docx',
   '1-our-nda-two-rounds/Brightwater-Mutual-NDA-v2-client-response.docx',
   '2-client-paper/Kestrel-Confidentiality-Agreement-client-paper.docx',
-  '3-supplier-msa/Harbourline-Master-Services-Agreement.docx'
+  '3-supplier-msa/Harbourline-Master-Services-Agreement.docx',
+  '4-prompt-injection/Corvid-Mutual-NDA-v0-we-sent.docx',
+  '4-prompt-injection/Corvid-Mutual-NDA-v1-client-redline.docx'
 ]
 
 export function writeDemoSeed(root = process.cwd()) {
@@ -148,7 +155,8 @@ export function writeDemoSeed(root = process.cwd()) {
   write('playbook.json', PLAYBOOK)
   write('accounts.json', accounts)
   write('contracts.json', contracts)
-  write('precedents.json', [])
+  // Earlier negotiations with other clients (curated from real runs: see git history); kept if there.
+  if (!existsSync(join(dir, 'precedents.json'))) write('precedents.json', [])
   write('history.json', history)
   const files = join(root, 'data', 'demo-files')
   mkdirSync(files, { recursive: true })

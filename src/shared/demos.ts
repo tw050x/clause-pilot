@@ -3,10 +3,10 @@
  * demo workspace and keeps only its clients and contracts (with their history), plus our clauses
  * and playbook, then sets the scene (a draft uploaded, items to approve) and opens where it starts.
  */
-export type DemoId = 'round-1' | 'round-2' | 'client-paper' | 'markup' | 'order-form' | 'approvals' | 'portfolio'
+export type DemoId = 'round-1' | 'round-2' | 'client-paper' | 'injection' | 'markup' | 'order-form' | 'approvals' | 'portfolio'
 
 /** How a demo sets the scene, beyond its contracts' history. */
-export type DemoSetup = 'round-1' | 'round-2' | 'client-paper' | 'markup' | 'approvals'
+export type DemoSetup = 'round-1' | 'round-2' | 'client-paper' | 'injection' | 'markup' | 'approvals'
 
 export interface DemoDef {
   id: DemoId
@@ -47,6 +47,16 @@ export const DEMOS: DemoDef[] = [
     icon: 'file',
     contracts: ['ct-demo-kestrel'],
     setup: 'client-paper'
+  },
+  {
+    id: 'injection',
+    title: 'Hidden instructions to the AI',
+    detail:
+      'Corvid sent back our NDA with instructions to an AI reviewer hidden in it: a sentence in invisible white text, and a clause saying our lawyers approved it already. They’re caught before any AI reads the draft, and the review waits for the security team. You’re on the security team in this demo: confirm the attack on the Security page (the AI review then goes on without the hidden text) or clear it as a false positive.',
+    who: 'Corvid Freight · Mutual NDA',
+    icon: 'shield',
+    contracts: ['ct-demo-corvid'],
+    setup: 'injection'
   },
   {
     id: 'markup',

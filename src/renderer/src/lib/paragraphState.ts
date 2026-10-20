@@ -7,7 +7,7 @@ import { aiSame, changeKey, hasOpenChanges, isCleared, marksFor, needsReading, s
  */
 
 /** A paragraph's state as its bar shows it, labelled in the left gutter once per run. */
-export type GutterState = 'unchanged' | 'checked' | 'same' | 'decide' | 'edited' | 'read'
+export type GutterState = 'unchanged' | 'checked' | 'same' | 'decide' | 'edited' | 'read' | 'injection'
 
 export const GUTTER: Record<GutterState, { label: string; tip: string }> = {
   unchanged: { label: 'Unchanged', tip: 'Reads exactly as our approved wording, or as we last sent it. Nothing to check.' },
@@ -15,7 +15,8 @@ export const GUTTER: Record<GutterState, { label: string; tip: string }> = {
   same: { label: 'Same intent', tip: 'The AI found it means the same as our approved wording. It only advises: decide it yourself.' },
   decide: { label: 'To decide', tip: 'Their changes, tracked or found by comparison: accept or reject them.' },
   edited: { label: 'Edited', tip: 'Your edits: they go to them as tracked changes in the marked-up copy.' },
-  read: { label: 'To read', tip: 'Not our wording and nothing to accept or reject: read it, then mark it as checked.' }
+  read: { label: 'To read', tip: 'Not our wording and nothing to accept or reject: read it, then mark it as checked.' },
+  injection: { label: 'AI instructions', tip: 'Text addressed to an AI reviewer was found here (it may be hidden on the page). See Security.' }
 }
 
 const tidy = (t: string) => t.replace(/\s+/g, ' ').trim()

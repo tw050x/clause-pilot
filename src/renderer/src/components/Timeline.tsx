@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { HistoryAction, PipelineRun, PipelineStep, ReviewPart, ReviewSession } from '@shared/types'
 import { describe, details } from '@shared/history'
 import { isManual, blocksTouched, overridesOf, type Override } from '@shared/overrides'
+import { injectionSpans } from '@shared/injection'
 import { marksFor, segmentsOf, shownText } from '@shared/changes'
 import { diffSegments } from '@shared/diff'
 import { Redline } from './Redline'
@@ -248,6 +249,7 @@ function Step({ step, run, session, onJump, onChange, focusPart, only, overrides
             ) : null}
           </div>
           {detail ? <div className="tl-detail faint">{detail}</div> : null}
+          {step.id === 'security' && <FlaggedText session={session} onJump={onJump} />}
           {step.error && <div className="tl-detail dr-err">{step.error}</div>}
           {proposal && overrides?.[proposal.id]?.kind === 'change' && <OverriddenLabel o={overrides[proposal.id]} what="this change" />}
           {proposal && (
@@ -680,6 +682,34 @@ function ChangedSinceApproved({ part, session }: { part: ReviewPart; session: Re
   )
 }
 
+/**
+ * Under the check for hidden instructions: what was flagged, quoted in full (a sentence hidden on
+ * the page, in white or tiny text, is read out here), with where it is.
+ */
+function FlaggedText({ session, onJump }: { session: ReviewSession; onJump: (blockId: string) => void }) {
+  const d = session.doc!
+  const flagged = Object.keys(session.injection ?? {})
+    .map((id) => d.blocks.find((b) => b.id === id))
+    .filter((b): b is NonNullable<typeof b> => !!b)
+  if (!flagged.length) return null
+  return (
+    <div className="tl-flagged">
+      {flagged.map((b) =>
+        injectionSpans(b.text).map((r, i) => (
+          <div key={`${b.id}:${i}`} className="tl-flagged-item dr-small">
+            <button className="link-btn" onClick={() => onJump(b.id)}>
+              {b.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph'}
+            </button>
+            {': '}
+            <q>{b.text.slice(r.start, r.end).trim()}</q>
+            <span className="faint"> ({session.injection[b.id].join('; ').toLowerCase()})</span>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
 /** Bring one of the reviewer's edits in the timeline into view, and mark it for a moment. */
 function showAction(id: string) {
   const el = document.querySelector<HTMLElement>(`.tl [data-action="${id}"]`)
@@ -858,6 +888,8 @@ function RunControls({ session, onChange, disabled }: { session: ReviewSession; 
           Stop
         </button>
       )
+    // On security hold: nothing to go on with until the security team has looked.
+    if (disabled && run?.status === 'paused') return null
     if (run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped'))
       return (
         <button className="link-btn tl-ctl" disabled={off} onClick={() => act(window.api.pipeline.continue(session.id, more()))} title={tip}>

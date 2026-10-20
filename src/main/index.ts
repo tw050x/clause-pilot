@@ -22,7 +22,7 @@ import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { setQuick as demoQuick, startDemoServer } from '../../demo-server/server.mjs'
 import { DEMOS, type DemoId, type DemoLanding, type DemoSetup } from '@shared/demos'
-import { DEFAULT_BUDGET, applyChecked, approveProposals, iterate as iteratePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, applyChecked, approveProposals, resumePlanning, iterate as iteratePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -30,6 +30,7 @@ import { chatSystem, reviewState } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, mergeQuestions, parseImport, playbookFile, questionsFile, type KnowledgeKind } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
 import { lockedForAi } from '@shared/overrides'
+import { injectionSpans } from '@shared/injection'
 import { approvedBefore, precedentFor, precedentsForProposal, seenBefore } from './engine/seen'
 import { paperCheck } from './engine/baseline'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
@@ -254,7 +255,11 @@ function emitThrottled(s: ReviewSession) {
     s.id,
     setTimeout(() => {
       persistTimers.delete(s.id)
-      if (!retired.has(s)) wsFor(s).store.saveSession(s)
+      if (retired.has(s)) return
+      wsFor(s).store.saveSession(s)
+      // What the AI review reported as text addressed to it goes on the review's security alert
+      // (raising one if the check on upload didn't).
+      syncSecurityAlert(wsFor(s), s)
     }, 400)
   )
 }
@@ -317,7 +322,9 @@ const DEMO_FILES = {
   v1: 'Brightwater-Mutual-NDA-v1-client-redline.docx',
   v2: 'Brightwater-Mutual-NDA-v2-client-response.docx',
   kestrel: 'Kestrel-Confidentiality-Agreement-client-paper.docx',
-  msa: 'Harbourline-Master-Services-Agreement.docx'
+  msa: 'Harbourline-Master-Services-Agreement.docx',
+  corvid0: 'Corvid-Mutual-NDA-v0-we-sent.docx',
+  corvid1: 'Corvid-Mutual-NDA-v1-client-redline.docx'
 }
 /** The demo loaded in the demo workspace (none until one is chosen). */
 const demoCurrentFile = () => join(ws.dir, 'demo-current.json')
@@ -383,6 +390,16 @@ async function demoSetup(setup: DemoSetup | undefined, contracts: ContractRecord
     return open(await review(DEMO_FILES.v2, 'ct-demo-brightwater'))
   }
   if (setup === 'client-paper') return open(await review(DEMO_FILES.kestrel, 'ct-demo-kestrel', { kind: 'theirs' }))
+  if (setup === 'injection') {
+    // The reviewer is on the security team for this demo, so they can decide about the alert
+    // themselves (Settings shows it, and it can be turned off there).
+    const st = loadSettings()
+    if (!st.securityReviewer) {
+      writeFileSync(settingsFile, JSON.stringify({ ...st, securityReviewer: true }, null, 2))
+      ws.audit.append(actor(), 'settings.changed', null, { securityReviewer: true, by: 'demo' })
+    }
+    return open(await review(DEMO_FILES.corvid1, 'ct-demo-corvid', { kind: 'original', path: demoFile(DEMO_FILES.corvid0) }))
+  }
   if (setup === 'approvals') {
     // A clause nominated for Clauses and a new playbook position, by a colleague, to approve.
     const at = new Date().toISOString()
@@ -873,7 +890,8 @@ function planAll() {
 
 function planOnOpen(s: ReviewSession) {
   if (!s.doc || s.original || s.closed || s.doc.pipeline || pipelineRunning(s.id)) return
-  if (alertFor(s.id)?.status === 'open' || provider().kind === 'none') return
+  // (A draft on security hold is planned too: it stops at the security check, which says why.)
+  if (provider().kind === 'none') return
   try {
     planReview(s, pipelineDeps(), defaultBudget())
   } catch (e) {
@@ -929,6 +947,11 @@ ipcMain.handle('security:resolve', (_e, id: string, outcome: 'malicious' | 'fals
   Object.assign(a, { status: outcome, resolvedBy: actor(), resolvedAt: new Date().toISOString(), note: note.trim() })
   ws.store.saveSecurityAlerts(alerts)
   ws.audit.append(actor(), 'security.alert-resolved', a.sessionId, { alertId: id, outcome, note: a.note })
+  // Its plan, held at the security check, goes on in the background (a review already started
+  // waits for the reviewer to go on with it).
+  const s = session(a.sessionId)
+  resumePlanning(s, pipelineDeps())
+  send('session:update', s)
   return ws.store.securityAlerts()
 })
 
@@ -1611,8 +1634,40 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
 
 // ---- The automated review ------------------------------------------------------------------------
 
+/**
+ * In place of text the security team confirmed as an injection attempt, in what the AI is sent.
+ * Neutral on purpose: a placeholder that mentions an AI reviewer is itself reported as suspicious.
+ */
+const WITHHELD = '[text removed before review]'
+
+/**
+ * The AI for a review. Once the security team has confirmed the text flagged in it as an injection
+ * attempt, the flagged sentences are replaced in everything sent to it: the review goes on with
+ * the rest, and the AI never reads the instructions.
+ */
+function aiFor(s: ReviewSession): AiProvider {
+  const ai = provider()
+  if (alertFor(s.id)?.status !== 'malicious') return ai
+  const cut = Object.keys(s.injection)
+    .flatMap((id) => {
+      const b = s.doc?.blocks.find((x) => x.id === id)
+      return b ? injectionSpans(b.text).map((r) => b.text.slice(r.start, r.end).trim()) : []
+    })
+    .filter((t) => t.length > 8)
+    .sort((a, b) => b.length - a.length)
+  if (!cut.length) return ai
+  const clean = (t: string) => cut.reduce((x, c) => x.split(c).join(WITHHELD), t)
+  const kept = Object.create(ai) as AiProvider
+  kept.schemaAnswer = (input, onUsage) => ai.schemaAnswer({ ...input, contract: clean(input.contract), question: clean(input.question) }, onUsage)
+  return kept
+}
+
 const pipelineDeps = (): PipelineDeps => ({
-  provider,
+  provider: aiFor,
+  security: (s) => {
+    const a = alertFor(s.id)
+    return a ? { status: a.status, by: a.resolvedBy } : null
+  },
   persist: (s) => emitThrottled(s),
   actor,
   settings: () => {

@@ -152,6 +152,9 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
    */
   const finalRef = useRef(final)
   finalRef.current = final
+  /** Paragraphs with text addressed to an AI reviewer (flagged when the draft was read). */
+  const flags = useRef(session.injection)
+  flags.current = session.injection
   // Locked while the AI review works: the page as it is (the redline shown as ever), but what
   // would edit it (typing, pasting, cutting, dropping) stopped before it reaches the editor.
   // Reading, selecting, copying and clicking go on as usual.
@@ -320,7 +323,12 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
       const places = byBlock.get(b.id)
       if (!places?.length) continue
       const marks = marksFor(d, b)
-      const { bar, state } = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
+      const ps = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
+      // Text addressed to an AI reviewer (flagged when the draft was read): marked in red, over
+      // whatever else the paragraph has to do.
+      const flagged = !!flags.current?.[b.id]?.length
+      const bar = flagged ? 'chg-injection' : ps.bar
+      const state: GutterState | null = flagged ? 'injection' : ps.state
       // Something still to do here (their changes to decide, even under an edit of ours; text to
       // read; the AI's finding to confirm): its bar is animated.
       const todo = hasOpenChanges(d, b) || state === 'read' || state === 'same'
@@ -425,7 +433,7 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
         const p = partOf.get(bar.blockId)
         if (!p) continue
         const st = statusFor(p)
-        bar.bar = `part part-${st} depth-${p.depth}${st === 'running' ? ' todo' : ''}`
+        bar.bar = flags.current?.[bar.blockId]?.length ? 'part part-injection' : `part part-${st} depth-${p.depth}${st === 'running' ? ' todo' : ''}`
       }
       // A part's paragraphs on a page: one bar, through the gaps between them.
       const byTop = [...bars].sort((a, b) => a.top - b.top)
@@ -441,7 +449,8 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
         if (!first) continue
         // A change proposed for it and not made yet: waiting for the reviewer (or approved by them).
         const pr = p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved') && !overridden[p.id] ? p.proposal.status : undefined
-        partLabels.push({ partId: p.id, top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title), change: pr })
+        const injected = p.blockIds.some((id) => flags.current?.[id]?.length)
+        partLabels.push({ partId: p.id, top: first.top, height: first.height, left: first.left, right: first.right, text: injected ? 'AI instructions' : (KIND[p.kind] ?? 'Part'), status: injected ? 'injection' : statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title), change: pr })
       }
     }
     setGutter({ bars, runs, ai, notes, cards, parts: partLabels })

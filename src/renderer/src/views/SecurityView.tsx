@@ -113,7 +113,7 @@ function AlertCard({
       ))}
       {a.aiNotes.length > 0 && (
         <details style={{ marginTop: 8 }}>
-          <summary>What the AI reported</summary>
+          <summary>The AI flagged it too ({a.aiNotes.length} {a.aiNotes.length === 1 ? "report" : "reports"})</summary>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
             {a.aiNotes.map((n, i) => (
               <li key={i}>{n}</li>

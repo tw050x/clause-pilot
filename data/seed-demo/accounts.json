@@ -30,6 +30,11 @@
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
   {
+    "id": "ac-demo-corvid",
+    "name": "Corvid Freight",
+    "createdAt": "2026-10-01T09:00:00.000Z"
+  },
+  {
     "id": "ac-demo-initech",
     "name": "Initech Software",
     "createdAt": "2026-10-01T09:00:00.000Z"

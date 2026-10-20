@@ -1369,3 +1369,10 @@ body.past-open .rightbar { z-index: 45; }
 body { -webkit-user-select: none; user-select: none; }
 .wv-host, .ed-doc, .ProseMirror, .tl, .chat-log, .comment-pop, input, textarea, [contenteditable='true'] { -webkit-user-select: text; user-select: text; }
 .tl button, .tl .btn, .tl .tl-pill, .comment-pop button { -webkit-user-select: none; user-select: none; }
+
+/* Text addressed to an AI reviewer: red in the margin, and quoted under the security check. */
+.wv-bar.chg-injection, .wv-bar.part-injection { background: #dc2626; }
+.ed-unchanged.injection, .wv-part-label.injection { color: #991b1b; background: #fee2e2; }
+.tl-flagged { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.tl-flagged-item { padding: 6px 8px; border-radius: 6px; background: #fef2f2; border: 1px solid #fecaca; line-height: 1.45; }
+.tl-flagged-item q { color: #991b1b; font-weight: 500; }

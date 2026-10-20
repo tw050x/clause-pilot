@@ -9,6 +9,7 @@ Three demos for trying Clause Pilot as a user would: real files opened from your
 | [1. Our NDA, redlined by the client](1-our-nda-two-rounds/README.md) | A client redlines our own NDA. Most of it is our approved wording and needs no reading. You decide their tracked changes and find the changes they didn't track. Their next draft is compared with what you sent back. | 2 |
 | [2. A contract on the client's own paper](2-client-paper/README.md) | A client sends their own agreement, laid out differently from ours. Nothing matches our wording, so the AI compares each paragraph's meaning with our clauses and checks the whole contract against our playbook. | 1 |
 | [3. A supplier's agreement, as it looks in Word](3-supplier-msa/README.md) | A supplier's agreement formatted as a real one is: logo, address blocks, Word numbering, a table with merged cells, header and footer. You review it in the Word layout: deciding their changes (one inside the table), reading their comment and typing into the page. | 1 |
+| [4. Hidden instructions to the AI](4-prompt-injection/README.md) | A client hides instructions to an AI reviewer in their redline: a sentence in invisible white text, and a clause claiming our lawyers approved it. They're caught before any AI reads the draft; the review waits for the security team, who confirm the attack (the AI review goes on with that text withheld) or clear it. | 1 |
 
 Each folder has everything its demo needs and a step-by-step guide (`README.md`):
 - the library and playbook to import;

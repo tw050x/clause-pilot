@@ -50,7 +50,10 @@ export const costOf = (model: string, u: ChatUsage) => {
 export const DEFAULT_BUDGET = { usd: 5, tokens: 1_000_000 }
 
 export interface PipelineDeps {
-  provider: () => AiProvider
+  /** The AI, for this review (text the security team confirmed as an injection is kept from it). */
+  provider: (s: ReviewSession) => AiProvider
+  /** The review's security alert, if text in it was flagged as addressed to an AI reviewer. */
+  security: (s: ReviewSession) => { status: 'open' | 'malicious' | 'false-positive'; by?: string } | null
   /** Save the review and tell the window (throttled when it's often). */
   persist: (s: ReviewSession) => void
   actor: () => string
@@ -124,6 +127,21 @@ export function stopReview(s: ReviewSession, deps: PipelineDeps) {
     for (const st of walk(run.steps)) if (st.status === 'running') ((st.status = 'waiting'), (st.detail = 'Stopped before it finished.'))
     deps.persist(s)
   }
+}
+
+/**
+ * A plan held at the security check, released by the security team: planned the rest of the way
+ * (it still waits for the reviewer to start the review).
+ */
+export function resumePlanning(s: ReviewSession, deps: PipelineDeps) {
+  const run = s.doc?.pipeline
+  if (!run || run.confirmed || run.status !== 'paused' || live.has(s.id)) return
+  run.status = 'running'
+  run.note = undefined
+  deps.persist(s)
+  const flag = { stop: false }
+  live.set(s.id, flag)
+  void go(s, run, deps, flag).finally(() => live.delete(s.id))
 }
 
 /**
@@ -247,19 +265,20 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
   }
   const fresh = (id: string) => !['done', 'skipped'].includes(at(id)?.status ?? 'waiting')
   try {
-    // 1. Hidden instructions: the check made when the draft was read (no AI).
+    // 1. Hidden instructions: the check made when the draft was read (no AI), and what the
+    // security team decided about it. Nothing goes to the AI while the alert is open.
     const sec = at('security')
     if (fresh('security')) {
       begin(sec)
       const flagged = Object.entries(s.injection ?? {}).filter(([, hits]) => hits.length)
-      end(
-        sec,
-        flagged.length ? 'needs-you' : 'done',
-        flagged.length
-          ? `Text addressed to an AI reviewer in ${flagged.map(([id]) => where(s, id)).join(', ')}: see Security before going on.`
-          : 'None found.'
-      )
-      if (flagged.length) return pause('Paused: text addressed to an AI reviewer was found. It needs a person to look first.')
+      const alert = deps.security(s)
+      const places = flagged.map(([id]) => where(s, id)).join(', ')
+      if (!flagged.length && !alert) end(sec, 'done', 'None found.')
+      else if (!alert || alert.status === 'open') {
+        end(sec, 'needs-you', `Text addressed to an AI reviewer${places ? ` in ${places}` : ''}: on security hold until the security team has looked at it (Security).`)
+        return pause('Paused: text addressed to an AI reviewer was found. Nothing goes to the AI until the security team has looked at it.')
+      } else if (alert.status === 'false-positive') end(sec, 'done', `Flagged${places ? ` in ${places}` : ''}, and cleared by ${alert.by ?? 'the security team'} as a false positive: reviewed as it stands.`)
+      else end(sec, 'done', `Confirmed as an injection attempt by ${alert.by ?? 'the security team'}${places ? ` (${places})` : ''}: the flagged text is withheld from the AI, and the rest is reviewed.`)
     }
 
     // 2. Structure: the AI groups the paragraphs into parts and says how closely to check each.
@@ -267,12 +286,16 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     if (fresh('structure')) {
       begin(st)
       const out = (await ask(st, (onUsage) =>
-        deps.provider().schemaAnswer({ name: 'contract_structure', contract: contractText(d.blocks), question: STRUCTURE_QUESTION, schema: schemaToSend(STRUCTURE_SCHEMA) }, onUsage)
+        deps.provider(s).schemaAnswer({ name: 'contract_structure', contract: contractText(d.blocks), question: STRUCTURE_QUESTION, schema: schemaToSend(STRUCTURE_SCHEMA) }, onUsage)
       )) as StructureOut
       if (out.injection_suspected && out.injection_notes.trim()) {
         s.aiInjectionReports.push(`Contract structure: ${out.injection_notes.trim()}`)
-        end(st, 'needs-you', `The AI suspects text addressed to it: ${out.injection_notes.trim()}`)
-        return pause('Paused: the AI suspects text in the contract is addressed to it. See Security.')
+        // Once the security team has decided about this draft, the AI's suspicion is added to
+        // their alert rather than holding the review again.
+        if (!deps.security(s) || deps.security(s)!.status === 'open') {
+          end(st, 'needs-you', `The AI suspects text addressed to it: ${out.injection_notes.trim()}`)
+          return pause('Paused: the AI suspects text in the contract is addressed to it. See Security.')
+        }
       }
       const parts = partsFrom(s, out, deps.uid)
       run.parts = parts
@@ -703,7 +726,7 @@ async function crossCheck(s: ReviewSession, review: PipelineStep, parts: ReviewP
       .join('\n\n')}`,
     `QUESTION: Check these findings TOGETHER, against each other and against the whole contract above, as if every suggested wording and recommendation were made at once. Find: findings that contradict each other (keep the better one, drop the other); suggested wording that would break or change the meaning of another paragraph (a defined term, a cross-reference, a cap, term or carve-out relied on elsewhere), and revise it so it fits; and knock-on effects in other paragraphs that need a change of their own (add a finding there). Drop a finding only if it clashes with another or would do harm. Say in a sentence what you changed and why; if nothing needs changing, say so and leave the lists empty.`
   ].join('\n\n')
-  const out = (await ask((onUsage) => deps.provider().schemaAnswer({ name: 'findings_cross_check', contract: contractText(d.blocks), question, schema: schemaToSend(CROSS_SCHEMA) }, onUsage))) as CrossOut
+  const out = (await ask((onUsage) => deps.provider(s).schemaAnswer({ name: 'findings_cross_check', contract: contractText(d.blocks), question, schema: schemaToSend(CROSS_SCHEMA) }, onUsage))) as CrossOut
   if (out.injection_suspected && out.injection_notes?.trim()) s.aiInjectionReports.push(`Findings checked together: ${out.injection_notes.trim()}`)
   const all = new Map(parts.flatMap((p) => (p.findings ?? []).map((f) => [f.id, { f, p }] as const)))
   const partOf = (blockId: string) => parts.find((p) => p.blockIds.includes(blockId))
@@ -807,7 +830,7 @@ async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: 
   ]
     .filter(Boolean)
     .join('\n\n')
-  const out = (await ask((onUsage) => deps.provider().schemaAnswer({ name: 'part_proposal', contract: contractText(d.blocks), question, schema: schemaToSend(PROPOSAL_SCHEMA) }, onUsage))) as ProposalOut
+  const out = (await ask((onUsage) => deps.provider(s).schemaAnswer({ name: 'part_proposal', contract: contractText(d.blocks), question, schema: schemaToSend(PROPOSAL_SCHEMA) }, onUsage))) as ProposalOut
   if (out.injection_suspected && out.injection_notes?.trim()) s.aiInjectionReports.push(`${part.title} (proposal): ${out.injection_notes.trim()}`)
   const ids = new Set(part.blockIds)
   const open = new Map(blocks.map((b) => [b.id, new Set(openChanges(d, b))]))
@@ -885,7 +908,7 @@ async function writeEmail(s: ReviewSession, run: PipelineRun, deps: PipelineDeps
     `An email built from the decisions (its facts are right; improve the writing, don't add to them):\n<subject>${base.subject}</subject>\n<body>\n${base.body}\n</body>`,
     `QUESTION: Write the cover email to them for our marked-up copy: a subject and a body. Courteous and brief, in plain English, from ${deps.actor()}. Say what we accept, what we've changed and why (from the decisions above, approved ones only), and anything still open. Name paragraphs by number. No invented facts, no promises.`
   ].join('\n\n')
-  const out = (await ask((onUsage) => deps.provider().schemaAnswer({ name: 'cover_email', contract: contractText(s.doc!.blocks), question, schema: schemaToSend(EMAIL_SCHEMA) }, onUsage))) as { subject: string; body: string; injection_suspected: boolean; injection_notes: string }
+  const out = (await ask((onUsage) => deps.provider(s).schemaAnswer({ name: 'cover_email', contract: contractText(s.doc!.blocks), question, schema: schemaToSend(EMAIL_SCHEMA) }, onUsage))) as { subject: string; body: string; injection_suspected: boolean; injection_notes: string }
   if (out.injection_suspected && out.injection_notes?.trim()) s.aiInjectionReports.push(`Cover email: ${out.injection_notes.trim()}`)
   return { subject: out.subject.trim() || base.subject, body: out.body.trim() || base.body, generatedBy: 'ai' }
 }
@@ -957,12 +980,12 @@ async function reviewPart(s: ReviewSession, run: PipelineRun, part: ReviewPart, 
       const positions = applicable(playbook, s.contractType)
       const extra = questions.filter((q) => !q.priority)
       const out = (await ask(x, (onUsage) =>
-        deps.provider().schemaAnswer(
+        deps.provider(s).schemaAnswer(
           { name: 'part_standards', contract: contractText(d.blocks), question: [standardsQuestion(s, part, blocks, approved, positions, extra), decided(part)].filter(Boolean).join('\n\n'), schema: schemaToSend(standardsSchema(extra.map((q) => q.id))) },
           onUsage
         )
       )) as StandardsOut
-      if (suspect(s, part, out, found)) return finishPart(step, findings, part, deps, s)
+      if (suspect(s, part, out, found, deps)) return finishPart(step, findings, part, deps, s)
       const ids = new Set(part.blockIds)
       if (out.approved.compared_with !== 'none' && !out.approved.same_intent) {
         const c = approved.find((a) => a.id === out.approved.compared_with)
@@ -1004,9 +1027,9 @@ async function reviewPart(s: ReviewSession, run: PipelineRun, part: ReviewPart, 
   const y = sub('contract', part.depth === 'full' ? 'The rest of the contract' : 'Language and consistency', 'running', 'Conflicts, their changes, language…')
   const open = new Map(blocks.map((b) => [b.id, new Set(openChanges(d, b))]))
   const out = (await ask(y, (onUsage) =>
-    deps.provider().schemaAnswer({ name: 'part_contract', contract: contractText(d.blocks), question: [contractQuestion(s, part, blocks), decided(part)].filter(Boolean).join('\n\n'), schema: schemaToSend(CONTRACT_SCHEMA) }, onUsage)
+    deps.provider(s).schemaAnswer({ name: 'part_contract', contract: contractText(d.blocks), question: [contractQuestion(s, part, blocks), decided(part)].filter(Boolean).join('\n\n'), schema: schemaToSend(CONTRACT_SCHEMA) }, onUsage)
   )) as ContractOut
-  if (suspect(s, part, out, found)) return finishPart(step, findings, part, deps, s)
+  if (suspect(s, part, out, found, deps)) return finishPart(step, findings, part, deps, s)
   const known = new Set(d.blocks.map((b) => b.id))
   for (const c of out.conflicts)
     found({ check: 'conflict', severity: c.severity === 'high' ? 'high' : c.severity === 'medium' ? 'warn' : 'info', title: 'Conflicts with another clause', detail: c.description, blockId: part.blockIds[0], related: c.other_paragraph_ids.filter((x) => known.has(x)) })
@@ -1050,9 +1073,13 @@ function finishPart(step: PipelineStep, findings: PartFinding[], part: ReviewPar
 }
 
 /** The AI suspects text in the part is addressed to it: a finding for the reviewer, and the security report. */
-function suspect(s: ReviewSession, part: ReviewPart, out: { injection_suspected: boolean; injection_notes: string }, found: (f: Omit<PartFinding, 'id'>) => void) {
+function suspect(s: ReviewSession, part: ReviewPart, out: { injection_suspected: boolean; injection_notes: string }, found: (f: Omit<PartFinding, 'id'>) => void, deps: PipelineDeps) {
   if (!out.injection_suspected || !out.injection_notes.trim()) return false
   s.aiInjectionReports.push(`${part.title}: ${out.injection_notes.trim()}`)
+  // The security team has decided about this draft already: what the AI noticed goes on their
+  // alert, and the part is reviewed as usual.
+  const alert = deps.security(s)
+  if (alert && alert.status !== 'open') return false
   found({ check: 'standards', severity: 'high', title: 'Possible instructions to the AI', detail: out.injection_notes.trim(), blockId: part.blockIds[0] })
   return true
 }

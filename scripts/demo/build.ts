@@ -21,12 +21,13 @@ import { PLAYBOOK } from './playbook'
 import JSZip from 'jszip'
 import { MSA_FILE, msaDocx } from './msa'
 import { writeDemoSeed } from './seed'
-import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, KESTREL, ORDER_FORMS, type Block, type ContractFile } from './contracts'
+import { BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2, CORVID_V0, CORVID_V1, KESTREL, ORDER_FORMS, type Block, type ContractFile } from './contracts'
 
 const DEMOS = [
   { dir: 'demo/1-our-nda-two-rounds', contracts: [BRIGHTWATER_V0, BRIGHTWATER_V1, BRIGHTWATER_V2] },
   { dir: 'demo/2-client-paper', contracts: [KESTREL] },
-  { dir: 'demo/3-supplier-msa', contracts: [] }
+  { dir: 'demo/3-supplier-msa', contracts: [] },
+  { dir: 'demo/4-prompt-injection', contracts: [CORVID_V0, CORVID_V1] }
 ]
 
 const by = 'PortSwigger Legal'
@@ -60,6 +61,8 @@ async function writeDocx(c: ContractFile, path: string) {
     const op = b.tracked?.inserted ? 'ins' : b.tracked?.deleted ? 'del' : 'same'
     const head: Run[] = num ? [op === 'ins' ? ins(num, true) : op === 'del' ? del(num, true) : new TextRun({ text: num, bold: true })] : []
     const pieces: Piece[] = b.tracked?.base ? wholeWords(diffSegments(b.tracked.base, b.text)) : [{ op, text: b.text }]
+    // Hidden text: white and 1pt, after the paragraph's own words.
+    if (b.hidden) return [...head, ...pieces.map(make), new TextRun({ text: b.hidden, color: 'FFFFFF', size: 2 })]
     if (commentId === null) return [...head, ...pieces.map(make)]
     if (!b.anchor) return [new CommentRangeStart(commentId), ...head, ...pieces.map(make), new CommentRangeEnd(commentId)]
     // Split the pieces where the anchor starts and ends (counted in the proposed text: deletions take no room).
