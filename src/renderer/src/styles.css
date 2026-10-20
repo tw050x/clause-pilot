@@ -1283,3 +1283,21 @@ body.past-open .rightbar { z-index: 45; }
 .ck-question input { margin-top: 2px; }
 .ck-why { display: block; margin-top: 1px; }
 .ck-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* The interface crashed: the error, and Reload. */
+.crash {
+  max-width: 900px;
+  margin: 60px auto;
+  padding: 0 24px;
+}
+.crash-detail {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--surface-2, #f6f6f7);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 60vh;
+}

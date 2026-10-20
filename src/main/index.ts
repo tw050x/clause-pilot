@@ -205,6 +205,11 @@ function createWindow() {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // The window's errors in the terminal too, so a crash is visible where the app was started.
+  win.webContents.on('console-message', (e) => {
+    if (e.level === 'error') console.error(`[renderer] ${e.message}${e.sourceId ? ` (${e.sourceId}:${e.lineNumber})` : ''}`)
+  })
+  win.webContents.on('render-process-gone', (_e, d) => console.error(`[renderer] gone: ${d.reason} (exit ${d.exitCode})`))
 
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(here, '../renderer/index.html'))
