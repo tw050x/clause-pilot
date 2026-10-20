@@ -25,7 +25,16 @@ const PREFILL = 800
 const DECODE = 25
 const THINK = 120
 let gpuFreeAt = 0
+/**
+ * Quick: answers come almost at once (the app sets it while it plans the demo's reviews in bulk,
+ * when the demo workspace is made, so they're ready in seconds rather than minutes).
+ */
+let quick = false
+export function setQuick(on) {
+  quick = !!on
+}
 async function modelTime(promptChars, answerChars) {
+  if (quick) return sleep(150)
   if (process.env.DEMO_DELAY !== undefined) return sleep(Number(process.env.DEMO_DELAY))
   if (!(SPEED > 0)) return
   const prefill = ((promptChars / 4) / PREFILL) * 1000 / SPEED

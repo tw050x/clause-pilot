@@ -20,7 +20,7 @@ import { answerMarkdown, changesAnswer, intentAnswer, playbookAnswer, schemaAnsw
 import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
-import { startDemoServer } from '../../demo-server/server.mjs'
+import { setQuick as demoQuick, startDemoServer } from '../../demo-server/server.mjs'
 import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
@@ -813,6 +813,8 @@ function planAll() {
     // Each contract's latest draft (an earlier round's was done with).
     const latest = new Map<string, number>()
     for (const r of all) if (r.contractId) latest.set(r.contractId, Math.max(latest.get(r.contractId) ?? 0, r.version ?? 0))
+    // The demo's: its server answers at once meanwhile (a model's pace is for what the reviewer starts).
+    if (demoMode()) demoQuick(true)
     planWaiting = all
       .filter((r) => !(r.original || r.closed || (r.contractId && (archived.has(r.contractId) || (r.version ?? 0) < (latest.get(r.contractId) ?? 0))) || r.ai?.state !== 'not-planned'))
       .map((r) => r.id)
@@ -826,6 +828,7 @@ function planAll() {
   })()
     .catch((e) => console.warn('Planning the reviews stopped:', e))
     .finally(() => {
+      demoQuick(false)
       planningAll = null
       planWaiting = []
       workChanged()
