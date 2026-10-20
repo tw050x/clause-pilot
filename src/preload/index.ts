@@ -22,6 +22,10 @@ const api: Api = {
     vllmModels: (url) => invoke('ai:vllmModels', url),
     run: (id, task) => invoke('ai:run', id, task)
   },
+  work: {
+    list: () => invoke('work:list'),
+    onChange: on('work:changed')
+  },
   workspace: {
     clear: () => invoke('workspace:clear'),
     summary: () => invoke('workspace:summary')

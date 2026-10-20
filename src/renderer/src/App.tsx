@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Account, ContractRecord, Nomination, PlaybookProposal, DraftOrigin, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
+import type { Account, BackgroundJob, ContractRecord, Nomination, PlaybookProposal, DraftOrigin, ReviewSession, ReviewSummary, SecurityAlert, Settings } from '@shared/types'
 import { Icon } from './lib/icons'
 import { SidebarIcon } from './lib/sidebarIcons'
 import { NavDrawer, type View } from './components/NavDrawer'
@@ -14,6 +14,7 @@ import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
+import { WorkView } from './views/WorkView'
 import { ContractView, ContractsListView, NewContractView } from './views/ContractView'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
@@ -59,6 +60,20 @@ export function App() {
   useEffect(() => window.api.security.onUpdate(() => refreshAlerts()), [refreshAlerts])
 
   // Live pipeline updates for the open session.
+  // Background work (the header's Working pill, the queue page): asked for when it changes, and
+  // every couple of seconds while there is some (to follow where it's got to).
+  const [jobs, setJobs] = useState<BackgroundJob[]>([])
+  const refreshJobs = useCallback(() => window.api.work.list().then(setJobs), [])
+  useEffect(() => {
+    void refreshJobs()
+    return window.api.work.onChange(() => void refreshJobs())
+  }, [refreshJobs])
+  useEffect(() => {
+    if (!jobs.length) return
+    const t = setInterval(() => void refreshJobs(), 2000)
+    return () => clearInterval(t)
+  }, [jobs.length > 0, refreshJobs])
+
   // Any review's update (the background planning, say): the lists catch up, at most once a second.
   const listsDue = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(
@@ -68,6 +83,7 @@ export function App() {
         listsDue.current ??= setTimeout(() => {
           listsDue.current = null
           void refreshReviews()
+          void refreshJobs()
         }, 1000)
       }),
     []
@@ -203,6 +219,13 @@ export function App() {
           <SidebarIcon side="left" open={navOpen} />
         </button>
         <div className="spacer" />
+        {/* Background work going on: how much, striped as it moves; opens the queue page. */}
+        {jobs.length > 0 && (
+          <button className={`work-pill ${view === 'work' ? 'on' : ''}`} onClick={() => setView('work')} title="See what’s running in the background">
+            Working · {jobs.filter((j) => j.status === 'running').length}
+            {jobs.some((j) => j.status === 'waiting') ? ` + ${jobs.filter((j) => j.status === 'waiting').length} waiting` : ''}
+          </button>
+        )}
         {!online && (
           <span className="mode-pill offline has-tip" tabIndex={0}>
             Offline
@@ -350,6 +373,7 @@ export function App() {
             />
           )}
           {view === 'audit' && <AuditView session={session} />}
+          {view === 'work' && <WorkView jobs={jobs} onOpenReview={openSession} />}
           {view === 'settings' && settings && (
             <SettingsView
               settings={settings}

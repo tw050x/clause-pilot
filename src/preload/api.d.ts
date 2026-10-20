@@ -1,4 +1,5 @@
 import type {
+  BackgroundJob,
   Account, ContractRecord, AiTaskKind, AiQuestion,
   AuditEntry, ChatConversation, SeenHit, EmailDraft, LibraryClause, Nomination,
   PlaybookPosition, PlaybookProposal, Precedent, ListStyle, RedlineComment, ChangeStatus, OurComment, RedlineStats, ReviewSession, ReviewSummary, SecurityAlert, Settings, DraftOrigin, DraftProbe
@@ -19,6 +20,12 @@ export interface Api {
     vllmModels(url: string): Promise<string[]>
     /** Run an AI task on highlighted text; the answer arrives as session updates (Explain also streams, as chat deltas with the run's id). */
     run(id: string, task: { questionId: string; blockIds: string[]; quote: string }): Promise<{ session: ReviewSession; runId: string }>
+  }
+  /** Background work: AI reviews planned or run, questions asked, reviews waiting to be planned. */
+  work: {
+    list(): Promise<BackgroundJob[]>
+    /** It changed (ask for the list again). */
+    onChange(cb: () => void): () => void
   }
   workspace: {
     summary(): Promise<{ library: number; playbook: number; precedents: number; reviews: number; nominations: number; playbookProposed: number }>

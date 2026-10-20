@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
-import type { Account, ContractRecord, ChatMessage, DraftOrigin, DraftProbe, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings } from '@shared/types'
+import type { Account, ContractRecord, ChatMessage, DraftOrigin, DraftProbe, EmailDraft, LibraryClause, PlaybookPosition, PlaybookProposal, ReviewSession, SecurityAlert, Settings, BackgroundJob } from '@shared/types'
 import { Store } from './store'
 import { AuditLog } from './audit'
 import { parseFile } from './ingest/parse'
@@ -21,7 +21,7 @@ import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { startDemoServer } from '../../demo-server/server.mjs'
-import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -757,12 +757,53 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string, ori
  * AI review's first steps, run in the background, so the plan is there when the reviewer starts
  * it. Not for the original we sent, a closed review, one on security hold, or without the AI.
  */
+/** Tell the window the background work changed (it asks for the list again: the header pill, the queue page). */
+const workChanged = () => send('work:changed', null)
+
+/**
+ * What's going on in the background: AI reviews planned or run, questions asked of highlighted
+ * text (running), and the reviews waiting to be planned.
+ */
+function backgroundWork(): BackgroundJob[] {
+  const summaries = new Map(ws.store.listSessions().map((r) => [r.id, r]))
+  const about = (id: string) => {
+    const r = summaries.get(id)
+    return { sessionId: id, accountName: r?.accountName, contractTitle: r?.contractTitle, version: r?.version, docName: r?.docName ?? '' }
+  }
+  const jobs: BackgroundJob[] = []
+  for (const id of pipelineIds()) {
+    const s = sessions.get(id)
+    const run = s?.doc?.pipeline
+    if (!run) continue
+    const step = run.steps.filter((x) => x.status === 'running').at(-1)
+    const kids = step?.children ?? []
+    const done = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
+    jobs.push({
+      id: `run:${id}`,
+      kind: run.confirmed ? 'review' : 'plan',
+      status: 'running',
+      ...about(id),
+      title: run.confirmed ? 'AI review' : 'Planning the review',
+      detail: step ? `${step.title}${kids.length ? `: ${done} of ${kids.length}` : ''}` : 'Starting',
+      startedAt: run.startedAt
+    })
+  }
+  for (const s of sessions.values())
+    for (const r of s.doc?.aiRuns ?? [])
+      if (r.status === 'running' && inFlight.has(r.id)) jobs.push({ id: `ask:${r.id}`, kind: 'ask', status: 'running', ...about(s.id), title: 'Question on highlighted text', detail: r.title ?? r.question.split('\n')[0], startedAt: r.at })
+  for (const id of planWaiting) jobs.push({ id: `plan:${id}`, kind: 'plan', status: 'waiting', ...about(id), title: 'Planning the review', detail: 'Waiting its turn' })
+  return jobs
+}
+ipcMain.handle('work:list', () => backgroundWork())
+
 /**
  * Plan every open review (each contract's latest draft) not planned yet, one after another, in the background (the demo's, once
  * they're made: on its first open, and again after a reset). One opened meanwhile is planned
  * straight away instead (planOnOpen).
  */
 let planningAll: Promise<void> | null = null
+/** The reviews planAll has still to plan, in order (the queue page shows them waiting). */
+let planWaiting: string[] = []
 function planAll() {
   planningAll ??= (async () => {
     await ensureDemoServer()
@@ -772,16 +813,23 @@ function planAll() {
     // Each contract's latest draft (an earlier round's was done with).
     const latest = new Map<string, number>()
     for (const r of all) if (r.contractId) latest.set(r.contractId, Math.max(latest.get(r.contractId) ?? 0, r.version ?? 0))
-    for (const r of all) {
-      if (ws !== at) break
-      if (r.original || r.closed || (r.contractId && (archived.has(r.contractId) || (r.version ?? 0) < (latest.get(r.contractId) ?? 0))) || r.ai?.state !== 'not-planned') continue
-      const s = session(r.id)
+    planWaiting = all
+      .filter((r) => !(r.original || r.closed || (r.contractId && (archived.has(r.contractId) || (r.version ?? 0) < (latest.get(r.contractId) ?? 0))) || r.ai?.state !== 'not-planned'))
+      .map((r) => r.id)
+    workChanged()
+    while (planWaiting.length && ws === at) {
+      const s = session(planWaiting.shift()!)
       planOnOpen(s)
+      workChanged()
       while (pipelineRunning(s.id)) await new Promise((ok) => setTimeout(ok, 500))
     }
   })()
     .catch((e) => console.warn('Planning the reviews stopped:', e))
-    .finally(() => (planningAll = null))
+    .finally(() => {
+      planningAll = null
+      planWaiting = []
+      workChanged()
+    })
   return planningAll
 }
 
@@ -1400,11 +1448,13 @@ ipcMain.handle('ai:run', (_e, sessionId: string, task: { questionId: string; blo
   w.audit.append(actor(), 'ai.task-requested', s.id, { question: q.id, title: q.title, method: q.method, paragraphs: places })
   persist(s)
   inFlight.add(run.id)
+  workChanged()
   const finish = (patch: Partial<AiTaskRun>) => {
     const r = d.aiRuns!.find((x) => x.id === run.id)!
     // Settled already (it timed out, then the answer came late): keep what the reviewer was shown.
     if (r.status !== 'running') return
     inFlight.delete(run.id)
+    workChanged()
     Object.assign(r, patch, { at: new Date().toISOString() })
     w.audit.append('system', `ai.task.${patch.status}`, s.id, { question: q.id, paragraphs: places, error: patch.error })
     persist(s)

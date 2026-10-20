@@ -90,6 +90,11 @@ export function isRunning(sessionId: string) {
   return live.has(sessionId)
 }
 
+/** The reviews whose AI review is running now. */
+export function runningIds() {
+  return [...live.keys()]
+}
+
 export function stopReview(s: ReviewSession, deps: PipelineDeps) {
   const flag = live.get(s.id)
   if (flag) flag.stop = true

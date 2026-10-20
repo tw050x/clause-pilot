@@ -1,7 +1,7 @@
 import type { Account, ContractRecord, ReviewSession, ReviewSummary } from '@shared/types'
 import { Chevron, Icon } from '../lib/icons'
 
-export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'questions' | 'history' | 'queue' | 'security' | 'audit' | 'settings'
+export type View = 'home' | 'contracts' | 'contract' | 'new-contract' | 'review' | 'reviews' | 'library' | 'playbook' | 'questions' | 'history' | 'queue' | 'security' | 'audit' | 'settings' | 'work'
 
 interface Props {
   open: boolean

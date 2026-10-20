@@ -643,6 +643,22 @@ export interface ReviewSummary {
   ai?: ReviewState
 }
 
+/** Work going on in the background (an AI review planned or run, a question asked): the queue page. */
+export interface BackgroundJob {
+  id: string
+  kind: 'plan' | 'review' | 'ask'
+  status: 'running' | 'waiting'
+  sessionId: string
+  accountName?: string
+  contractTitle?: string
+  version?: number
+  docName: string
+  /** What it is ("Planning the review"), and where it's got to. */
+  title: string
+  detail: string
+  startedAt?: string
+}
+
 /** Where a review's AI review stands, in a word (the state) and a line (what's behind it). */
 export interface ReviewState {
   state: 'not-planned' | 'planning' | 'planned' | 'reviewing' | 'your-turn' | 'paused' | 'stopped' | 'done' | 'failed'
