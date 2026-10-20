@@ -31,7 +31,7 @@ export function WorkView({ jobs, reviews, onOpenReview }: { jobs: BackgroundJob[
         <table className="t" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ width: 120 }}>What</th>
+              <th style={{ width: 190 }}>What</th>
               <th style={{ width: '34%' }}>Contract</th>
               <th>Where it’s got to</th>
               <th style={{ width: 90 }}>{you ? 'Since' : 'Started'}</th>
