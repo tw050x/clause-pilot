@@ -101,6 +101,7 @@ const PLANNED_STEPS: PipelineStep[] = [
   ['plan', 'Plan the review'],
   ['start', 'Start the review'],
   ['review', 'Review each part'],
+  ['crosscheck', 'Check the findings together'],
   ['consolidate', 'Bring the findings together'],
   ['approve', 'Make the changes'],
   ['check', 'Your check of the findings'],
@@ -115,6 +116,7 @@ const ABOUT: Record<string, string> = {
   plan: 'What the review is estimated to use.',
   start: 'Once the plan is ready.',
   review: 'Each part against our standards.',
+  crosscheck: 'Clashes and knock-on effects across parts.',
   consolidate: 'One change per part, from the findings.',
   approve: 'Each change made to the draft.',
   check: 'Once the changes are made.',
@@ -132,7 +134,7 @@ function noteOf(run: PipelineRun | undefined, defaults: { ready: boolean; why?: 
 
 function RunStatus({ run }: { run?: PipelineRun }) {
   if (!run) return <span className="tl-pill none">Not planned</span>
-  const label = { running: run.confirmed ? 'Running' : 'Planning', planned: 'Planned', paused: run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') ? 'Your turn' : 'Paused', stopped: 'Stopped', done: 'Done', error: 'Failed' }[run.status]
+  const label = { running: run.confirmed ? 'Running' : 'Planning', planned: 'Planned', paused: run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') ? 'Manual review' : 'Paused', stopped: 'Stopped', done: 'Done', error: 'Failed' }[run.status]
   return <span className={`tl-pill ${run.status}`}>{run.status === 'running' && <span className="spinner tl-spin" />}{label}</span>
 }
 

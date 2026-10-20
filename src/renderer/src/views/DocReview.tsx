@@ -79,28 +79,8 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   const [showHistory, setShowHistory] = useState(false)
   /** The right of the bottom bar, where the selection's Accept and Reject go. */
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
-  // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
-  /**
-   * Explain changes: hovering a change shows what it is. Off until turned on (it can get in the
-   * way), and off again at the next click or key press anywhere but its button.
-   */
-  const [explain, setExplain] = useState(false)
   /** New draft only: the page with every change applied, to read it as it would be. */
   const [finalView, setFinalView] = useState(false)
-  const explainBtn = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!explain) return
-    const off = (e: Event) => {
-      if (explainBtn.current?.contains(e.target as Node)) return
-      setExplain(false)
-    }
-    document.addEventListener('pointerdown', off, true)
-    document.addEventListener('keydown', off, true)
-    return () => {
-      document.removeEventListener('pointerdown', off, true)
-      document.removeEventListener('keydown', off, true)
-    }
-  }, [explain])
   /**
    * A paragraph as it stood at a point in its history (See it then, in the history): the action
    * it's shown just after, or null for as it was received. Shown over the paragraph on the page.
@@ -241,15 +221,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
     <section className="rc-section rc-head">
       <div className="rc-title-row">
         <div className="rc-title">{session.version !== undefined && contractTitle ? `${accountName} · ${contractTitle}` : session.docName}</div>
-        {!session.original && (
-        <button
-          className="btn sm rc-close"
-          title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
-          onClick={() => (session.closed ? act(window.api.review.close(session.id, false)) : setConfirmClose(true))}
-        >
-          {session.closed ? 'Reopen' : 'Close review'}
-        </button>
-        )}
       </div>
       {session.closed && (
         <div className="banner info">
@@ -322,7 +293,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} reference={!!session.original} explain={explain} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} reference={!!session.original} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -413,17 +384,14 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
                 <Icon name="file" size={14} /> <span className="bb-label">New draft only</span>
               </button>
             )}
-            {layout === 'word' && (
-              <button
-                ref={explainBtn}
-                className={`btn sm bottombar-explain ${explain ? 'on' : ''}`}
-                aria-pressed={explain}
-                onClick={() => setExplain((v) => !v)}
-                title="Hover over a change to see what it is, who made it and where it stands. Turns off when you click or type."
-              >
-                <Icon name="question" size={14} /> <span className="bb-label">Explain changes</span>
-              </button>
-            )}
+            {/* Done with the review: closed (asked first), or reopened. */}
+            <button
+              className="btn sm rc-close"
+              title={session.closed ? 'Show it on the Reviews page again' : 'Done with it: hide it on the Reviews page (nothing is deleted)'}
+              onClick={() => (session.closed ? act(window.api.review.close(session.id, false)) : setConfirmClose(true))}
+            >
+              {session.closed ? 'Reopen review' : 'Close review'}
+            </button>
           </>,
           bar
         )}

@@ -864,6 +864,8 @@ export interface PartFinding {
   comment?: string
   /** Other paragraphs it concerns (a conflict). */
   related?: string[]
+  /** Dropped when the findings were checked together (it clashed with another, or would do harm), and why. */
+  dropped?: string
 }
 
 export type PipelineStatus = 'waiting' | 'running' | 'done' | 'skipped' | 'needs-you' | 'error'

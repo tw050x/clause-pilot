@@ -122,7 +122,6 @@ button.mode-pill:hover { filter: brightness(0.96); }
 /* Narrow: the view toggles, then History, show their icons only (their tooltips still name them). */
 .bottombar { container-type: inline-size; }
 .bottombar .btn { white-space: nowrap; flex-shrink: 0; }
-@container (max-width: 1000px) { .bottombar-final .bb-label, .bottombar-explain .bb-label { display: none; } }
 @container (max-width: 760px) { .bottombar .bb-label { display: none; } .bottombar .run-btn .bb-label { display: inline; } }
 .run-error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The original we sent: nothing but Back, at the start of the bar. */
@@ -767,8 +766,6 @@ del.us-del ins.th-ins { color: inherit; }
 .ed-unchanged.decide { color: #1d4ed8; background: color-mix(in srgb, #1d4ed8 10%, var(--surface)); }
 .ed-unchanged.edited { color: var(--rejected); background: color-mix(in srgb, var(--rejected) 10%, var(--surface)); }
 .ed-unchanged.read { color: var(--text-2); background: var(--surface-2); }
-.ed-unchanged[data-tip]::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 4px); z-index: 30; width: 240px; padding: 7px 9px; border-radius: 7px; background: var(--text); color: var(--surface); font: 400 12px/1.45 system-ui, sans-serif; letter-spacing: normal; white-space: normal; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.12s 0.15s; }
-.ed-unchanged[data-tip]:hover::after { opacity: 1; visibility: visible; }
 /* A highlight with AI answers: a marker on the bar at its first paragraph; click to select it again. */
 .ed-ai-mark { position: absolute; left: 64px; width: 20px; height: 20px; margin-top: 2px; display: grid; place-items: center; padding: 0; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--processing) 45%, var(--border)); background: var(--surface); color: var(--processing); box-shadow: var(--shadow); cursor: pointer; pointer-events: auto; }
 .ed-ai-mark:hover { background: var(--processing-tint); }
@@ -1057,21 +1054,11 @@ button.ai-card-go:hover { background: var(--surface-2); color: var(--text); }
 .wv-st-ins.yours, .wv-st-del.yours { color: #b42318; }
 .wv-sizer { position: absolute; left: -10000px; top: 0; visibility: hidden; white-space: pre-wrap; }
 .wv-st-none { color: var(--text-3); font-family: var(--font, inherit); font-size: 12.5px; }
-/* A change's tooltip: who, what, when and where it stands. */
-.wv-tip { position: absolute; z-index: 5; max-width: 330px; padding: 8px 10px; border-radius: 8px; background: #1c2128; color: #fff; font: 12px/1.45 system-ui, sans-serif; box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25); pointer-events: none; }
-.wv-tip-title { font-weight: 600; }
-.wv-tip-quote { margin-top: 2px; color: #e6e8eb; }
-.wv-tip-meta { margin-top: 4px; color: #a8b0ba; font-size: 11px; }
-.wv-tip-note { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.15); color: #e6e8eb; font-style: italic; }
-/* The change a tooltip is about. */
-.wv-wrap .superdoc-text-run.wv-tip-hl, .wv-wrap .wv-tip-hl { background-color: color-mix(in srgb, var(--processing) 22%, transparent) !important; border-radius: 2px; }
 .rc-close { font-weight: 600; border-color: var(--text-2); color: var(--text); }
 .rc-close:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 .wv-ai .wv-ai-spin { width: 9px; height: 9px; border-width: 1.5px; flex-shrink: 0; }
 .bottombar-final { margin-left: auto; }
-.bottombar .btn.bottombar-explain.on { background: var(--processing-tint); border-color: var(--processing); color: var(--processing); }
 /* Explain changes on, like an inspector: a help cursor over the page until the next click or key. */
-.wv-wrap.explaining, .wv-wrap.explaining * { cursor: help !important; }
 .bottombar .btn.bottombar-final.on { background: var(--processing-tint); border-color: var(--processing); color: var(--processing); }
 /* New draft only: inserted text reads as plain text, not marked. */
 .wv-wrap.final [data-track-change-kind], .wv-wrap.final [data-track-change-kind] * { text-decoration: none !important; border-color: transparent !important; color: inherit !important; }
@@ -1178,7 +1165,6 @@ body.past-open .rightbar { z-index: 45; }
 .wv-part-mark { cursor: default; }
 .wv-part-mark.running { color: var(--processing); border-color: color-mix(in srgb, var(--processing) 45%, var(--border)); }
 .wv-part-mark.needs-you { color: #92400e; border-color: color-mix(in srgb, #d97706 55%, var(--border)); background: color-mix(in srgb, #d97706 10%, var(--surface)); }
-.wv-part-mark[data-tip]:hover::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: 0; white-space: pre-line; width: max-content; max-width: 260px; padding: 6px 8px; border-radius: 6px; background: #1c2128; color: #fff; font-size: 11.5px; font-weight: 400; line-height: 1.4; z-index: 6; }
 .tl-step.focus > .tl-row .tl-title { color: var(--processing); }
 .tl-proposal { margin-top: 6px; padding: 10px 11px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; font-weight: 400; }
 .tl-prop-summary { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text); }

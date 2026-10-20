@@ -3,7 +3,7 @@ import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { indentList, listAfter } from '@shared/numbering'
-import { changeKey, commentResolved, groupOf, hasOpenChanges, marksFor, segmentsOf, shownText } from '@shared/changes'
+import { commentResolved, groupOf, hasOpenChanges, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { commentLabel, setFlashFallback, type Highlight, type SelectedChange } from './DocEditor'
@@ -30,8 +30,6 @@ interface Props {
   act: (p: Promise<ReviewSession>) => Promise<boolean>
   /** Show only a paragraph's comments (the comment marker beside it). */
   onOpenComments: (blockId: string) => void
-  /** Explain changes is on: hovering a change shows its tooltip. */
-  explain: boolean
   /** New draft only: the page with every change applied, no struck or marked text. */
   final: boolean
   /** Show only the questions asked of some text (the AI marker beside it). */
@@ -112,7 +110,7 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, explain, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText, reference }: Props) {
+export function WordView({ session, reviewer, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onShowText, reference }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -588,181 +586,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
     const c = gutter.cards.find((c) => y >= c.top && y <= c.top + c.height && x >= c.left && x <= c.right)
     const id = c?.blockId ?? null
     if (id !== hovered) setHovered(id)
-    // A change under the pointer (on the page, or in a stage shown over a paragraph): what it is
-    // (with Explain changes on).
-    if (!explain) return
-    const target = e.target as HTMLElement
-    const onPage = current.current?.host.contains(target) ? target.closest<HTMLElement>('[data-track-change-id]') : null
-    const inStage = target.closest<HTMLElement>('[data-stage-seg]')
-    const key = onPage ? `p:${onPage.dataset.trackChangeId}` : inStage ? `s:${inStage.dataset.stageSeg}` : null
-    if (key === tip?.key) return
-    const next = key ? ((onPage ? explainPage(onPage) : explainStage(inStage!)) ?? null) : null
-    if (next) Object.assign(next, placeTip(next.els.length ? next.els : [target]))
-    // The change it's about, tinted while it shows.
-    for (const el of tinted.current) el.classList.remove('wv-tip-hl')
-    tinted.current = next?.els ?? []
-    for (const el of tinted.current) el.classList.add('wv-tip-hl')
-    setTip(next)
   }
-  const tinted = useRef<Element[]>([])
-  const clearTip = () => {
-    for (const el of tinted.current) el.classList.remove('wv-tip-hl')
-    tinted.current = []
-    setTip(null)
-  }
-
-  /**
-   * The tooltip for a change: who made it and what it does, when and where it stands (to decide,
-   * your edit, or removed by your decision), and the comment on it, if any.
-   */
-  type Tip = { key: string; x: number; y: number; above: number; title: string; quote: string; meta: string; note?: string; els: Element[] }
-  const [tip, setTip] = useState<Tip | null>(null)
-  useEffect(() => clearTip(), [session, explain])
-  const short = (t: string) => {
-    const x = tidy(t)
-    return x.length > 110 ? `${x.slice(0, 107)}…` : x
-  }
-  const day = (t?: string) => (t ? new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '')
-  /**
-   * Where a tooltip goes: never over what it's about. That's every line of the change (a change
-   * can wrap onto several, a replacement is two changes): under its last line, or (placed once
-   * the tooltip's height is known, below) over its first if there's no room under it on screen.
-   */
-  const placeTip = (els: Element | Element[]) => {
-    const w = wrap.current!
-    const base = w.getBoundingClientRect()
-    const rects = ([] as Element[]).concat(els).flatMap((el) => [...el.getClientRects()]).filter((r) => r.height)
-    const top = Math.min(...rects.map((r) => r.top))
-    const bottom = Math.max(...rects.map((r) => r.bottom))
-    const left = rects.find((r) => r.top === top)?.left ?? rects[0]?.left ?? base.left
-    return { x: Math.max(8, Math.min(left - base.left, w.clientWidth - 340)), y: bottom - base.top + w.scrollTop + 6, above: top - base.top + w.scrollTop - 6 }
-  }
-  const tipEl = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const el = tipEl.current
-    const w = wrap.current
-    if (!el || !w || !tip) return
-    // The visible part of the page: the nearest thing that scrolls it.
-    let sc: HTMLElement | null = w
-    while (sc && sc.scrollHeight <= sc.clientHeight + 2) sc = sc.parentElement
-    const view = (sc ?? w).getBoundingClientRect()
-    const base = w.getBoundingClientRect()
-    const h = el.offsetHeight
-    const under = base.top - w.scrollTop + tip.y + h
-    const over = base.top - w.scrollTop + tip.above - h
-    el.style.top = `${under > view.bottom && over >= view.top ? tip.above - h : tip.y}px`
-  }, [tip])
-  const explainPage = (ch: HTMLElement): Tip | null => {
-    const loaded = current.current
-    if (!loaded || !wrap.current) return null
-    const id = ch.dataset.trackChangeId!
-    const changeOf = (r: Element | undefined) => r?.closest<HTMLElement>('[data-track-change-id]') ?? null
-    const frag = ch.closest('[data-source-node-id]')
-    const runs = frag ? [...frag.querySelectorAll<HTMLElement>('.superdoc-text-run')] : [ch]
-    const kind = ch.dataset.trackChangeKind
-    const author = ch.dataset.trackChangeAuthor ?? ''
-    // The change: the runs either side of this one by the same hand, of the same kind (one change
-    // may be written in several pieces).
-    const like = (r: Element | undefined, k = kind) => {
-      const x = changeOf(r)
-      return !!x && x.dataset.trackChangeKind === k && x.dataset.trackChangeAuthor === author
-    }
-    const span = (from: number, k = kind) => {
-      let a = from
-      let z = from
-      while (a > 0 && like(runs[a - 1], k)) a--
-      while (z < runs.length - 1 && like(runs[z + 1], k)) z++
-      return runs.slice(a, z + 1)
-    }
-    // Their text, a space where a line wraps.
-    const join = (rs: HTMLElement[]) =>
-      rs.reduce((t, r, k) => {
-        const x = r.textContent ?? ''
-        const wrapped = k > 0 && r.closest('.superdoc-line') !== rs[k - 1].closest('.superdoc-line') && !/\s$/.test(t) && !/^\s/.test(x)
-        return t + (wrapped ? ' ' : '') + x
-      }, '')
-    const at0 = runs.indexOf(ch.matches('.superdoc-text-run') ? ch : (ch.querySelector('.superdoc-text-run') as HTMLElement) ?? ch)
-    const mine = at0 >= 0 ? span(at0) : [ch]
-    const text = join(mine)
-    const blockId = frag ? loaded.ids[nodeId(frag)] : undefined
-    const b = model.current.blocks.find((x) => x.id === blockId)
-    // Their reason: the comment on this text.
-    const ids = (ch.closest<HTMLElement>('[data-comment-ids]')?.dataset.commentIds ?? '').split(',').map((x) => x.split(/[:|]/).pop())
-    const c = (b?.comments ?? []).find((x) => ids.includes(x.id) && !commentResolved(model.current, x))
-    const note = c ? `${c.author}: “${short(c.text)}”` : undefined
-    const at = placeTip(mine[0])
-    if (author.startsWith('clausepilot:removed')) {
-      const [, how, who] = author.split('|')
-      return {
-        key: `p:${id}`,
-        ...at,
-        title: how === 'rejected' ? `You rejected ${who || 'their'}${who ? '’s' : ''} insertion` : `You accepted ${who || 'their'}${who ? '’s' : ''} deletion`,
-        quote: `“${short(text)}”`,
-        meta: 'Faded here, so its comments and AI answers keep their text. The copy you send leaves it out.',
-        note,
-        els: mine
-      }
-    }
-    const who = author === reviewer ? 'You' : author || 'They'
-    // A deletion beside an insertion by the same hand: one replacement.
-    const other = kind === 'delete' ? 'insert' : 'delete'
-    const i0 = runs.indexOf(mine[0])
-    const i1 = runs.indexOf(mine[mine.length - 1])
-    const side = like(runs[i1 + 1], other) ? i1 + 1 : like(runs[i0 - 1], other) ? i0 - 1 : -1
-    const pair = side >= 0
-    const pairEls = pair ? span(side, other) : []
-    const pairText = join(pairEls)
-    const els = [...mine, ...pairEls]
-    const [was, now] = kind === 'delete' ? [text, pairText] : [pairText, text]
-    const when = ch.dataset.trackChangeDate ? day(ch.dataset.trackChangeDate) : author === reviewer ? '' : 'Made without Track Changes (found by comparison)'
-    // Found by comparing with our approved wording: a difference from it, not a change they tracked.
-    if (author !== reviewer && b?.untracked === 'template')
-      return {
-        key: `p:${id}`,
-        ...at,
-        title: pair ? 'Differs from our approved wording' : kind === 'delete' ? 'In our approved wording, not in theirs' : 'In theirs, not in our approved wording',
-        quote: pair ? `Ours: “${short(was)}” · Theirs: “${short(now)}”` : `“${short(text)}”`,
-        meta: [b.standard ? `Compared with our approved “${b.standard}”` : 'Compared with our standard wording', 'To decide: click it to accept or reject'].join(' · '),
-        note,
-        els
-      }
-    return {
-      key: `p:${id}`,
-      ...at,
-      title: pair ? `${who} replaced` : kind === 'delete' ? `${who} deleted` : `${who} added`,
-      quote: pair ? `“${short(was)}” → “${short(now)}”` : `“${short(text)}”`,
-      meta: [when, author === reviewer ? 'Your edit: it goes to them as your tracked change' : 'To decide: click it to accept or reject'].filter(Boolean).join(' · '),
-      note,
-      els
-    }
-  }
-  const explainStage = (el: HTMLElement): Tip | null => {
-    const [blockId, k, i] = (el.dataset.stageSeg ?? '').split('|')
-    const card = gutter.cards.find((c) => c.blockId === blockId)
-    const st = card?.stages[Number(k)]
-    const seg = st?.segments[Number(i)]
-    if (!st || !seg || seg.op === 'same') return null
-    // A deletion beside an insertion: one replacement.
-    const prev = st.segments[Number(i) - 1]
-    const next = st.segments[Number(i) + 1]
-    const pair = seg.op === 'del' && next?.op === 'ins' ? next : seg.op === 'ins' && prev?.op === 'del' ? prev : null
-    const [was, now] = seg.op === 'del' ? [seg.text, pair?.text ?? ''] : [pair?.text ?? '', seg.text]
-    const sibling = pair ? el.parentElement?.querySelector(`[data-stage-seg="${blockId}|${k}|${Number(i) + (pair === next ? 1 : -1)}"]`) : null
-    const who = st.key === 'yours' ? 'You' : seg.author || 'They'
-    const decided = st.key === 'theirs' ? model.current.resolved?.[changeKey(blockId, Number(i))] : undefined
-    return {
-      key: `s:${el.dataset.stageSeg}`,
-      ...placeTip(el),
-      title: pair ? `${who} replaced` : seg.op === 'del' ? `${who} deleted` : `${who} added`,
-      quote: pair ? `“${short(was)}” → “${short(now)}”` : `“${short(seg.text)}”`,
-      meta:
-        st.key === 'yours'
-          ? 'Your change to their version'
-          : [day(seg.date), decided === 'accepted' ? 'You accepted it' : decided === 'rejected' ? 'You rejected it' : 'To decide'].filter(Boolean).join(' · '),
-      els: sibling ? [el, sibling] : [el]
-    }
-  }
-
   // The stages card's sides: the same padding outside the labels left of the paragraph and the
   // markers right of it as above and below (never past the page area's edges).
   useLayoutEffect(() => {
@@ -1037,25 +861,14 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
 
   return (
     <div
-      className={`wv-wrap ${explain ? 'explaining' : ''} ${final ? 'final' : ''}`}
+      className={`wv-wrap ${final ? 'final' : ''}`}
       ref={wrap}
       onMouseMove={hoverAt}
-      onMouseLeave={() => {
-        setHovered(null)
-        clearTip()
-      }}
+      onMouseLeave={() => setHovered(null)}
     >
       {loading && <div className="wv-loading">Laying out the document…</div>}
       <div className="wv-stage" ref={stage} />
       <div className="wv-gutter">
-        {tip && (
-          <div className="wv-tip" ref={tipEl} style={{ left: tip.x, top: tip.y }}>
-            <div className="wv-tip-title">{tip.title}</div>
-            <div className="wv-tip-quote">{tip.quote}</div>
-            {tip.meta && <div className="wv-tip-meta">{tip.meta}</div>}
-            {tip.note && <div className="wv-tip-note">{tip.note}</div>}
-          </div>
-        )}
         {gutter.cards
           .filter((c) => c.blockId === hovered || stageShown(c.blockId))
           .map((c) => {
@@ -1126,14 +939,14 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
         ))}
         {gutter.parts.map((r, i) => (
           <div key={`pl${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>
-            <span className={`ed-unchanged wv-part-label ${r.status}`} data-tip={r.tip}>
+            <span className={`ed-unchanged wv-part-label ${r.status}`}>
               {r.text}
             </span>
           </div>
         ))}
         {gutter.runs.map((r, i) => (
           <div key={`r${i}`} className="wv-run" style={{ top: r.top, height: r.height, left: r.left - 84 }}>
-            <span className={`ed-unchanged ${r.state}`} data-tip={GUTTER[r.state].tip}>
+            <span className={`ed-unchanged ${r.state}`}>
               {GUTTER[r.state].label}
             </span>
           </div>
@@ -1144,7 +957,7 @@ export function WordView({ session, reviewer, explain, final, onFocusBlock, onSe
         {gutter.parts
           .filter((r) => r.status === 'running' || r.found.length)
           .map((r, i) => (
-            <span key={`pm${i}`} className={`wv-ai wv-part-mark ${r.status}`} style={{ top: r.top, left: r.right + 12 }} data-tip={r.status === 'running' ? 'The AI is reviewing this part now' : r.found.join('\n')}>
+            <span key={`pm${i}`} className={`wv-ai wv-part-mark ${r.status}`} style={{ top: r.top, left: r.right + 12 }}>
               {r.status === 'running' ? <span className="spinner wv-ai-spin" /> : <Icon name="alert" size={9} stroke={2.4} />}
               <span>{r.status === 'running' ? 'Reviewing' : r.found.length}</span>
             </span>

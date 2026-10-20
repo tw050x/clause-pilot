@@ -178,6 +178,7 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       // A gate: the reviewer starts the review from the plan (kept, with who and when).
       step('start', 'Start the review'),
       step('review', 'Review each part'),
+      step('crosscheck', 'Check the findings together'),
       step('consolidate', 'Bring the findings together'),
       step('approve', 'Make the changes'),
       step('check', 'Your check of the findings'),
@@ -346,6 +347,28 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       end(review, 'done', `${kids.filter((c) => c.status !== 'skipped').length} reviewed${flagged ? `, ${flagged} with changes to make` : ''}${failed ? `, ${failed} couldn’t be (left for you to read)` : ''}.`)
     }
 
+    // Every part's findings checked together, once: each part was reviewed on its own, so what
+    // one finding changes may clash with another, or have knock-on effects elsewhere.
+    const cc = run.steps.find((x) => x.id === ids.crosscheck)
+    if (cc && fresh(ids.crosscheck)) {
+      begin(cc)
+      const withFindings = (review.children ?? []).filter((c) => c.status === 'needs-you').map((c) => parts.find((p) => p.id === c.partId)).filter((p): p is ReviewPart => !!p)
+      if (!withFindings.length) end(cc, 'skipped', 'Nothing found to check together.')
+      else
+        try {
+          end(cc, 'done', await crossCheck(s, review, parts, withFindings, deps, (call) => ask(cc, call)))
+        } catch (e) {
+          if (e instanceof Stopped) return
+          if (e instanceof BudgetReached) {
+            cc.status = 'waiting'
+            return pause(`Paused: the budget was reached (${spentText(run)}). Raise it and Continue.`)
+          }
+          // Not checked together: the findings go on as they were (said so on the step).
+          cc.error = e instanceof Error ? e.message : String(e)
+          end(cc, 'error', 'Couldn’t be checked together: the findings go on as they were.')
+        }
+    }
+
     // Bring together: one proposal per part with something for the reviewer.
     const cons = at(ids.consolidate)
     const flaggedParts = (review.children ?? []).filter((c) => c.status === 'needs-you').map((c) => parts.find((p) => p.id === c.partId)).filter((p): p is ReviewPart => !!p)
@@ -419,7 +442,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         check.startedAt ??= now()
         check.detail = made ? `${made} change${made === 1 ? '' : 's'} made: look through them.` : 'Nothing changed: look through the findings.'
         run.status = 'paused'
-        run.note = leftOver ?? 'Your turn: check the findings and the changes, then write the new draft and the email.'
+        run.note = leftOver ?? 'Ready for manual review: check the findings and the changes, then write the new draft and the email.'
         deps.persist(s)
         return
       }
@@ -482,7 +505,10 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
 }
 
 /** The steps of a round, by id (the first round's are the plain ones). */
-const roundIds = (r: number) => (r === 1 ? { review: 'review', consolidate: 'consolidate', approve: 'approve' } : { review: `review-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` })
+const roundIds = (r: number) =>
+  r === 1
+    ? { review: 'review', crosscheck: 'crosscheck', consolidate: 'consolidate', approve: 'approve' }
+    : { review: `review-${r}`, crosscheck: `crosscheck-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` }
 /** Rounds a run goes to before what's left is the reviewer's. */
 export const MAX_ROUNDS = 3
 
@@ -541,6 +567,7 @@ function nextRound(s: ReviewSession, run: PipelineRun, deps: PipelineDeps): bool
   const at = (i => (i < 0 ? run.steps.findIndex((x) => x.id === 'draft') : i))(run.steps.findIndex((x) => x.id === 'check'))
   const steps: PipelineStep[] = [
     { id: ids.review, title: `Round ${n} · Review what changed`, status: 'waiting', children: ready.map((p) => ({ id: `${ids.review}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.feedback ? `You asked: “${p.feedback}”` : 'Check what the change did.' })) },
+    { id: ids.crosscheck, title: `Round ${n} · Check the findings together`, status: 'waiting' },
     { id: ids.consolidate, title: `Round ${n} · Bring the findings together`, status: 'waiting' },
     { id: ids.approve, title: `Round ${n} · Make the changes`, status: 'waiting' }
   ]
@@ -551,11 +578,124 @@ function nextRound(s: ReviewSession, run: PipelineRun, deps: PipelineDeps): bool
   return true
 }
 
+/**
+ * Every part's findings checked together in one go. Each part was reviewed on its own (its own
+ * text, and the contract as they sent it), so what one finding would change can clash with
+ * another's, or have knock-on effects in paragraphs that weren't looked at with it (a definition
+ * narrowed, a cross-reference, a cap or term relied on elsewhere). The AI sees all of them, with
+ * the parts as they now read and the wording each suggests, and says which to drop, which to
+ * revise to fit the rest, and what to add where a change has effects elsewhere. Returns what it
+ * did, in a line.
+ */
+async function crossCheck(s: ReviewSession, review: PipelineStep, parts: ReviewPart[], withFindings: ReviewPart[], deps: PipelineDeps, ask: <T>(call: (onUsage: (u: ChatUsage) => void) => Promise<T>) => Promise<T>): Promise<string> {
+  const d = s.doc!
+  const blocksOf = (p: ReviewPart) => p.blockIds.map((id) => d.blocks.find((b) => b.id === id)).filter((b): b is DocBlock => !!b)
+  const live = (p: ReviewPart) => (p.findings ?? []).filter((f) => f.severity !== 'info' && !f.dropped)
+  const question = [
+    `Each part below was reviewed on its own. What reviewing it found, with the part as it now reads:\n${withFindings
+      .map(
+        (p) =>
+          `<part id="${p.id}" title="${p.title.replace(/"/g, "'")}">\n${partText(s, blocksOf(p), true)}\n${live(p)
+            .map(
+              (f) =>
+                `<finding id="${f.id}" check="${f.check}" severity="${f.severity}"${f.blockId ? ` paragraph="${f.blockId}"` : ''}>${f.title}: ${f.detail}${f.wording ? `\nSuggested wording: ${f.wording}` : ''}${f.change ? `\nRecommendation: ${f.change.outcome === 'accepted' ? 'accept' : 'reject'} their change ${f.change.seg}` : ''}</finding>`
+            )
+            .join('\n')}\n</part>`
+      )
+      .join('\n\n')}`,
+    `QUESTION: Check these findings TOGETHER, against each other and against the whole contract above, as if every suggested wording and recommendation were made at once. Find: findings that contradict each other (keep the better one, drop the other); suggested wording that would break or change the meaning of another paragraph (a defined term, a cross-reference, a cap, term or carve-out relied on elsewhere), and revise it so it fits; and knock-on effects in other paragraphs that need a change of their own (add a finding there). Drop a finding only if it clashes with another or would do harm. Say in a sentence what you changed and why; if nothing needs changing, say so and leave the lists empty.`
+  ].join('\n\n')
+  const out = (await ask((onUsage) => deps.provider().schemaAnswer({ name: 'findings_cross_check', contract: contractText(d.blocks), question, schema: schemaToSend(CROSS_SCHEMA) }, onUsage))) as CrossOut
+  if (out.injection_suspected && out.injection_notes?.trim()) s.aiInjectionReports.push(`Findings checked together: ${out.injection_notes.trim()}`)
+  const all = new Map(parts.flatMap((p) => (p.findings ?? []).map((f) => [f.id, { f, p }] as const)))
+  const partOf = (blockId: string) => parts.find((p) => p.blockIds.includes(blockId))
+  const childOf = (p: ReviewPart) => review.children?.find((c) => c.partId === p.id)
+  let dropped = 0
+  let revised = 0
+  let added = 0
+  for (const x of out.drop) {
+    const hit = all.get(x.finding_id)
+    if (!hit || hit.f.dropped) continue
+    hit.f.dropped = x.why.trim() || 'It clashed with another finding.'
+    dropped++
+  }
+  for (const x of out.revise) {
+    const hit = all.get(x.finding_id)
+    if (!hit || hit.f.dropped || !x.wording.trim()) continue
+    hit.f.wording = x.wording.trim()
+    hit.f.detail = `${hit.f.detail} (Revised to fit the rest of the contract: ${x.why.trim()})`
+    revised++
+  }
+  for (const x of out.add) {
+    const p = partOf(x.paragraph_id)
+    if (!p || !x.title.trim()) continue
+    p.findings = [
+      ...(p.findings ?? []),
+      { id: deps.uid('find'), check: 'conflict', severity: x.severity === 'high' ? 'high' : 'warn', title: x.title.trim(), detail: x.detail.trim(), blockId: x.paragraph_id, wording: x.wording.trim() || undefined }
+    ]
+    // Its part now has something to bring together, even if its own review found nothing.
+    const c = childOf(p)
+    if (c) ((c.status = 'needs-you'), (c.detail = `${c.detail ?? ''} A knock-on effect found when the findings were checked together.`.trim()))
+    added++
+  }
+  // A part whose findings were all dropped has nothing left to bring together.
+  for (const p of withFindings) {
+    const c = childOf(p)
+    if (c?.status === 'needs-you' && !live(p).length) ((c.status = 'done'), (c.detail = 'Its findings were dropped when checked against the others.'))
+  }
+  deps.persist(s)
+  const did = [dropped && `${dropped} dropped`, revised && `${revised} revised`, added && `${added} knock-on effect${added === 1 ? '' : 's'} added`].filter(Boolean).join(', ')
+  return did ? `${did}. ${out.summary.trim()}` : 'No clashes or knock-on effects found.'
+}
+
+interface CrossOut {
+  summary: string
+  drop: { finding_id: string; why: string }[]
+  revise: { finding_id: string; wording: string; why: string }[]
+  add: { paragraph_id: string; title: string; detail: string; severity: 'warn' | 'high'; wording: string }[]
+  injection_suspected: boolean
+  injection_notes: string
+}
+
+const CROSS_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', description: 'What was changed and why, in a sentence (or that nothing needed changing).' },
+    drop: {
+      type: 'array',
+      description: 'Findings to drop: they contradict a better one, or would do harm. Empty if none.',
+      items: { type: 'object', properties: { finding_id: { type: 'string' }, why: { type: 'string' } }, required: ['finding_id', 'why'] }
+    },
+    revise: {
+      type: 'array',
+      description: 'Findings whose suggested wording must change to fit the rest of the contract: the whole paragraph as it should read.',
+      items: { type: 'object', properties: { finding_id: { type: 'string' }, wording: { type: 'string' }, why: { type: 'string' } }, required: ['finding_id', 'wording', 'why'] }
+    },
+    add: {
+      type: 'array',
+      description: 'Knock-on effects: a paragraph that needs a change of its own because of the others. Empty if none.',
+      items: {
+        type: 'object',
+        properties: {
+          paragraph_id: { type: 'string' },
+          title: { type: 'string' },
+          detail: { type: 'string' },
+          severity: { type: 'string', enum: ['warn', 'high'] },
+          wording: { type: 'string', description: 'The whole paragraph as it should read; empty if no wording is suggested.' }
+        },
+        required: ['paragraph_id', 'title', 'detail', 'severity', 'wording']
+      }
+    },
+    ...INJECTION
+  },
+  required: ['summary', 'drop', 'revise', 'add', 'injection_suspected', 'injection_notes']
+}
+
 /** One proposal for a part, from what reviewing it found (and the reviewer's request, if any). */
 async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: PipelineDeps, ask: <T>(call: (onUsage: (u: ChatUsage) => void) => Promise<T>) => Promise<T>): Promise<Proposal> {
   const d = s.doc!
   const blocks = part.blockIds.map((id) => d.blocks.find((b) => b.id === id)).filter((b): b is DocBlock => !!b)
-  const findings = (part.findings ?? []).filter((f) => f.severity !== 'info')
+  const findings = (part.findings ?? []).filter((f) => f.severity !== 'info' && !f.dropped)
   const question = [
     `The part, "${part.title}" (with their tracked changes still to decide):\n<part>\n${partText(s, blocks, true)}\n</part>`,
     `What reviewing it found:\n${findings
@@ -1052,6 +1192,11 @@ function estimate(s: ReviewSession, parts: ReviewPart[], blocks: DocBlock[], run
     cached += n * contract
     output += n * 1200
   }
+  // The findings checked together, once.
+  calls += 1
+  input += 3000
+  cached += contract
+  output += 1500
   const usd = run.provider === 'anthropic' ? costOf(run.model, { input: input + contract, cached, output }) : undefined
   return { calls, tokens: input + cached + output, usd }
 }
