@@ -44,7 +44,8 @@ async function modelTime(promptChars, answerChars) {
   const start = Math.max(Date.now(), gpuFreeAt)
   gpuFreeAt = start + prefill
   const decode = ((THINK + answerChars / 4) / DECODE) * 1000 / SPEED
-  return sleep(gpuFreeAt - Date.now() + decode)
+  // (In a demo, never a long wait: at most about twelve seconds.)
+  return sleep(Math.min(12000 / SPEED, gpuFreeAt - Date.now() + decode))
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -93,6 +94,18 @@ function fill(node, key = '') {
 
 const answers = {
   contract_structure: structure
+}
+
+/**
+ * How long a recorded answer takes in a demo: what the model took, squeezed into 2 to 12 seconds
+ * (a quick answer a few seconds, a long one ten or so, never instant and never a long wait;
+ * recording ran several reviews at once, so its times include queueing too), give or take a
+ * little, so no two runs are quite the same.
+ */
+function demoPace(ms) {
+  const s = Math.max(0, ms) / 1000
+  const pace = Math.min(12, 2 + 3 * Math.log(1 + s / 3))
+  return pace * (0.85 + Math.random() * 0.3) * 1000
 }
 
 /** Real answers recorded from a model (recordings.mjs): replayed, or recorded with DEMO_RECORD. */
@@ -200,7 +213,7 @@ const handler = (req, res) => {
         const hit = known ?? recordings.find(name, user)
         if (hit) {
           // As long as the model took (quicker when told: the plans made in bulk, DEMO_SPEED).
-          await (quick || RECORD ? sleep(50) : SPEED > 0 && process.env.DEMO_DELAY === undefined ? sleep(hit.ms / SPEED) : modelTime(raw.length, hit.content.length))
+          await (quick || RECORD ? sleep(50) : SPEED > 0 && process.env.DEMO_DELAY === undefined ? sleep(demoPace(hit.ms) / SPEED) : modelTime(raw.length, hit.content.length))
           log(`${name}: replayed (${hit.how}) from ${hit.model} (${((Date.now() - t0) / 1000).toFixed(1)}s)`)
           return res.end(JSON.stringify({ choices: [{ message: { content: hit.content }, finish_reason: 'stop' }], usage: hit.usage ?? usage(raw, hit.content) }))
         }
