@@ -45,16 +45,23 @@ export function Timeline({
     // The latest mention of it (its proposal, if it has one).
     els[els.length - 1]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [focusPart])
-  // Its marker clicked (again): its change brought into view, and marked for a moment.
+  // Its marker clicked (again): its change brought into view, outlined for a few moments with
+  // rings pulsing out from it, to catch the eye.
   useEffect(() => {
     if (!jump) return
     const els = [...(box.current?.querySelectorAll<HTMLElement>(`[data-part="${jump.partId}"]`) ?? [])]
     const el = els.find((x) => x.classList.contains('ck-item')) ?? els[els.length - 1]
     if (!el) return
     el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    el.classList.remove('tl-flash')
+    for (const x of box.current?.querySelectorAll('.tl-spot') ?? []) x.classList.remove('tl-spot')
     void el.offsetWidth
-    el.classList.add('tl-flash')
+    el.classList.add('tl-spot')
+    const done = (e: AnimationEvent) => {
+      if (e.target !== el || e.animationName !== 'tl-spot') return
+      el.classList.remove('tl-spot')
+      el.removeEventListener('animationend', done)
+    }
+    el.addEventListener('animationend', done)
   }, [jump?.n])
   // Highlighted text: only the parts it's in (and the steps about them), until Show everything.
   const [everything, setEverything] = useState(false)
@@ -434,7 +441,9 @@ function CheckReview({
   const shownParts = (list: ReviewPart[]) => (only ? list.filter((p) => only.has(p.id)) : list)
   // The same question suggested for several parts: one line, asked of all of them if ticked.
   const suggested = groupQuestions((run.questions ?? []).filter((q) => !q.asked && !q.dismissed && (!only || only.has(q.partId))))
-  const [approved, setApproved] = useState<Set<string>>(() => new Set(waitingOn.filter((p) => p.proposal!.status === 'approved').map((p) => p.id)))
+  // Approved as they're ticked, and kept as they go (the page's left margin turns green for them).
+  const approved = new Set(waitingOn.filter((p) => p.proposal!.status === 'approved').map((p) => p.id))
+  const approve = (ids: string[], on: boolean) => act(window.api.pipeline.approve(session.id, ids, on))
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [noting, setNoting] = useState<Set<string>>(new Set())
   const [ticked, setTicked] = useState<Set<string>>(new Set())
@@ -534,7 +543,7 @@ function CheckReview({
         )}
         <div className="ck-foot">
           <label className={`ck-approve ${ok ? 'on' : ''}`} title={noted(part.id) ? 'Sent back with your note: it’s reviewed again' : undefined}>
-            <input type="checkbox" checked={ok} disabled={noted(part.id)} onChange={() => setApproved(flip(approved, part.id))} /> Approve
+            <input type="checkbox" checked={ok} disabled={noted(part.id) || busy} onChange={() => approve([part.id], !approved.has(part.id))} /> Approve
           </label>
           {!folded && !noting.has(part.id) && (
             <button className="link-btn ck-add-note" onClick={() => setNoting(flip(noting, part.id))}>
@@ -555,7 +564,7 @@ function CheckReview({
           <span>
             {suggestible.length === 1 ? 'One change is' : `${suggestible.length} changes are`} like ones approved before on other contracts.
           </span>
-          <button className="btn sm" onClick={() => setApproved(new Set([...approved, ...suggestible.map((p) => p.id)]))}>
+          <button className="btn sm" disabled={busy} onClick={() => approve(suggestible.map((p) => p.id), true)}>
             <Icon name="check" size={13} /> Approve {suggestible.length === 1 ? 'it' : `those ${suggestible.length}`}
           </button>
         </div>

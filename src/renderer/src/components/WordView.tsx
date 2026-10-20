@@ -416,7 +416,11 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
       const statusOf = new Map((d.pipeline!.steps.find((x) => x.id === 'review')?.children ?? []).map((c) => [c.partId, c.status]))
       const partOf = new Map(parts.flatMap((p) => p.blockIds.map((id) => [id, p] as const)))
       const overridden = overridesOf(d)
-      const statusFor = (p: (typeof parts)[number]) => statusOf.get(p.id) ?? (p.depth === 'skip' ? 'skipped' : 'waiting')
+      // Settled on our side (its change approved, or overridden by the reviewer's own edit): green.
+      // Only what's still open (contested, or not yet approved) keeps another colour.
+      const settled = (p: (typeof parts)[number]) => p.proposal?.status === 'approved' || !!overridden[p.id]
+      const reviewStatus = (p: (typeof parts)[number]) => statusOf.get(p.id) ?? (p.depth === 'skip' ? 'skipped' : 'waiting')
+      const statusFor = (p: (typeof parts)[number]) => (reviewStatus(p) !== 'running' && settled(p) ? 'done' : reviewStatus(p))
       for (const bar of bars) {
         const p = partOf.get(bar.blockId)
         if (!p) continue

@@ -22,7 +22,7 @@ import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { setQuick as demoQuick, startDemoServer } from '../../demo-server/server.mjs'
 import { DEMOS, type DemoId, type DemoLanding, type DemoSetup } from '@shared/demos'
-import { DEFAULT_BUDGET, applyChecked, iterate as iteratePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, applyChecked, approveProposals, iterate as iteratePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1718,6 +1718,14 @@ ipcMain.handle('pipeline:apply', (_e, sessionId: string, approved: string[]) => 
   if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
   applyChecked(s, pipelineDeps(), approved)
   ws.audit.append(actor(), 'review.changes-applied', s.id, { approved })
+  return s
+})
+
+/** At the check: changes approved, or not, as the reviewer ticks them (kept as they go). */
+ipcMain.handle('pipeline:approve', (_e, sessionId: string, partIds: string[], on: boolean) => {
+  const s = session(sessionId)
+  approveProposals(s, pipelineDeps(), partIds, on)
+  ws.audit.append(actor(), on ? 'review.change-approved' : 'review.change-unapproved', s.id, { parts: partIds })
   return s
 })
 

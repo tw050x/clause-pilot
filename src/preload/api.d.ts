@@ -118,6 +118,8 @@ export interface Api {
     iterate(id: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; approved: string[] }): Promise<ReviewSession>
     /** At the reviewer's check: the changes approved made to the draft (the rest left out), then the new draft and the email. */
     apply(id: string, approved: string[]): Promise<ReviewSession>
+    /** At the check: changes approved (on) or not, as the reviewer ticks them. */
+    approve(id: string, partIds: string[], on: boolean): Promise<ReviewSession>
     /** For each change waiting at the check (by part): earlier changes like it, on other contracts, answered the same way. */
     approvedBefore(id: string): Promise<Record<string, { counterparty: string; contractType: string; date: string; where?: string; response: 'accepted' | 'countered' | 'restored' | 'struck'; match: 'identical' | 'similar' }[]>>
     stop(id: string): Promise<ReviewSession>

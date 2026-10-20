@@ -73,7 +73,12 @@ export interface PipelineDeps {
  * Wording the AI suggests, as it should read: a model sometimes keeps the tags the paragraph was
  * given in (<now>…</now>), which mustn't end up in the draft.
  */
-const asWording = (t: string) => t.replace(/<\/?(?:now|as_they_sent_it|their_changes|paragraph)\b[^>]*>/g, '').trim()
+const asWording = (t: string) => {
+  const text = t.replace(/<\/?(?:now|as_they_sent_it|their_changes|paragraph)\b[^>]*>/g, '').trim()
+  // "[deleted]", "[deleted by us]", "[removed]": the model saying the paragraph goes, not wording
+  // for it (rejecting their inserted paragraph removes it; there's no text to write).
+  return /^\[\s*(?:deleted|removed|struck|delete|remove)\b[^\]]*\]\.?$/i.test(text) ? '' : text
+}
 
 /** Parts reviewed at once. */
 const AT_ONCE = 3
@@ -555,6 +560,19 @@ const roundIds = (r: number) =>
   r === 1
     ? { review: 'review', crosscheck: 'crosscheck', consolidate: 'consolidate', approve: 'approve' }
     : { review: `review-${r}`, crosscheck: `crosscheck-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` }
+
+/** At the check: changes approved (or not) as the reviewer ticks them, kept as they go. */
+export function approveProposals(s: ReviewSession, deps: PipelineDeps, partIds: string[], on: boolean) {
+  const run = s.doc?.pipeline
+  if (!run?.parts) throw new Error('No review to go on with.')
+  for (const id of partIds) {
+    const p = run.parts.find((x) => x.id === id)?.proposal
+    if (!p || p.appliedAt) continue
+    if (on && p.status === 'pending') Object.assign(p, { status: 'approved', decidedBy: deps.actor(), decidedAt: now() })
+    else if (!on && p.status === 'approved') Object.assign(p, { status: 'pending', decidedBy: undefined, decidedAt: undefined, carriedFrom: undefined })
+  }
+  deps.persist(s)
+}
 
 /**
  * Whether two proposals make the same change to the draft: the same wording (as text, ignoring
