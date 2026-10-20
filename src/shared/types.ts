@@ -851,6 +851,8 @@ export interface Proposal {
   status: 'pending' | 'approved' | 'rejected' | 'changes'
   decidedBy?: string
   decidedAt?: string
+  /** When it was proposed. */
+  madeAt?: string
   /** Made to the draft (after the check). */
   appliedAt?: string
 }

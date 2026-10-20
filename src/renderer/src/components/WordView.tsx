@@ -3,6 +3,7 @@ import { SuperDoc } from 'superdoc'
 import 'superdoc/style.css'
 import type { DocBlock, DocReview, ReviewSession } from '@shared/types'
 import { indentList, listAfter } from '@shared/numbering'
+import { overridesOf } from '@shared/overrides'
 import { commentResolved, groupOf, hasOpenChanges, marksFor, segmentsOf, shownText } from '@shared/changes'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
@@ -42,6 +43,8 @@ interface Props {
   onShowText: (why: string) => void
   /** Only to look at (the original we sent): no bars or labels beside it, and no typing. */
   reference?: boolean
+  /** The AI review is working on the draft: the page can be read, not edited. */
+  locked?: boolean
 }
 
 type Loaded = {
@@ -112,7 +115,10 @@ function textRuns(loaded: Loaded, blockIds: string[], quote: string, reviewer: s
   return { all, hit }
 }
 
-export function WordView({ session, reviewer, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onOpenPart, onShowText, reference }: Props) {
+/** Keys that move about the page without changing it (allowed while it's locked). */
+const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', 'Escape', 'Shift', 'Meta', 'Control', 'Alt'])
+
+export function WordView({ session, reviewer, final, onFocusBlock, onSelectChanges, act, onOpenComments, onOpenAi, onShowComments, onOpenPart, onShowText, reference, locked }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const current = useRef<Loaded | null>(null)
@@ -146,6 +152,11 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
    */
   const finalRef = useRef(final)
   finalRef.current = final
+  // Locked while the AI review works: the page as it is (the redline shown as ever), but what
+  // would edit it (typing, pasting, cutting, dropping) stopped before it reaches the editor.
+  // Reading, selecting, copying and clicking go on as usual.
+  const lockedRef = useRef(locked)
+  lockedRef.current = locked
   const setMode = (sd: SuperDoc, on: boolean) => {
     try {
       sd.setTrackedChangesPreferences({ mode: on ? 'final' : 'review' })
@@ -404,6 +415,7 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
     if (parts?.length) {
       const statusOf = new Map((d.pipeline!.steps.find((x) => x.id === 'review')?.children ?? []).map((c) => [c.partId, c.status]))
       const partOf = new Map(parts.flatMap((p) => p.blockIds.map((id) => [id, p] as const)))
+      const overridden = overridesOf(d)
       const statusFor = (p: (typeof parts)[number]) => statusOf.get(p.id) ?? (p.depth === 'skip' ? 'skipped' : 'waiting')
       for (const bar of bars) {
         const p = partOf.get(bar.blockId)
@@ -424,7 +436,7 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
         const first = byTop.find((b) => p.blockIds.includes(b.blockId))
         if (!first) continue
         // A change proposed for it and not made yet: waiting for the reviewer (or approved by them).
-        const pr = p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved') ? p.proposal.status : undefined
+        const pr = p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved') && !overridden[p.id] ? p.proposal.status : undefined
         partLabels.push({ partId: p.id, top: first.top, height: first.height, left: first.left, right: first.right, text: KIND[p.kind] ?? 'Part', status: statusFor(p), tip: `${p.title}. ${DEPTH[p.depth]}: ${p.reason}`, found: (p.findings ?? []).filter((f) => f.severity !== 'info').map((f) => f.title), change: pr })
       }
     }
@@ -791,6 +803,13 @@ export function WordView({ session, reviewer, final, onFocusBlock, onSelectChang
           old.sd.destroy()
           old.host.remove()
         }
+        const stop = (e: Event) => {
+          if (!lockedRef.current) return
+          if (e instanceof KeyboardEvent && (NAV_KEYS.has(e.key) || ((e.metaKey || e.ctrlKey) && ['c', 'a', 'f'].includes(e.key.toLowerCase())))) return
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        for (const type of ['beforeinput', 'keydown', 'paste', 'cut', 'drop', 'compositionstart']) host.addEventListener(type, stop, true)
         // SuperDoc paints pages as it lays them out, after it's ready: measure as they change.
         new MutationObserver(remeasure).observe(host, { childList: true, subtree: true })
         // Tab / Shift-Tab in a numbered paragraph of ours: its level, as in the text view (the page

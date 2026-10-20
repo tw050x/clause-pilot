@@ -2,6 +2,7 @@ import type { AiQuestion, DocBlock, EmailDraft, LibraryClause, RedlineStats, Par
 import { commentResolved, marksFor, openChanges, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import { applicable, intentInput } from './docreview'
 import { whereOf } from '@shared/numbering'
+import { overridesOf } from '@shared/overrides'
 import type { AiProvider, ChatUsage } from './ai/provider'
 import { schemaToSend, type JsonSchema } from '@shared/schema'
 
@@ -402,7 +403,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
           cons.children = [...(cons.children ?? []).filter((c) => c.id !== x.id), x]
           deps.persist(s)
           try {
-            part.proposal = await propose(s, part, r, deps, (call) => ask(x, call))
+            part.proposal = { ...(await propose(s, part, r, deps, (call) => ask(x, call))), madeAt: now() }
             x.status = 'done'
             x.detail = part.proposal.summary
           } catch (e) {
@@ -459,7 +460,9 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
 
     // The changes approved at the check made to the draft: one action each in the review's history.
     const appr = run.steps.find((x) => x.id === 'approve')
-    const kept = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved' && !p.proposal.appliedAt && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) + (p.proposal.replies?.length ?? 0) > 0)
+    // (Not one the reviewer has since made their own edit over: theirs stands.)
+    const overridden = overridesOf(s.doc!)
+    const kept = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved' && !p.proposal.appliedAt && overridden[p.id]?.kind !== 'proposal' && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) + (p.proposal.replies?.length ?? 0) > 0)
     if (appr && fresh('approve')) {
       begin(appr)
       appr.children = kept.map((p) => ({ id: `approve:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.proposal!.summary }))

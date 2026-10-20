@@ -13,6 +13,7 @@ import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, stateAt, type ActionItem } from '@shared/history'
 import { whereOf } from '@shared/numbering'
+import { lockedForAi } from '@shared/overrides'
 import { DEFAULTS, questionIdOf } from '@shared/questions'
 import { diffSegments, type Mark } from '@shared/diff'
 import type { TrackedSegment } from '@shared/types'
@@ -61,6 +62,8 @@ function useLibrary(): Map<string, LibraryClause> {
  */
 export function DocReview({ session, panel, bar, foot, head, reviewer, onChange, alert, onOpenSecurity, accountName, contractTitle, onOpenReview, debug }: Props) {
   const d = session.doc!
+  // The AI review is working on the draft: no edits until it pauses for the reviewer.
+  const locked = lockedForAi(d)
   const [focus, setFocus] = useState<string | null>(null)
   // The original we sent: their first draft, the review it leads to.
   const [firstDraft, setFirstDraft] = useState<string | null>(null)
@@ -313,6 +316,13 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   return (
     <div className="dr-main">
     <div className="ed-wrap">
+      {locked && (
+        <div className="ed-lock" role="status">
+          <span className="ed-lock-pill" title="The AI review is working on this draft. You can read it; editing opens again when it pauses for you.">
+            <Icon name="lock" size={13} stroke={2.2} /> Locked
+          </span>
+        </div>
+      )}
       {error && (
         <div className="banner danger dr-error">
           <Icon name="alert" /> {error}
@@ -322,7 +332,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         </div>
       )}
       {layout === 'word' ? (
-        <WordView key={session.id} session={session} reviewer={reviewer} reference={!!session.original} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
+        <WordView key={session.id} session={session} reviewer={reviewer} reference={!!session.original} locked={locked} final={finalView} onFocusBlock={onFocusBlock} onSelectChanges={onSelectChanges}
           act={act}
           onOpenComments={(blockId) => {
             // Only the paragraph's comments ("Show everything" brings the rest back).
@@ -367,6 +377,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       <DocEditor
         key={session.id}
         session={session}
+        readOnly={locked}
         act={act}
         onFocusBlock={onFocusBlock}
         onSelectChanges={onSelectChanges}

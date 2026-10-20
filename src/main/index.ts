@@ -29,6 +29,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { chatSystem, reviewState } from './chat'
 import { libraryFile, mergeLibrary, mergePlaybook, mergeQuestions, parseImport, playbookFile, questionsFile, type KnowledgeKind } from './transfer'
 import { applicable, changeInput, createDocSession, intentInput, intentResult, toChangeReview } from './docreview'
+import { lockedForAi } from '@shared/overrides'
 import { approvedBefore, precedentFor, precedentsForProposal, seenBefore } from './engine/seen'
 import { paperCheck } from './engine/baseline'
 import { apply, canRedo, dependents, describe, diff, same, snapshot } from '@shared/history'
@@ -983,6 +984,7 @@ function tracked<T>(s: ReviewSession, group: string | undefined, fn: () => T): T
 
 /** Undo an action, and any later ones that depend on it (they changed the same text). */
 ipcMain.handle('doc:undo', (_e, sessionId: string, actionId: string) => {
+  notWhileAiWorks(sessionId)
   const { s, d } = docOf(sessionId)
   const a = d.history?.find((x) => x.id === actionId)
   if (!a || a.undone) throw new Error('Nothing to undo.')
@@ -998,6 +1000,7 @@ ipcMain.handle('doc:undo', (_e, sessionId: string, actionId: string) => {
 
 /** Redo an undone action, if nothing has changed the same text since. */
 ipcMain.handle('doc:redo', (_e, sessionId: string, actionId: string) => {
+  notWhileAiWorks(sessionId)
   const { s, d } = docOf(sessionId)
   const a = d.history?.find((x) => x.id === actionId)
   if (!a?.undone) throw new Error('Nothing to redo.')
@@ -1014,6 +1017,11 @@ function docOf(sessionId: string) {
   const s = session(sessionId)
   if (!s.doc) throw new Error(OLD_REVIEW)
   return { s, d: s.doc }
+}
+
+/** The window's edits are refused while the AI review works on the draft (the pipeline's own aren't: they don't come this way). */
+function notWhileAiWorks(sessionId: string) {
+  if (lockedForAi(session(sessionId).doc)) throw new Error('Locked while the AI review works on this draft: edit it once it pauses for you.')
 }
 
 const counterpartyName = (s: ReviewSession) => (s.accountId && wsFor(s).store.accounts().find((a) => a.id === s.accountId)?.name) || counterpartyOf(s)
@@ -1054,13 +1062,14 @@ function docEdit(sessionId: string, blockId: string, text: string | null, group?
   persist(session(sessionId))
   return out
 }
-ipcMain.handle('doc:edit', (_e, ...a: Parameters<typeof docEdit>) => docEdit(...a))
+ipcMain.handle('doc:edit', (_e, ...a: Parameters<typeof docEdit>) => (notWhileAiWorks(a[0]), docEdit(...a)))
 
 /**
  * Enter in the document: the paragraph keeps the text before the caret, and a new paragraph
  * of ours, after it, gets the rest. Both are our tracked changes.
  */
 ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: string, tail: string, newId?: string, list?: ListStyle | null) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const at = d.blocks.findIndex((x) => x.id === blockId)
@@ -1082,6 +1091,7 @@ ipcMain.handle('doc:split', (_e, sessionId: string, blockId: string, head: strin
 
 /** Number a paragraph we added (Tab / Shift-Tab change its level; null: unnumbered). */
 ipcMain.handle('doc:setList', (_e, sessionId: string, blockId: string, list: ListStyle | null) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const b = d.blocks.find((x) => x.id === blockId)
@@ -1097,6 +1107,7 @@ ipcMain.handle('doc:setList', (_e, sessionId: string, blockId: string, list: Lis
 
 /** Remove a paragraph we added. */
 ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const b = d.blocks.find((x) => x.id === blockId)
@@ -1122,6 +1133,7 @@ ipcMain.handle('doc:unsplit', (_e, sessionId: string, blockId: string) => {
  * by accepting or rejecting them instead.
  */
 ipcMain.handle('doc:check', (_e, sessionId: string, blockIds: string[], on: boolean) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     d.checked ??= {}
@@ -1179,10 +1191,11 @@ function docResolve(sessionId: string, blockId: string, seg: number, outcome: 'a
   persist(session(sessionId))
   return out
 }
-ipcMain.handle('doc:resolve', (_e, ...a: Parameters<typeof docResolve>) => docResolve(...a))
+ipcMain.handle('doc:resolve', (_e, ...a: Parameters<typeof docResolve>) => (notWhileAiWorks(a[0]), docResolve(...a)))
 
 /** Undo one of our own changes (an insertion or deletion of ours) in a paragraph. */
 ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: number, group?: string) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), group, () => {
     const { s, d } = docOf(sessionId)
     const b = d.blocks.find((x) => x.id === blockId)
@@ -1203,6 +1216,7 @@ ipcMain.handle('doc:undoOurs', (_e, sessionId: string, blockId: string, mark: nu
 
 /** Undo their changes in a change set: restore what was there before, as our redline. */
 ipcMain.handle('doc:revert', (_e, sessionId: string, setId: string) => {
+  notWhileAiWorks(sessionId)
   const { s, d } = docOf(sessionId)
   const set = changeSets(d).find((x) => x.id === setId)
   if (!set) throw new Error('Unknown change.')
@@ -1215,6 +1229,7 @@ ipcMain.handle('doc:revert', (_e, sessionId: string, setId: string) => {
 })
 
 ipcMain.handle('doc:decide', (_e, sessionId: string, setId: string, status: ChangeStatus | null, note?: string) => {
+  notWhileAiWorks(sessionId)
   const { s, d } = docOf(sessionId)
   const set = changeSets(d).find((x) => x.id === setId)
   if (!set) throw new Error('Unknown change.')
@@ -1248,13 +1263,14 @@ function docComment(sessionId: string, c: Pick<OurComment, 'blockId' | 'quote' |
   persist(session(sessionId))
   return out
 }
-ipcMain.handle('doc:comment', (_e, ...a: Parameters<typeof docComment>) => docComment(...a))
+ipcMain.handle('doc:comment', (_e, ...a: Parameters<typeof docComment>) => (notWhileAiWorks(a[0]), docComment(...a)))
 
 /**
  * Resolve a comment thread (theirs or ours) or reopen it, as Word does: it stays in the document,
  * unhighlighted and greyed out, and goes into the marked-up copy marked done. One history action.
  */
 ipcMain.handle('doc:resolveComment', (_e, sessionId: string, commentId: string, done: boolean) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const theirs = d.blocks.flatMap((b) => b.comments ?? []).find((c) => c.id === commentId)
@@ -1294,9 +1310,10 @@ function docEditComment(sessionId: string, commentId: string, text: string) {
   persist(session(sessionId))
   return out
 }
-ipcMain.handle('doc:editComment', (_e, ...a: Parameters<typeof docEditComment>) => docEditComment(...a))
+ipcMain.handle('doc:editComment', (_e, ...a: Parameters<typeof docEditComment>) => (notWhileAiWorks(a[0]), docEditComment(...a)))
 
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
+  notWhileAiWorks(sessionId)
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const gone = d.comments.find((c) => c.id === commentId)

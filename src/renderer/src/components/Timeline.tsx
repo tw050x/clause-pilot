@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PipelineRun, PipelineStep, ReviewPart, ReviewSession } from '@shared/types'
+import type { HistoryAction, PipelineRun, PipelineStep, ReviewPart, ReviewSession } from '@shared/types'
+import { describe, details } from '@shared/history'
+import { isManual, blocksTouched, overridesOf, type Override } from '@shared/overrides'
 import { marksFor, segmentsOf, shownText } from '@shared/changes'
 import { diffSegments } from '@shared/diff'
 import { Redline } from './Redline'
@@ -59,6 +61,10 @@ export function Timeline({
   const hlKey = highlighted?.join(',') ?? ''
   useEffect(() => setEverything(false), [hlKey])
   const only = highlighted?.length && !everything && run?.parts ? new Set(run.parts.filter((p) => p.blockIds.some((id) => highlighted.includes(id))).map((p) => p.id)) : null
+  const onlyBlocks = only ? new Set(run!.parts!.filter((p) => only.has(p.id)).flatMap((p) => p.blockIds)) : null
+  // The reviewer's own edits, among the AI review's steps; and the AI changes they overrode.
+  const manual = (session.doc?.history ?? []).filter(isManual)
+  const overrides = session.doc ? overridesOf(session.doc) : {}
   const [defaults, setDefaults] = useState<Awaited<ReturnType<typeof window.api.pipeline.defaults>> | null>(null)
   useEffect(() => void window.api.pipeline.defaults().then(setDefaults), [session.id])
   const [questions, setQuestions] = useState<{ id: string; title: string }[]>([])
@@ -89,13 +95,15 @@ export function Timeline({
 
       {(
         <ol className="tl-steps">
-          {(run?.steps ?? PLANNED_STEPS)
-            .filter((st) => !only || about(st, only) || (st.id === 'check' && st.status === 'needs-you'))
-            .map((st) =>
-              GATES.has(st.id) ? (
-                <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} questions={questions} onJump={onJump} only={only} focusPart={focusPart} />
+          {withEdits(run?.steps ?? PLANNED_STEPS, manual)
+            .filter((x) => (x.kind === 'step' ? !only || about(x.step, only) || (x.step.id === 'check' && x.step.status === 'needs-you') : !onlyBlocks || blocksTouched(x.action).some((id) => onlyBlocks.has(id))))
+            .map((x) =>
+              x.kind === 'edit' ? (
+                <ManualEntry key={x.action.id} action={x.action} session={session} overrides={overrides} onJump={onJump} />
+              ) : GATES.has(x.step.id) ? (
+                <Gate key={x.step.id} step={x.step} session={session} onChange={onChange} disabled={onHold || !run} questions={questions} onJump={onJump} only={only} focusPart={focusPart} overrides={overrides} />
               ) : (
-                <Step key={st.id} step={st} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} />
+                <Step key={x.step.id} step={x.step} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} overrides={overrides} />
               )
             )}
         </ol>
@@ -188,7 +196,7 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
   return <span className={`tl-icon ${status}`}>{icon ? <Icon name={icon} size={11} stroke={2.6} /> : status === 'skipped' ? '–' : null}</span>
 }
 
-function Step({ step, run, session, onJump, onChange, focusPart, only }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string; only?: Set<string> | null }) {
+function Step({ step, run, session, onJump, onChange, focusPart, only, overrides }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string; only?: Set<string> | null; overrides?: Record<string, Override> }) {
   // A step's items (a part's checks) on request; otherwise only failures (what was found is at the
   // reviewer's check), and the part asked about (its marker clicked; the highlighted text's). Its
   // progress is in its own line.
@@ -231,6 +239,7 @@ function Step({ step, run, session, onJump, onChange, focusPart, only }: { step:
           </div>
           {detail ? <div className="tl-detail faint">{detail}</div> : null}
           {step.error && <div className="tl-detail dr-err">{step.error}</div>}
+          {proposal && overrides?.[proposal.id]?.kind === 'change' && <OverriddenLabel o={overrides[proposal.id]} what="this change" />}
           {proposal && (
             <button className="link-btn tl-count" onClick={() => setOpen((v) => !v)}>
               {open ? 'Hide what changed ▾' : 'What changed ▸'}
@@ -242,7 +251,7 @@ function Step({ step, run, session, onJump, onChange, focusPart, only }: { step:
       {shown.length > 0 && (
         <ol className="tl-steps tl-sub">
           {shown.map((c) => (
-            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} />
+            <Step key={c.id} step={c} run={run} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} only={only} overrides={overrides} />
           ))}
         </ol>
       )}
@@ -340,7 +349,8 @@ function Gate({
   questions,
   onJump,
   only,
-  focusPart
+  focusPart,
+  overrides
 }: {
   step: PipelineStep
   session: ReviewSession
@@ -350,6 +360,7 @@ function Gate({
   onJump: (blockId: string) => void
   only?: Set<string> | null
   focusPart?: string
+  overrides?: Record<string, Override>
 }) {
   const { busy, error, act } = useRunAct(onChange)
   const waiting = step.status === 'needs-you'
@@ -364,7 +375,7 @@ function Gate({
         <div className="tl-body">
           <div className="tl-title">{step.title}</div>
           <div className="tl-detail faint">{step.detail ?? aboutOf(step.id)}</div>
-          {step.id === 'check' && waiting && <CheckReview session={session} onChange={onChange} disabled={disabled} questions={questions} onJump={onJump} only={only} focusPart={focusPart} />}
+          {step.id === 'check' && waiting && <CheckReview session={session} onChange={onChange} disabled={disabled} questions={questions} onJump={onJump} only={only} focusPart={focusPart} overrides={overrides ?? {}} />}
           {!(step.id === 'check' && waiting) && <div className="tl-gate-act">
             {passed ? (
               <span className="tl-gate-passed">
@@ -397,7 +408,8 @@ function CheckReview({
   questions,
   onJump,
   only,
-  focusPart
+  focusPart,
+  overrides
 }: {
   session: ReviewSession
   onChange: (s: ReviewSession) => void
@@ -407,11 +419,15 @@ function CheckReview({
   /** The parts the highlighted text is in: only their changes and questions shown. */
   only?: Set<string> | null
   focusPart?: string
+  /** Proposed changes the reviewer has since made their own edit over: set aside, folded. */
+  overrides: Record<string, Override>
 }) {
   const run = session.doc!.pipeline!
   const d = session.doc!
   const round = run.round ?? 1
-  const waitingOn = (run.parts ?? []).filter((p) => p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved'))
+  const all = (run.parts ?? []).filter((p) => p.proposal && !p.proposal.appliedAt && (p.proposal.status === 'pending' || p.proposal.status === 'approved'))
+  const overridden = all.filter((p) => overrides[p.id]?.kind === 'proposal')
+  const waitingOn = all.filter((p) => !overridden.includes(p))
   // Approved in an earlier round and not sent back since: nothing new to look at.
   const earlier = waitingOn.filter((p) => p.proposal!.status === 'approved' && p.proposal!.round < round)
   const current = waitingOn.filter((p) => !earlier.includes(p))
@@ -543,6 +559,17 @@ function CheckReview({
         </div>
       )}
       {now.map((part) => card(part, false))}
+      {shownParts(overridden).map((part) => (
+        <div key={part.id} className="ck-item overridden" data-part={part.id}>
+          <div className="ck-head">
+            <button className="link-btn tl-part" onClick={() => onJump(part.blockIds[0])} title="Show it in the document">
+              {part.title}
+            </button>
+            <span className="ck-badge muted">Overridden</span>
+          </div>
+          <OverriddenLabel o={overrides[part.id]} what="the change proposed here" />
+        </div>
+      ))}
       {only && !now.length && !folded.length && <p className="faint dr-small">No changes proposed for the highlighted text.</p>}
       {folded.length > 0 && (
         <div className="ck-earlier">
@@ -598,6 +625,128 @@ function CheckReview({
       )}
       {error && <p className="dr-small dr-err">{error}</p>}
     </div>
+  )
+}
+
+/** Bring one of the reviewer's edits in the timeline into view, and mark it for a moment. */
+function showAction(id: string) {
+  const el = document.querySelector<HTMLElement>(`.tl [data-action="${id}"]`)
+  if (!el) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  el.classList.remove('tl-flash')
+  void el.offsetWidth
+  el.classList.add('tl-flash')
+}
+
+/** On an AI change (made, or proposed) the reviewer's own edit overrode: says so, and links to the edit. */
+function OverriddenLabel({ o, what }: { o: Override; what: string }) {
+  return (
+    <div className="tl-overridden dr-small">
+      <Icon name="users" size={12} /> Your edit replaced {what}.{' '}
+      <button className="link-btn" onClick={() => showAction(o.actionId)}>
+        See your edit
+      </button>
+    </div>
+  )
+}
+
+/** The review's steps with the reviewer's own edits among them, each after the step it followed. */
+function withEdits(steps: PipelineStep[], edits: HistoryAction[]): ({ kind: 'step'; step: PipelineStep } | { kind: 'edit'; action: HistoryAction })[] {
+  const out: ({ kind: 'step'; step: PipelineStep } | { kind: 'edit'; action: HistoryAction })[] = []
+  const after = (a: HistoryAction) => {
+    let at = -1
+    steps.forEach((st, i) => {
+      if (st.startedAt && st.startedAt <= a.at) at = i
+    })
+    return at
+  }
+  const placed = edits.map((a) => ({ a, at: after(a) }))
+  for (const x of placed.filter((p) => p.at < 0)) out.push({ kind: 'edit', action: x.a })
+  steps.forEach((st, i) => {
+    out.push({ kind: 'step', step: st })
+    for (const x of placed.filter((p) => p.at === i)) out.push({ kind: 'edit', action: x.a })
+  })
+  return out
+}
+
+/**
+ * One of the reviewer's own edits, in the timeline like the AI review's steps: what they did, and
+ * where it overrode the AI: a change it made (shown, with the edit after it) or one it proposed.
+ */
+function ManualEntry({ action, session, overrides, onJump }: { action: HistoryAction; session: ReviewSession; overrides: Record<string, Override>; onJump: (blockId: string) => void }) {
+  const d = session.doc!
+  const run = d.pipeline
+  const over = Object.entries(overrides)
+    .filter(([, o]) => o.actionId === action.id)
+    .map(([partId, o]) => ({ part: run?.parts?.find((p) => p.id === partId), kind: o.kind }))
+    .filter((x): x is { part: ReviewPart; kind: Override['kind'] } => !!x.part)
+  const items = details(d, action).filter((x) => x.kind === 'edited' || x.kind === 'resolved' || x.kind === 'paragraph')
+  const changed = over.filter((x) => x.kind === 'change')
+  const proposed = over.filter((x) => x.kind === 'proposal')
+  const showPart = (partId: string) => {
+    const el = document.querySelector<HTMLElement>(`.tl .ck-item[data-part="${partId}"], .tl [data-part="${partId}"]`)
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+  return (
+    <li className="tl-step done manual" data-action={action.id}>
+      <div className="tl-row">
+        <span className="tl-icon manual">
+          <Icon name="users" size={11} stroke={2.4} />
+        </span>
+        <div className="tl-body">
+          <div className="tl-title">
+            {describe(d, action)}
+            {over.length > 0 && <span className="tl-override-tag">Overrides the AI</span>}
+          </div>
+          <div className="tl-detail faint">
+            {action.by} · {when(action.at)}
+          </div>
+          {changed.map(({ part }) => (
+            <div key={part.id} className="tl-override-box">
+              <div className="dr-small faint">
+                First the AI review changed{' '}
+                <button className="link-btn" onClick={() => onJump(part.blockIds[0])}>
+                  {part.title}
+                </button>
+                {part.proposal?.appliedAt ? ` (${when(part.proposal.appliedAt)})` : ''}:
+              </div>
+              <p className="ck-summary">{part.proposal?.summary}</p>
+              <ProposalCard part={part} session={session} onJump={onJump} />
+              <div className="dr-small faint tl-then">Then your edit, over it:</div>
+            </div>
+          ))}
+          {proposed.map(({ part }) => (
+            <div key={part.id} className="dr-small tl-instead">
+              Instead of the change proposed for{' '}
+              <button className="link-btn" onClick={() => showPart(part.id)}>
+                {part.title}
+              </button>
+              : that proposal is set aside.
+            </div>
+          ))}
+          {items.slice(0, 4).map((x, i) => (
+            <div key={i} className="tl-prop-item">
+              <button className="link-btn tl-prop-where" onClick={() => onJump(x.blockId)}>
+                {x.where}
+              </button>
+              {': '}
+              {x.kind === 'edited' ? (
+                <Redline segments={diffSegments(x.before, x.after)} />
+              ) : x.kind === 'resolved' ? (
+                <>
+                  <span className={`sel-st ${x.outcome ?? ''}`}>{x.outcome === 'accepted' ? 'Accepted' : x.outcome === 'rejected' ? 'Rejected' : 'Reopened'}</span> their {x.op === 'ins' ? 'insertion' : 'deletion'} “{x.text.slice(0, 120)}”
+                </>
+              ) : (
+                <span>
+                  {x.added ? 'added' : 'removed'} “{x.text.slice(0, 120)}”
+                </span>
+              )}
+            </div>
+          ))}
+          {items.length > 4 && <div className="faint dr-small">and {items.length - 4} more</div>}
+        </div>
+      </div>
+    </li>
   )
 }
 
