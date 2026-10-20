@@ -4,8 +4,8 @@ import { segmentsOf } from '@shared/changes'
 import { Icon } from '../lib/icons'
 
 /**
- * The automated review, as a timeline in the review column (started from the bar under the
- * document, RunButton): each step as it runs. Top-level steps run in order; a step's sub-items (a part's checks) are
+ * The automated review, as a timeline in the review column (planned on upload, started from the
+ * column's foot, RunButton): each step as it runs. Top-level steps run in order; a step's sub-items (a part's checks) are
  * indented under it, in their own order. What each step used is shown beside it, and the run's
  * total against its budget at the top.
  */
@@ -43,7 +43,7 @@ export function Timeline({
       </div>
       {!run && (
         <p className="faint dr-small tl-intro">
-          Start the AI review from the bar under the document. It reads the contract’s structure, checks each part as closely as it needs (skipping the parts with nothing to check), makes the changes it finds are needed, and writes the new draft and the email, for you to check. Each change it makes can be undone in History.
+          Each draft is planned when it’s uploaded. Start the AI review from the foot of this column: it reads the contract’s structure, checks each part as closely as it needs (skipping the parts with nothing to check), and makes the changes it finds are needed (each can be undone in History). Then it waits for you to check them before writing the new draft and the email.
         </p>
       )}
       {run && <Spent run={run} />}
@@ -92,7 +92,7 @@ export function Timeline({
 }
 
 function RunStatus({ run }: { run: PipelineRun }) {
-  const label = { running: 'Running', paused: 'Paused', stopped: 'Stopped', done: 'Done', error: 'Failed' }[run.status]
+  const label = { running: run.confirmed ? 'Running' : 'Planning', planned: 'Planned', paused: run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') ? 'Your turn' : 'Paused', stopped: 'Stopped', done: 'Done', error: 'Failed' }[run.status]
   return <span className={`tl-pill ${run.status}`}>{run.status === 'running' && <span className="spinner tl-spin" />}{label}</span>
 }
 
@@ -109,7 +109,7 @@ function Spent({ run }: { run: PipelineRun }) {
       <span className="faint dr-small">
         {run.provider === 'anthropic' ? `$${(run.spent.usd ?? 0).toFixed(2)} of $${(run.budget.usd ?? 0).toFixed(2)} · ` : ''}
         {k(tokens)} tokens{run.provider === 'anthropic' ? '' : ` of ${k(run.budget.tokens)}`}
-        {run.estimate && run.status !== 'done' && ` · next: about ${run.estimate.calls} calls, ${k(run.estimate.tokens)} tokens${run.estimate.usd !== undefined ? `, $${run.estimate.usd.toFixed(2)}` : ''}`}
+        {run.estimate && run.status === 'planned' && ` · the review: about ${run.estimate.calls} calls, ${k(run.estimate.tokens)} tokens${run.estimate.usd !== undefined ? `, $${run.estimate.usd.toFixed(2)}` : ''}`}
       </span>
     </div>
   )
@@ -228,9 +228,10 @@ function ProposalCard({ part, session, onJump }: { part: ReviewPart; session: Re
 }
 
 /**
- * The AI review's one button, in the bar under the document: Start (it then runs through on its
- * own), Stop while it runs, Continue when it stopped (a reached budget is raised by the default
- * again), Review again once it's done.
+ * The AI review's button, at the foot of the review column. The draft is planned when it's
+ * uploaded (Planning…); Start then runs the review on its own (Stop while it runs) as far as the
+ * reviewer's check of the findings, where it waits: Write the new draft and email goes on. Continue
+ * when it stopped (a reached budget is raised by the default again); Review again once it's done.
  */
 export function RunButton({ session, onChange, disabled }: { session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
   const run = session.doc?.pipeline
@@ -249,11 +250,9 @@ export function RunButton({ session, onChange, disabled }: { session: ReviewSess
       setBusy(false)
     }
   }
-  if (!defaults) return null
+  if (!defaults || session.original) return null
   const off = busy || disabled || !defaults.ready
   const tip = !defaults.ready ? defaults.why : `${defaults.name} · ${defaults.model}`
-  const running = run?.status === 'running'
-  const resumable = run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped')
   // Going on: a budget that ran out is raised by the default again.
   const more = () => {
     if (!run) return undefined
@@ -261,22 +260,48 @@ export function RunButton({ session, onChange, disabled }: { session: ReviewSess
     const out = spent >= run.budget.tokens || (run.budget.usd !== undefined && (run.spent.usd ?? 0) >= run.budget.usd)
     return out ? { tokens: run.budget.tokens + defaults.budget.tokens, usd: run.budget.usd !== undefined ? run.budget.usd + (defaults.budget.usd ?? 0) : undefined } : undefined
   }
-  return (
-    <>
-      {error && <span className="dr-small dr-err run-error" title={error}>{error}</span>}
-      {running ? (
+  const go = () => act(window.api.pipeline.continue(session.id, more()))
+  const button = (() => {
+    if (run?.status === 'running' && !run.confirmed)
+      return (
+        <button className="btn sm run-btn" disabled title="Reading the draft and planning its review">
+          <span className="spinner sm" /> Planning…
+        </button>
+      )
+    if (run?.status === 'running')
+      return (
         <button className="btn sm run-btn" disabled={busy} onClick={() => act(window.api.pipeline.stop(session.id))} title="Stop the AI review: what it has done is kept">
           <span className="spinner sm" /> Reviewing… Stop
         </button>
-      ) : resumable ? (
-        <button className="btn sm primary run-btn" disabled={off} onClick={() => act(window.api.pipeline.continue(session.id, more()))} title={tip}>
+      )
+    if (run?.status === 'planned')
+      return (
+        <button className="btn sm primary run-btn" disabled={off} onClick={go} title={tip}>
+          <Icon name="sparkle" size={14} /> Start AI review
+        </button>
+      )
+    if (run?.status === 'paused' && run.steps.some((x) => x.id === 'check' && x.status === 'needs-you'))
+      return (
+        <button className="btn sm primary run-btn" disabled={off} onClick={go} title="Write the new draft and the email to them, from the review as it now stands">
+          <Icon name="mail" size={14} /> Write new draft and email
+        </button>
+      )
+    if (run && (run.status === 'paused' || run.status === 'error' || run.status === 'stopped'))
+      return (
+        <button className="btn sm primary run-btn" disabled={off} onClick={go} title={tip}>
           <Icon name="sparkle" size={14} /> Continue AI review
         </button>
-      ) : (
-        <button className={`btn sm run-btn ${run ? '' : 'primary'}`} disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={tip}>
-          <Icon name="sparkle" size={14} /> <span className="bb-label">{run ? 'Review again' : 'Start AI review'}</span>
-        </button>
-      )}
+      )
+    return (
+      <button className={`btn sm run-btn ${run ? '' : 'primary'}`} disabled={off} onClick={() => act(window.api.pipeline.start(session.id, defaults.budget))} title={tip}>
+        <Icon name="sparkle" size={14} /> {run ? 'Review again' : 'Start AI review'}
+      </button>
+    )
+  })()
+  return (
+    <>
+      {button}
+      {error && <span className="dr-small dr-err run-error" title={error}>{error}</span>}
     </>
   )
 }

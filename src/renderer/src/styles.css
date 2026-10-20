@@ -1136,6 +1136,11 @@ body.past-open .rightbar { z-index: 45; }
 .tl-pill.running { background: var(--processing-tint); color: var(--processing); }
 .tl-pill.done { background: var(--exact-tint); color: var(--exact); }
 .tl-pill.paused { background: color-mix(in srgb, #b45309 12%, var(--surface)); color: #92400e; }
+.tl-pill.planned { background: var(--processing-tint); color: var(--processing); }
+.tl-note.planned { background: var(--processing-tint); color: var(--processing); }
+/* The review column's foot: the AI review's button, then Accept / Reject (when changes are picked), then the key. */
+.rightbar-foot .run-btn { flex-shrink: 0; }
+.rightbar-foot .run-error { max-width: 140px; }
 .tl-pill.error, .tl-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
 .tl-spin { width: 9px; height: 9px; border-width: 1.5px; }
 .tl-spent { display: flex; flex-direction: column; gap: 4px; }

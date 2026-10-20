@@ -28,11 +28,11 @@ let gpuFreeAt = 0
 async function modelTime(promptChars, answerChars) {
   if (process.env.DEMO_DELAY !== undefined) return sleep(Number(process.env.DEMO_DELAY))
   if (!(SPEED > 0)) return
-  const prefill = ((promptChars / 4) / PREFILL) * 1000
+  const prefill = ((promptChars / 4) / PREFILL) * 1000 / SPEED
   const start = Math.max(Date.now(), gpuFreeAt)
   gpuFreeAt = start + prefill
-  const decode = ((THINK + answerChars / 4) / DECODE) * 1000
-  return sleep((gpuFreeAt - Date.now() + decode) / SPEED)
+  const decode = ((THINK + answerChars / 4) / DECODE) * 1000 / SPEED
+  return sleep(gpuFreeAt - Date.now() + decode)
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

@@ -875,8 +875,12 @@ export interface PipelineRun {
   by: string
   startedAt: string
   endedAt?: string
-  /** running; paused (budget reached, or waiting for the next phase); stopped by the user; done; error. */
-  status: 'running' | 'paused' | 'stopped' | 'done' | 'error'
+  /**
+   * running; planned (the draft scanned and the review planned, on upload: Start goes on);
+   * paused (budget reached, a person needed, or the findings to look at before the new draft);
+   * stopped by the user; done; error.
+   */
+  status: 'running' | 'planned' | 'paused' | 'stopped' | 'done' | 'error'
   /** Why it's paused or stopped, for the timeline. */
   note?: string
   provider: 'anthropic' | 'vllm'
@@ -884,8 +888,10 @@ export interface PipelineRun {
   /** The cap: tokens (input + output) and, on Claude, dollars. */
   budget: { tokens: number; usd?: number }
   spent: StepUsage
-  /** The reviewer has seen the estimate and said to go on (Continue). */
+  /** The reviewer started the review (the plan, made on upload, is gone on with). */
   confirmed?: boolean
+  /** The reviewer has looked at the findings and said to write the new draft and email. */
+  draftConfirmed?: boolean
   /** The estimate for what's next, once the structure is known. */
   estimate?: { calls: number; tokens: number; usd?: number }
   steps: PipelineStep[]

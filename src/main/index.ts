@@ -21,7 +21,7 @@ import { DEFAULT_SCHEMA, schemaProblem, schemaToSend } from '@shared/schema'
 import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { startDemoServer } from '../../demo-server/server.mjs'
-import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -731,8 +731,24 @@ ipcMain.handle('review:probe', async (_e, path: string): Promise<DraftProbe> => 
 ipcMain.handle('review:start', async (_e, path: string, contractId?: string, origin?: DraftOrigin) => {
   const s = await startReview(ws, path, contractId, origin)
   persist(s)
+  planOnOpen(s)
   return s
 })
+
+/**
+ * A draft is scanned and its review planned as soon as it's uploaded (or first opened): the
+ * AI review's first steps, run in the background, so the plan is there when the reviewer starts
+ * it. Not for the original we sent, a closed review, one on security hold, or without the AI.
+ */
+function planOnOpen(s: ReviewSession) {
+  if (!s.doc || s.original || s.closed || s.doc.pipeline || pipelineRunning(s.id)) return
+  if (alertFor(s.id)?.status === 'open' || provider().kind === 'none') return
+  try {
+    planReview(s, pipelineDeps(), defaultBudget())
+  } catch (e) {
+    console.warn('The review could not be planned:', e)
+  }
+}
 
 // ---- security alerts -------------------------------------------------------------------------
 // Text addressed to an AI reviewer is a security event, not just a contract issue. The review
@@ -785,7 +801,11 @@ ipcMain.handle('security:resolve', (_e, id: string, outcome: 'malicious' | 'fals
   return ws.store.securityAlerts()
 })
 
-ipcMain.handle('review:get', (_e, id: string) => session(id))
+ipcMain.handle('review:get', (_e, id: string) => {
+  const s = session(id)
+  planOnOpen(s)
+  return s
+})
 ipcMain.handle('review:list', () => ws.store.listSessions())
 
 // ---- IPC: outputs ----------------------------------------------------------------------
@@ -1477,6 +1497,11 @@ const pipelineDeps = (): PipelineDeps => ({
   }
 })
 
+/** A run's budget unless changed: dollars on Claude (with a token ceiling), tokens otherwise. */
+function defaultBudget() {
+  return pipelineDeps().settings().kind === 'anthropic' ? { usd: DEFAULT_BUDGET.usd, tokens: DEFAULT_BUDGET.tokens * 4 } : { tokens: DEFAULT_BUDGET.tokens }
+}
+
 ipcMain.handle('pipeline:defaults', () => {
   const { kind, model } = pipelineDeps().settings()
   const ai = provider()
@@ -1485,7 +1510,7 @@ ipcMain.handle('pipeline:defaults', () => {
     provider: kind,
     name: p === 'demo' ? 'Demo server' : p === 'vllm' ? 'vLLM' : 'Claude',
     model,
-    budget: kind === 'anthropic' ? { usd: DEFAULT_BUDGET.usd, tokens: DEFAULT_BUDGET.tokens * 4 } : { tokens: DEFAULT_BUDGET.tokens },
+    budget: defaultBudget(),
     ready: ai.kind !== 'none',
     why: ai.kind === 'none' ? 'The AI isn’t set up: add it in Settings.' : undefined
   }

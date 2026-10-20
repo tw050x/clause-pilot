@@ -507,7 +507,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         createPortal(
           <>
             <div className="bottombar-group">
-        <RunButton session={session} onChange={onChange} disabled={onHold} />
         <button className={`btn sm ${showHistory ? 'on' : ''}`} onClick={() => setShowHistory((v) => !v)} title="Everything you've done in this review: undo or redo any of it (in the review column)">
           <Icon name="history" size={14} /> <span className="bb-label">History{d.history?.length ? ` (${d.history.length})` : ''}</span>
         </button>
@@ -571,6 +570,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         !session.original &&
         createPortal(
           <>
+            <RunButton session={session} onChange={onChange} disabled={onHold} />
             <div className="bottombar-group" ref={setDecideSlot} />
             <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
               {showKey ? 'Hide key' : 'Show key'}

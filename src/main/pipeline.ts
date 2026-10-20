@@ -10,16 +10,18 @@ import { schemaToSend, type JsonSchema } from '@shared/schema'
  * a step's children (a part's checks) are its own list. Every AI call is charged to its step and
  * to the run: past the run's budget, nothing new starts and the run pauses (what's done is kept).
  *
- * One press starts it and it runs through on its own: it reads the contract's structure and plans
- * the review (the parts, how closely each is checked, what that's estimated to use), reviews the
+ * The draft is scanned when it's uploaded (planReview): hidden instructions, the contract's
+ * structure, and the plan (the parts, how closely each is checked, what that's estimated to use).
+ * One press then starts the review and it runs on its own: it reviews the
  * parts a few at a time, each against our standards (approved wording, playbook) and against the
  * rest of the contract (conflicts, their tracked changes, language), with what needs no AI
  * (unchanged since we sent it, our approved wording word for word) skipped. What it finds is
  * brought together into one change per part and applied to the draft (each one action in the
  * review's history, so it can be undone); parts it changed are checked again, up to MAX_ROUNDS;
- * then the new draft and the email are written, for the reviewer to check and send.
+ * then it waits for the reviewer to look at what it found and did (undoing what they don't want)
+ * before the new draft and the email are written.
  *
- * It stops on its own only when a person must look first (text addressed to an AI reviewer) or
+ * Otherwise it stops only when a person must look first (text addressed to an AI reviewer) or
  * the budget is reached. A part that fails is tried again once, then left for the reviewer. A run
  * picks up where it stopped: steps and parts already done aren't done again.
  */
@@ -110,6 +112,8 @@ export function continueReview(s: ReviewSession, deps: PipelineDeps, budget?: { 
   if (!run) throw new Error('No review to go on with.')
   if (live.has(s.id)) throw new Error('The review is already running.')
   if (budget) run.budget = run.provider === 'anthropic' ? budget : { tokens: budget.tokens }
+  // Waiting at the draft: going on is the reviewer's word to write it.
+  if (run.confirmed && run.steps.some((x) => x.id === 'check' && x.status === 'needs-you')) run.draftConfirmed = true
   run.status = 'running'
   run.confirmed = true
   run.note = undefined
@@ -128,8 +132,16 @@ function* walk(steps: PipelineStep[]): Generator<PipelineStep> {
   }
 }
 
-/** Start the review (a new run, replacing any finished one). */
-export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { tokens: number; usd?: number }): PipelineRun {
+/**
+ * Scan the draft and plan the review, on upload: the run's first steps, then it waits (planned)
+ * for the reviewer to start it.
+ */
+export function planReview(s: ReviewSession, deps: PipelineDeps, budget: { tokens: number; usd?: number }): PipelineRun {
+  return startReview(s, deps, budget, false)
+}
+
+/** Start the review (a new run, replacing any finished one); `go` false: only as far as the plan. */
+export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { tokens: number; usd?: number }, go_ = true): PipelineRun {
   const d = s.doc!
   if (live.has(s.id)) throw new Error('The review is already running.')
   const { kind, model } = deps.settings()
@@ -142,6 +154,7 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
     provider: kind,
     model,
     budget: kind === 'anthropic' ? budget : { tokens: budget.tokens },
+    confirmed: go_,
     spent: { input: 0, cached: 0, output: 0, usd: kind === 'anthropic' ? 0 : undefined },
     steps: [
       step('security', 'Check for hidden instructions'),
@@ -150,6 +163,7 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       step('review', 'Review each part'),
       step('consolidate', 'Bring the findings together'),
       step('approve', 'Make the changes'),
+      step('check', 'Your check of the findings'),
       step('draft', 'New draft and email')
     ]
   }
@@ -246,7 +260,14 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
         `About ${run.estimate.calls} AI calls and ${Math.round(run.estimate.tokens / 1000)}k tokens${run.estimate.usd !== undefined ? ` (about $${run.estimate.usd.toFixed(2)})` : ''} to review the parts.`
       )
     }
-    run.confirmed = true
+    // Planned on upload: the review itself waits for the reviewer to start it.
+    if (!run.confirmed) {
+      run.status = 'planned'
+      run.note = `Planned: ${parts.filter((p) => p.depth !== 'skip').length} parts to review${run.estimate ? `, about ${run.estimate.calls} AI calls` : ''}. Start the AI review when you’re ready.`
+      deps.persist(s)
+      return
+    }
+    run.note = undefined
 
     // 4–6, a round: each part (this round's), what they found brought together into one
     // proposal per part, and the reviewer's decisions on them.
@@ -361,7 +382,26 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     }
     // Another round for what changed or was sent back, straight on; or everything's decided.
     if (nextRound(s, run, deps)) return go(s, run, deps, flag)
-    const leftOver = run.note?.startsWith('Rounds used up') ? run.note : undefined
+    const note = run.note as string | undefined
+    const leftOver = note?.startsWith('Rounds used up') ? note : undefined
+
+    // The reviewer looks at what it found and did before anything is written for them to send.
+    const check = at('check')
+    if (check && fresh('check')) {
+      if (!run.draftConfirmed) {
+        const made = run.parts?.filter((p) => p.proposal?.status === 'approved').length ?? 0
+        check.status = 'needs-you'
+        check.startedAt ??= now()
+        check.detail = made
+          ? `${made} change${made === 1 ? '' : 's'} made to the draft. Look through them (undo any in History), then write the new draft and the email.`
+          : 'Nothing was changed. Look through the findings, then write the new draft and the email.'
+        run.status = 'paused'
+        run.note = leftOver ?? 'Your turn: check the findings and the changes, then write the new draft and the email.'
+        deps.persist(s)
+        return
+      }
+      end(check, 'done', `Checked by ${deps.actor()}.`)
+    }
 
     // 7. The new draft (the marked-up copy, as the review now stands) and the email to them.
     const draft = at('draft')
@@ -399,7 +439,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     }
     run.status = 'done'
     run.endedAt = now()
-    run.note = leftOver ?? 'Done. Check the changes it made, then the new draft and the email.'
+    run.note = leftOver ?? 'Done. The new draft and the email are ready: Marked-up copy and Draft response, under the document.'
     deps.persist(s)
   } catch (e) {
     if (e instanceof Stopped) return
@@ -475,7 +515,8 @@ function nextRound(s: ReviewSession, run: PipelineRun, deps: PipelineDeps): bool
   }
   const n = r + 1
   const ids = roundIds(n)
-  const at = run.steps.findIndex((x) => x.id === 'draft')
+  // Before the reviewer's check (and the draft after it).
+  const at = (i => (i < 0 ? run.steps.findIndex((x) => x.id === 'draft') : i))(run.steps.findIndex((x) => x.id === 'check'))
   const steps: PipelineStep[] = [
     { id: ids.review, title: `Round ${n} · Review what changed`, status: 'waiting', children: ready.map((p) => ({ id: `${ids.review}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.feedback ? `You asked: “${p.feedback}”` : 'Check what the change did.' })) },
     { id: ids.consolidate, title: `Round ${n} · Bring the findings together`, status: 'waiting' },
