@@ -629,7 +629,7 @@ function ensureDemoServer(): Promise<unknown> {
     return Promise.resolve()
   }
   if (!['127.0.0.1', 'localhost'].includes(at.hostname)) return Promise.resolve()
-  demoServer = startDemoServer({ port: Number(at.port || 80), onLog: (...a) => console.log('[demo server]', ...a) })
+  demoServer = startDemoServer({ port: Number(at.port || 80), onLog: (...a) => console.log('[demo server]', ...a), recordingsDir: join(appRoot, 'data/demo-recordings') })
     .then((x) => app.on('will-quit', x.close))
     .catch((e) => {
       demoServer = null

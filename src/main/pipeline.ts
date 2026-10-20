@@ -68,6 +68,12 @@ export interface PipelineDeps {
   apply: (s: ReviewSession, p: Proposal) => string[]
 }
 
+/**
+ * Wording the AI suggests, as it should read: a model sometimes keeps the tags the paragraph was
+ * given in (<now>…</now>), which mustn't end up in the draft.
+ */
+const asWording = (t: string) => t.replace(/<\/?(?:now|as_they_sent_it|their_changes|paragraph)\b[^>]*>/g, '').trim()
+
 /** Parts reviewed at once. */
 const AT_ONCE = 3
 
@@ -627,8 +633,8 @@ async function crossCheck(s: ReviewSession, review: PipelineStep, parts: ReviewP
   }
   for (const x of out.revise) {
     const hit = all.get(x.finding_id)
-    if (!hit || hit.f.dropped || !x.wording.trim()) continue
-    hit.f.wording = x.wording.trim()
+    if (!hit || hit.f.dropped || !asWording(x.wording)) continue
+    hit.f.wording = asWording(x.wording)
     hit.f.detail = `${hit.f.detail} (Revised to fit the rest of the contract: ${x.why.trim()})`
     revised++
   }
@@ -637,7 +643,7 @@ async function crossCheck(s: ReviewSession, review: PipelineStep, parts: ReviewP
     if (!p || !x.title.trim()) continue
     p.findings = [
       ...(p.findings ?? []),
-      { id: deps.uid('find'), check: 'conflict', severity: x.severity === 'high' ? 'high' : 'warn', title: x.title.trim(), detail: x.detail.trim(), blockId: x.paragraph_id, wording: x.wording.trim() || undefined }
+      { id: deps.uid('find'), check: 'conflict', severity: x.severity === 'high' ? 'high' : 'warn', title: x.title.trim(), detail: x.detail.trim(), blockId: x.paragraph_id, wording: asWording(x.wording) || undefined }
     ]
     // Its part now has something to bring together, even if its own review found nothing.
     const c = childOf(p)
@@ -724,7 +730,10 @@ async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: 
     id: deps.uid('prop'),
     round,
     summary: out.summary.trim(),
-    wording: out.wording.filter((w) => ids.has(w.paragraph_id) && w.text.trim() && w.text.replace(/\s+/g, ' ').trim() !== current.get(w.paragraph_id)).map((w) => ({ blockId: w.paragraph_id, text: w.text.trim(), why: w.why })),
+    wording: out.wording
+      .map((w) => ({ ...w, text: asWording(w.text) }))
+      .filter((w) => ids.has(w.paragraph_id) && w.text && w.text.replace(/\s+/g, ' ').trim() !== current.get(w.paragraph_id))
+      .map((w) => ({ blockId: w.paragraph_id, text: w.text, why: w.why })),
     decisions: out.their_changes.filter((c) => open.get(c.paragraph_id)?.has(c.change_index)).map((c) => ({ blockId: c.paragraph_id, seg: c.change_index, outcome: c.decision === 'accept' ? 'accepted' : 'rejected', why: c.why })),
     comment: out.comment_to_them.trim() ? { blockId: part.blockIds[0], text: out.comment_to_them.trim() } : undefined,
     status: 'pending'
@@ -877,7 +886,7 @@ async function reviewPart(s: ReviewSession, run: PipelineRun, part: ReviewPart, 
           found({ check: 'playbook', severity: 'warn', title: `Playbook: ${pos?.title ?? p.position_id}`, detail: p.note, blockId: part.blockIds[0] })
         }
       for (const w of out.suggested_wording)
-        if (ids.has(w.paragraph_id) && w.text.trim()) found({ check: 'standards', severity: 'warn', title: 'Wording to fix it', detail: w.why, blockId: w.paragraph_id, wording: w.text.trim(), comment: out.comment_to_them.trim() || undefined })
+        if (ids.has(w.paragraph_id) && asWording(w.text)) found({ check: 'standards', severity: 'warn', title: 'Wording to fix it', detail: w.why, blockId: w.paragraph_id, wording: asWording(w.text), comment: out.comment_to_them.trim() || undefined })
       for (const q of out.questions)
         if (extra.some((e) => e.id === q.question_id) && !(run.questions ?? []).some((r) => r.questionId === q.question_id && r.partId === part.id)) (run.questions ??= []).push({ questionId: q.question_id, partId: part.id, why: q.why })
       const met = out.positions.filter((p) => p.status === 'met').length
