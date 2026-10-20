@@ -49,4 +49,52 @@ export const DEFAULTS: Omit<AiQuestion, 'prompt'>[] = [
   { id: 'explain', origin: 'explain', title: 'What does this mean?', detail: 'In plain English: what it means for us', method: 'once', data: ['contract', 'changes', 'edits', 'findings'], answer: 'text', priority: true }
 ]
 
-export const defaultQuestions = (prompts: Record<AiTaskKind, string>): AiQuestion[] => DEFAULTS.map((q) => ({ ...q, prompt: prompts[q.origin!] }))
+/**
+ * Questions the app also starts with, not asked of every part: the AI review suggests them where
+ * they're worth asking (the reviewer ticks them at their check for another round), and they're
+ * offered under More questions on highlighted text.
+ */
+export const MORE_DEFAULTS: AiQuestion[] = [
+  {
+    id: 'exposure',
+    title: 'Is our exposure covered?',
+    detail: 'Liability, caps and indemnities for the risk this creates',
+    method: 'once',
+    data: ['contract', 'paragraphs', 'playbook'],
+    answer: 'findings',
+    priority: false,
+    prompt: 'Work out what could go wrong for us under this wording (a breach, a claim, a data incident) and whether the liability cap, exclusions and indemnities in the contract cover it. Say where we are exposed and what wording would close the gap.'
+  },
+  {
+    id: 'operations',
+    title: 'Can we actually do this?',
+    detail: 'Obligations our team would struggle to meet in practice',
+    method: 'once',
+    data: ['contract', 'paragraphs'],
+    answer: 'findings',
+    priority: false,
+    prompt: 'Read this as the team who would have to comply with it. List any obligation, deadline, notice or reporting duty that would be hard to meet in practice, and suggest wording that would make it workable.'
+  },
+  {
+    id: 'personal-data',
+    title: 'Does it touch personal data?',
+    detail: 'Data protection, security and breach duties',
+    method: 'once',
+    data: ['contract', 'paragraphs', 'playbook'],
+    answer: 'findings',
+    priority: false,
+    prompt: 'Say whether this wording involves personal data or security duties (processing, sharing, transfers, breach notification). Check it against our data protection position and say what is missing or goes further than we would accept.'
+  },
+  {
+    id: 'exit',
+    title: 'Can we get out cleanly?',
+    detail: 'Term, renewal, termination and what survives',
+    method: 'once',
+    data: ['contract', 'paragraphs', 'playbook'],
+    answer: 'findings',
+    priority: false,
+    prompt: 'Check how long this binds us, how it renews, how either side can end it and what survives the end. Say where getting out would be hard or costly for us and what wording would fix it.'
+  }
+]
+
+export const defaultQuestions = (prompts: Record<AiTaskKind, string>): AiQuestion[] => [...DEFAULTS.map((q) => ({ ...q, prompt: prompts[q.origin!] })), ...MORE_DEFAULTS]

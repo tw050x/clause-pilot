@@ -181,8 +181,9 @@ export function reviewState(s: ReviewSession): ReviewState {
   if (run.status === 'running' && !run.confirmed) return { state: 'planning', label: 'Planning', detail: 'Reading its structure and planning the review.' }
   if (run.status === 'planned') return { state: 'planned', label: 'Planned', detail: `${parts} part${parts === 1 ? '' : 's'} to review${run.estimate ? `, about ${run.estimate.calls} AI calls` : ''}. Ready to start.` }
   if (run.status === 'running') return { state: 'reviewing', label: 'AI reviewing', detail: kids.length ? `${reviewed} of ${kids.length} parts reviewed.` : 'Under way.' }
+  const proposed = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending').length
   if (run.status === 'paused' && atCheck)
-    return { state: 'your-turn', label: 'Ready for manual review', detail: changes ? `${changes} change${changes === 1 ? '' : 's'} made, to check before the new draft.` : found ? `${found} part${found === 1 ? '' : 's'} with findings to look at.` : 'Nothing to change: check, then write the new draft.' }
+    return { state: 'your-turn', label: 'Ready for manual review', detail: proposed ? `${proposed} change${proposed === 1 ? '' : 's'} proposed: keep, drop or send back.` : found ? `${found} part${found === 1 ? '' : 's'} with findings to look at.` : 'Nothing to change: check, then write the new draft.' }
   if (run.status === 'paused') return { state: 'paused', label: 'Paused', detail: run.note ?? 'Waiting to go on.' }
   if (run.status === 'stopped') return { state: 'stopped', label: 'Stopped', detail: run.note ?? 'Stopped before it finished.' }
   if (run.status === 'error') return { state: 'failed', label: 'Failed', detail: run.note ?? 'Something went wrong.' }

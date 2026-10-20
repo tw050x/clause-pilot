@@ -1,5 +1,5 @@
 import type { AiQuestion, DocBlock, EmailDraft, LibraryClause, RedlineStats, PartDepth, PartFinding, PartKind, PipelineRun, PipelineStep, PlaybookPosition, Proposal, ReviewPart, ReviewSession, StepUsage } from '@shared/types'
-import { marksFor, openChanges, segmentsOf, shownText, theyChanged } from '@shared/changes'
+import { commentResolved, marksFor, openChanges, segmentsOf, shownText, theyChanged } from '@shared/changes'
 import { applicable, intentInput } from './docreview'
 import { whereOf } from '@shared/numbering'
 import type { AiProvider, ChatUsage } from './ai/provider'
@@ -12,18 +12,18 @@ import { schemaToSend, type JsonSchema } from '@shared/schema'
  *
  * The draft is scanned when it's uploaded (planReview): hidden instructions, the contract's
  * structure, and the plan (the parts, how closely each is checked, what that's estimated to use).
- * One press then starts the review and it runs on its own: it reviews the
- * parts a few at a time, each against our standards (approved wording, playbook) and against the
- * rest of the contract (conflicts, their tracked changes, language), with what needs no AI
- * (unchanged since we sent it, our approved wording word for word) skipped. What it finds is
- * brought together into one change per part and applied to the draft (each one action in the
- * review's history, so it can be undone); parts it changed are checked again, up to MAX_ROUNDS;
- * then it waits for the reviewer to look at what it found and did (undoing what they don't want)
- * before the new draft and the email are written.
+ * Started, it reviews the parts a few at a time, each against our standards (approved wording,
+ * playbook) and against the rest of the contract (conflicts, their tracked changes, language),
+ * with what needs no AI (unchanged since we sent it, our approved wording word for word) skipped;
+ * checks what was found together (clashes, knock-on effects); and brings it together into one
+ * proposed change per part. Nothing is changed in the draft yet.
  *
- * Otherwise it stops only when a person must look first (text addressed to an AI reviewer) or
- * the budget is reached. A part that fails is tried again once, then left for the reviewer. A run
- * picks up where it stopped: steps and parts already done aren't done again.
+ * Then the reviewer's check (the gate): each proposed change kept or dropped, notes on any part
+ * and questions worth asking sent back for another round (those parts reviewed again, with them,
+ * and their changes proposed again; then the check again), or the kept changes made to the draft
+ * and the new draft and the email written. It stops on its own otherwise only when a person must
+ * look first (text addressed to an AI reviewer) or the budget is reached. A part that fails is
+ * tried again once, then left for the reviewer. A run picks up where it stopped.
  */
 
 const INJECTION = {
@@ -192,8 +192,9 @@ export function startReview(s: ReviewSession, deps: PipelineDeps, budget: { toke
       step('review', 'Review each part'),
       step('crosscheck', 'Check the findings together'),
       step('consolidate', 'Bring the findings together'),
+      // A gate: the reviewer keeps or drops each change, or sends parts back for another round.
+      step('check', 'Your check of the changes'),
       step('approve', 'Make the changes'),
-      step('check', 'Your check of the findings'),
       step('draft', 'New draft and email')
     ]
   }
@@ -383,7 +384,11 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
 
     // Bring together: one proposal per part with something for the reviewer.
     const cons = at(ids.consolidate)
-    const flaggedParts = (review.children ?? []).filter((c) => c.status === 'needs-you').map((c) => parts.find((p) => p.id === c.partId)).filter((p): p is ReviewPart => !!p)
+    // The parts with something to change; in a later round, every part the reviewer sent back.
+    const flaggedParts = (review.children ?? [])
+      .filter((c) => c.status === 'needs-you' || (r > 1 && c.status !== 'error'))
+      .map((c) => parts.find((p) => p.id === c.partId))
+      .filter((p): p is ReviewPart => !!p)
     if (fresh(ids.consolidate)) {
       begin(cons)
       cons.children ??= []
@@ -414,16 +419,31 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
       end(cons, 'done', flaggedParts.length ? `${flaggedParts.length - failed} change${flaggedParts.length - failed === 1 ? '' : 's'} to make${failed ? `, ${failed} couldn’t be worked out (left for you)` : ''}.` : 'Nothing to change.')
     }
 
-    // Each part's change made to the draft, straight on: one action each in the review's history.
-    const appr = at(ids.approve)
-    const proposals = flaggedParts.filter((p) => p.proposal?.round === r && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) > 0)
-    if (fresh(ids.approve)) {
+    // The reviewer's check: nothing is changed in the draft until they've looked at what's
+    // proposed (keeping or dropping each), or sent parts back for another round (iterate).
+    const check = at('check')
+    if (check && check.status !== 'done') {
+      if (!run.draftConfirmed) {
+        const pending = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending').length
+        check.status = 'needs-you'
+        check.startedAt ??= now()
+        check.detail = pending ? `${pending} change${pending === 1 ? '' : 's'} proposed: keep or drop each, or send parts back with a note.` : 'Nothing to change: look through the findings, or send parts back with a note.'
+        run.status = 'paused'
+        run.note = 'Ready for manual review: check the proposed changes, then apply them and write the new draft and the email, or run another round.'
+        deps.persist(s)
+        return
+      }
+    }
+
+    // The changes kept at the check made to the draft: one action each in the review's history.
+    const appr = run.steps.find((x) => x.id === 'approve')
+    const kept = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending' && p.proposal.decisions.length + p.proposal.wording.length + (p.proposal.comment ? 1 : 0) + (p.proposal.replies?.length ?? 0) > 0)
+    if (appr && fresh('approve')) {
       begin(appr)
-      appr.children = proposals.map((p) => appr.children?.find((c) => c.partId === p.id) ?? { id: `${ids.approve}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.proposal!.summary })
-      for (const p of proposals) {
+      appr.children = kept.map((p) => ({ id: `approve:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.proposal!.summary }))
+      for (const p of kept) {
         if (flag.stop) return
         const c = appr.children.find((x) => x.partId === p.id)!
-        if (p.proposal!.status !== 'pending') continue
         let missed: string[]
         try {
           missed = deps.apply(s, p.proposal!)
@@ -431,35 +451,16 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
           missed = [e instanceof Error ? e.message : String(e)]
         }
         p.proposal!.status = 'approved'
-        p.proposal!.decidedBy = 'AI review'
+        p.proposal!.decidedBy = run.steps.find((x) => x.id === 'check')?.by ?? deps.actor()
         p.proposal!.decidedAt = now()
         c.status = missed.length ? 'needs-you' : 'done'
         c.detail = missed.length ? `${p.proposal!.summary} Not all of it could be made: ${missed.join(' ')}` : p.proposal!.summary
         c.endedAt = now()
         deps.persist(s)
       }
-      end(appr, proposals.length ? 'done' : 'skipped', proposals.length ? `${proposals.length} change${proposals.length === 1 ? '' : 's'} made: each can be undone in History.` : 'Nothing to change.')
+      const dropped = (run.parts ?? []).filter((p) => p.proposal?.status === 'rejected').length
+      end(appr, kept.length ? 'done' : 'skipped', kept.length ? `${kept.length} change${kept.length === 1 ? '' : 's'} made${dropped ? `, ${dropped} dropped` : ''}: each can be undone in History.` : 'Nothing to change.')
     }
-    // Another round for what changed or was sent back, straight on; or everything's decided.
-    if (nextRound(s, run, deps)) return go(s, run, deps, flag)
-    const note = run.note as string | undefined
-    const leftOver = note?.startsWith('Rounds used up') ? note : undefined
-
-    // The reviewer looks at what it found and did before anything is written for them to send.
-    const check = at('check')
-    if (check && fresh('check')) {
-      if (!run.draftConfirmed) {
-        const made = run.parts?.filter((p) => p.proposal?.status === 'approved').length ?? 0
-        check.status = 'needs-you'
-        check.startedAt ??= now()
-        check.detail = made ? `${made} change${made === 1 ? '' : 's'} made: look through them.` : 'Nothing changed: look through the findings.'
-        run.status = 'paused'
-        run.note = leftOver ?? 'Ready for manual review: check the findings and the changes, then write the new draft and the email.'
-        deps.persist(s)
-        return
-      }
-    }
-
     // 7. The new draft (the marked-up copy, as the review now stands) and the email to them.
     const draft = at('draft')
     if (fresh('draft')) {
@@ -496,7 +497,7 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
     }
     run.status = 'done'
     run.endedAt = now()
-    run.note = leftOver ?? 'Done. The new draft and the email are ready: Marked-up copy and Draft response, under the document.'
+    run.note = 'Done. The new draft and the email are ready: Marked-up copy and Draft response, under the document.'
     deps.persist(s)
   } catch (e) {
     if (e instanceof Stopped) return
@@ -521,73 +522,74 @@ const roundIds = (r: number) =>
   r === 1
     ? { review: 'review', crosscheck: 'crosscheck', consolidate: 'consolidate', approve: 'approve' }
     : { review: `review-${r}`, crosscheck: `crosscheck-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` }
-/** Rounds a run goes to before what's left is the reviewer's. */
-export const MAX_ROUNDS = 3
 
 /**
- * The reviewer's decision on a part's proposal: approved (applied by the window as their tracked
- * edits and decisions, as one action), rejected, or changes asked for (with what they want). Once
- * the round's proposals are all decided, the run goes on: another round for the parts that changed
- * or that the reviewer sent back, or done.
+ * At the reviewer's check: the changes they dropped set aside, and the parts they sent back
+ * (a note, or questions worth asking ticked for them) reviewed again with what they asked, their
+ * changes proposed again, and the check again after. The changes not sent back or dropped wait,
+ * as they were, to be made with the rest.
  */
-export function decide(s: ReviewSession, deps: PipelineDeps, partId: string, outcome: 'approved' | 'rejected' | 'changes', feedback?: string) {
+export function iterate(
+  s: ReviewSession,
+  deps: PipelineDeps,
+  input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; dropped: string[] }
+) {
   const run = s.doc?.pipeline
-  const part = run?.parts?.find((p) => p.id === partId)
-  if (!run || !part?.proposal) throw new Error('No proposal for that part.')
-  if (part.proposal.status !== 'pending') throw new Error('That proposal is already decided.')
-  part.proposal.status = outcome
-  part.proposal.decidedBy = deps.actor()
-  part.proposal.decidedAt = now()
-  part.feedback = outcome === 'changes' ? feedback?.trim() || 'Change it.' : undefined
-  const ids = roundIds(part.proposal.round)
-  const appr = run.steps.find((x) => x.id === ids.approve)
-  const c = appr?.children?.find((x) => x.partId === partId)
-  if (c) {
-    c.status = outcome === 'approved' ? 'done' : outcome === 'rejected' ? 'skipped' : 'waiting'
-    c.detail = outcome === 'approved' ? `Approved by ${deps.actor()}: ${part.proposal.summary}` : outcome === 'rejected' ? `Rejected by ${deps.actor()}.` : `Changes asked for: “${part.feedback}”`
-    c.endedAt = now()
+  if (!run?.parts) throw new Error('No review to go on with.')
+  if (live.has(s.id)) throw new Error('The review is already running.')
+  const { questions } = deps.knowledge()
+  for (const id of input.dropped) {
+    const p = run.parts.find((x) => x.id === id)?.proposal
+    if (p?.status === 'pending') Object.assign(p, { status: 'rejected', decidedBy: deps.actor(), decidedAt: now() })
   }
+  // What the reviewer asked of each part: their note, and the questions they ticked for it.
+  const asked = new Map<string, string[]>()
+  for (const [partId, note] of Object.entries(input.notes)) if (note.trim()) asked.set(partId, [note.trim()])
+  for (const q of input.questions) {
+    const question = questions.find((x) => x.id === q.questionId)
+    if (!question) continue
+    asked.set(q.partId, [...(asked.get(q.partId) ?? []), `Also answer: ${question.title} (${question.detail}). ${question.prompt}`])
+    const suggested = run.questions?.find((x) => x.questionId === q.questionId && x.partId === q.partId)
+    if (suggested) suggested.asked = true
+  }
+  const back = run.parts.filter((p) => asked.has(p.id))
+  if (!back.length) throw new Error('Write a note on a change, or tick a question, to send back.')
+  for (const p of back) {
+    p.feedback = asked.get(p.id)!.join('\n')
+    if (p.proposal && p.proposal.status === 'pending') Object.assign(p.proposal, { status: 'changes', decidedBy: deps.actor(), decidedAt: now() })
+  }
+  const n = (run.round ?? 1) + 1
+  const ids = roundIds(n)
+  const at = run.steps.findIndex((x) => x.id === 'check')
+  run.steps.splice(at < 0 ? run.steps.length : at, 0, 
+    { id: ids.review, title: `Round ${n} · Review what you asked`, status: 'waiting', children: back.map((p) => ({ id: `${ids.review}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: `You asked: “${p.feedback!.split('\n')[0].slice(0, 120)}”` })) },
+    { id: ids.crosscheck, title: `Round ${n} · Check the findings together`, status: 'waiting' },
+    { id: ids.consolidate, title: `Round ${n} · Bring the findings together`, status: 'waiting' }
+  )
+  const check = run.steps.find((x) => x.id === 'check')
+  if (check) Object.assign(check, { status: 'waiting', detail: `Round ${n}: ${back.length} part${back.length === 1 ? '' : 's'} sent back.` })
+  run.round = n
+  run.status = 'running'
+  run.note = undefined
+  run.endedAt = undefined
   deps.persist(s)
-  // The last one decided: the run goes on.
-  const pending = run.parts!.some((p) => p.proposal?.round === part.proposal!.round && p.proposal.status === 'pending')
-  if (!pending && !live.has(s.id)) {
-    run.status = 'running'
-    run.note = undefined
-    const flag = { stop: false }
-    live.set(s.id, flag)
-    void go(s, run, deps, flag).finally(() => live.delete(s.id))
-  }
+  const flag = { stop: false }
+  live.set(s.id, flag)
+  void go(s, run, deps, flag).finally(() => live.delete(s.id))
 }
 
 /**
- * After a round's decisions: another round for the parts whose wording or decisions changed (to
- * check what the change did) and those the reviewer asked to change, up to MAX_ROUNDS. Its steps
- * go before the draft. Returns whether there is one.
+ * At the reviewer's check: the changes they dropped set aside, and the rest made to the draft,
+ * then the new draft and the email written.
  */
-function nextRound(s: ReviewSession, run: PipelineRun, deps: PipelineDeps): boolean {
-  const r = run.round ?? 1
-  const again = (run.parts ?? []).filter((p) => p.proposal?.round === r && (p.proposal.status === 'changes' || (p.proposal.status === 'approved' && (p.proposal.wording.length > 0 || p.proposal.decisions.length > 0))))
-  if (!again.length) return false
-  const ready = again.filter((p) => (p.rounds ?? 0) < MAX_ROUNDS)
-  if (!ready.length) {
-    run.note = `Rounds used up for ${again.map((p) => p.title).join(', ')}: over to you.`
-    return false
+export function applyChecked(s: ReviewSession, deps: PipelineDeps, dropped: string[]) {
+  const run = s.doc?.pipeline
+  if (!run?.parts) throw new Error('No review to go on with.')
+  for (const id of dropped) {
+    const p = run.parts.find((x) => x.id === id)?.proposal
+    if (p?.status === 'pending') Object.assign(p, { status: 'rejected', decidedBy: deps.actor(), decidedAt: now() })
   }
-  const n = r + 1
-  const ids = roundIds(n)
-  // Before the reviewer's check (and the draft after it).
-  const at = (i => (i < 0 ? run.steps.findIndex((x) => x.id === 'draft') : i))(run.steps.findIndex((x) => x.id === 'check'))
-  const steps: PipelineStep[] = [
-    { id: ids.review, title: `Round ${n} · Review what changed`, status: 'waiting', children: ready.map((p) => ({ id: `${ids.review}:${p.id}`, partId: p.id, title: p.title, status: 'waiting', detail: p.feedback ? `You asked: “${p.feedback}”` : 'Check what the change did.' })) },
-    { id: ids.crosscheck, title: `Round ${n} · Check the findings together`, status: 'waiting' },
-    { id: ids.consolidate, title: `Round ${n} · Bring the findings together`, status: 'waiting' },
-    { id: ids.approve, title: `Round ${n} · Make the changes`, status: 'waiting' }
-  ]
-  run.steps.splice(at < 0 ? run.steps.length : at, 0, ...steps)
-  run.round = n
-  run.status = 'running'
-  deps.persist(s)
-  return true
+  continueReview(s, deps)
 }
 
 /**
@@ -717,7 +719,7 @@ async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: 
       )
       .join('\n')}`,
     part.feedback ? `The reviewer asked for changes to the last proposal: “${part.feedback}”. Do what they ask.` : '',
-    `QUESTION: Bring these findings together into ONE proposal for this part: new wording for each paragraph that should change (the whole paragraph as it should read, starting from <now>, making every fix at once, consistently, without contradicting itself), a decision on each of their changes listed, and one short comment to them if it helps. Leave out anything not worth doing. Summarise what the proposal does and why in a sentence or two.`
+    `QUESTION: Bring these findings together into ONE proposal for this part: new wording for each paragraph that should change (the whole paragraph as it should read, starting from <now>, making every fix at once, consistently, without contradicting itself), a decision on each of their changes listed, one short comment to them if it helps, and a short reply to each of their comments (<their_comment>) saying what we have done about it and why. Leave out anything not worth doing. Summarise what the proposal does and why in a sentence or two.`
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -726,6 +728,7 @@ async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: 
   const ids = new Set(part.blockIds)
   const open = new Map(blocks.map((b) => [b.id, new Set(openChanges(d, b))]))
   const current = new Map(blocks.map((b) => [b.id, shownText(marksFor(d, b)).replace(/\s+/g, ' ').trim()]))
+  const theirComments = new Set(blocks.flatMap((b) => (b.comments ?? []).map((c) => c.id)))
   return {
     id: deps.uid('prop'),
     round,
@@ -736,6 +739,7 @@ async function propose(s: ReviewSession, part: ReviewPart, round: number, deps: 
       .map((w) => ({ blockId: w.paragraph_id, text: w.text, why: w.why })),
     decisions: out.their_changes.filter((c) => open.get(c.paragraph_id)?.has(c.change_index)).map((c) => ({ blockId: c.paragraph_id, seg: c.change_index, outcome: c.decision === 'accept' ? 'accepted' : 'rejected', why: c.why })),
     comment: out.comment_to_them.trim() ? { blockId: part.blockIds[0], text: out.comment_to_them.trim() } : undefined,
+    replies: (out.replies ?? []).filter((r) => theirComments.has(r.comment_id) && r.text.trim()).map((r) => ({ commentId: r.comment_id, text: r.text.trim() })),
     status: 'pending'
   }
 }
@@ -745,6 +749,7 @@ interface ProposalOut {
   wording: { paragraph_id: string; text: string; why: string }[]
   their_changes: { paragraph_id: string; change_index: number; decision: 'accept' | 'reject'; why: string }[]
   comment_to_them: string
+  replies?: { comment_id: string; text: string }[]
   injection_suspected: boolean
   injection_notes: string
 }
@@ -768,9 +773,14 @@ const PROPOSAL_SCHEMA: JsonSchema = {
       }
     },
     comment_to_them: { type: 'string', description: 'One short, courteous comment to them; empty if none.' },
+    replies: {
+      type: 'array',
+      description: 'A short, courteous reply to each of their comments listed (<their_comment>): what we have done about it and why. Empty if they made none.',
+      items: { type: 'object', properties: { comment_id: { type: 'string' }, text: { type: 'string' } }, required: ['comment_id', 'text'] }
+    },
     ...INJECTION
   },
-  required: ['summary', 'wording', 'their_changes', 'comment_to_them', 'injection_suspected', 'injection_notes']
+  required: ['summary', 'wording', 'their_changes', 'comment_to_them', 'replies', 'injection_suspected', 'injection_notes']
 }
 
 /**
@@ -864,7 +874,7 @@ async function reviewPart(s: ReviewSession, run: PipelineRun, part: ReviewPart, 
       const extra = questions.filter((q) => !q.priority)
       const out = (await ask(x, (onUsage) =>
         deps.provider().schemaAnswer(
-          { name: 'part_standards', contract: contractText(d.blocks), question: [standardsQuestion(s, part, blocks, approved, positions, extra), decided(part)].filter(Boolean).join('\n\n'), schema: schemaToSend(STANDARDS_SCHEMA) },
+          { name: 'part_standards', contract: contractText(d.blocks), question: [standardsQuestion(s, part, blocks, approved, positions, extra), decided(part)].filter(Boolean).join('\n\n'), schema: schemaToSend(standardsSchema(extra.map((q) => q.id))) },
           onUsage
         )
       )) as StandardsOut
@@ -976,7 +986,12 @@ function partText(s: ReviewSession, blocks: DocBlock[], withChanges = false) {
             .map((i) => `<change index="${i}" type="${segs[i].op === 'ins' ? 'insertion' : 'deletion'}"${segs[i].author ? ` by="${segs[i].author.replace(/"/g, "'")}"` : ''}>${segs[i].text}</change>`)
             .join('\n')
         : ''
-      return `<paragraph id="${b.id}" number="${where(s, b.id)}">\n<now>${now}</now>${now !== sent ? `\n<as_they_sent_it>${sent}</as_they_sent_it>` : ''}${changes ? `\n<their_changes>\n${changes}\n</their_changes>` : ''}\n</paragraph>`
+      // Their comments still open on it (what they asked or said about it).
+      const theirs = (b.comments ?? [])
+        .filter((c) => !commentResolved(d, c))
+        .map((c) => `<their_comment id="${c.id}"${c.author ? ` by="${c.author.replace(/"/g, "'")}"` : ''}>${c.text}</their_comment>`)
+        .join('\n')
+      return `<paragraph id="${b.id}" number="${where(s, b.id)}">\n<now>${now}</now>${now !== sent ? `\n<as_they_sent_it>${sent}</as_they_sent_it>` : ''}${changes ? `\n<their_changes>\n${changes}\n</their_changes>` : ''}${theirs ? `\n<their_comments>\n${theirs}\n</their_comments>` : ''}\n</paragraph>`
     })
     .join('\n')
 }
@@ -1020,6 +1035,24 @@ interface ContractOut {
   language: { paragraph_id: string; issue: string; suggestion: string }[]
   injection_suspected: boolean
   injection_notes: string
+}
+
+/**
+ * The standards answer's shape, its suggested questions limited to the ones that can be suggested
+ * (those not asked of every part); none to suggest, none allowed.
+ */
+function standardsSchema(suggestable: string[]): JsonSchema {
+  const props = STANDARDS_SCHEMA.properties as Record<string, JsonSchema>
+  const questions = props.questions as { items: { properties: Record<string, JsonSchema> } }
+  return {
+    ...STANDARDS_SCHEMA,
+    properties: {
+      ...props,
+      questions: suggestable.length
+        ? { ...questions, items: { ...questions.items, properties: { ...questions.items.properties, question_id: { type: 'string', enum: suggestable } } } }
+        : { ...questions, maxItems: 0 }
+    }
+  }
 }
 
 const STANDARDS_SCHEMA: JsonSchema = {

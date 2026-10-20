@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PipelineRun, PipelineStep, ReviewPart, ReviewSession } from '@shared/types'
-import { segmentsOf } from '@shared/changes'
+import { marksFor, segmentsOf, shownText } from '@shared/changes'
+import { diffSegments } from '@shared/diff'
+import { Redline } from './Redline'
 import { Icon } from '../lib/icons'
 
 /**
@@ -56,7 +58,7 @@ export function Timeline({
         <ol className="tl-steps">
           {(run?.steps ?? PLANNED_STEPS).map((st) => (
             GATES.has(st.id) ? (
-              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} />
+              <Gate key={st.id} step={st} session={session} onChange={onChange} disabled={onHold || !run} questions={questions} onJump={onJump} />
             ) : (
               <Step key={st.id} step={st} run={run ?? EMPTY_RUN} session={session} onJump={onJump} onChange={onChange} focusPart={focusPart} />
             )
@@ -64,7 +66,7 @@ export function Timeline({
         </ol>
       )}
 
-      {run?.questions && run.questions.length > 0 && (
+      {run?.questions && run.questions.length > 0 && !run.steps.some((x) => x.id === 'check' && x.status === 'needs-you') && (
         <div className="tl-questions">
           <div className="dr-mini-h">Worth asking too</div>
           {run.questions.map((q, i) => {
@@ -82,6 +84,7 @@ export function Timeline({
                   </>
                 )}
                 <span className="faint">: {q.why}</span>
+                {q.asked && <span className="faint"> (asked)</span>}
               </div>
             )
           })}
@@ -102,8 +105,8 @@ const PLANNED_STEPS: PipelineStep[] = [
   ['review', 'Review each part'],
   ['crosscheck', 'Check the findings together'],
   ['consolidate', 'Bring the findings together'],
+  ['check', 'Your check of the changes'],
   ['approve', 'Make the changes'],
-  ['check', 'Your check of the findings'],
   ['draft', 'New draft and email']
 ].map(([id, title]) => ({ id, title, status: 'waiting' }))
 const EMPTY_RUN = { steps: [], parts: [] } as unknown as PipelineRun
@@ -117,8 +120,8 @@ const ABOUT: Record<string, string> = {
   review: 'Each part against our standards.',
   crosscheck: 'Clashes and knock-on effects across parts.',
   consolidate: 'One change per part, from the findings.',
-  approve: 'Each change made to the draft.',
-  check: 'Once the changes are made.',
+  approve: 'The changes you kept, made to the draft.',
+  check: 'Keep or drop each change, or send it back.',
   draft: 'The marked-up copy and the email.'
 }
 const aboutOf = (id: string) => ABOUT[id.replace(/-\d+$/, '')] ?? ''
@@ -171,11 +174,11 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
 }
 
 function Step({ step, run, session, onJump, onChange, focusPart }: { step: PipelineStep; run: PipelineRun; session: ReviewSession; onJump: (blockId: string) => void; onChange: (s: ReviewSession) => void; focusPart?: string }) {
-  // A step's items (a part's checks) on request; otherwise only those with a result for the
-  // reviewer (something found, a failure): those stay. Its progress is in its own line.
+  // A step's items (a part's checks) on request; otherwise only failures (what was found is at the
+  // reviewer's check). Its progress is in its own line.
   const [all, setAll] = useState(false)
   const kids = step.children ?? []
-  const shown = all ? kids : kids.filter((c) => c.status === 'needs-you' || c.status === 'error')
+  const shown = all ? kids : kids.filter((c) => c.status === 'error')
   const finished = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
   const detail = step.status === 'running' && kids.length ? `${finished} of ${kids.length} done…` : (step.detail ?? aboutOf(step.id))
   const part = step.partId ? run.parts?.find((p) => p.id === step.partId) : undefined
@@ -272,6 +275,11 @@ function ProposalCard({ part, session, onJump }: { part: ReviewPart; session: Re
           <span className="faint">Comment to them:</span> <span className="hist-comment">“{p.comment.text}”</span>
         </div>
       )}
+      {(p.replies ?? []).map((r) => (
+        <div key={r.commentId} className="tl-prop-item">
+          <span className="faint">Reply to their comment:</span> <span className="hist-comment">“{r.text}”</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -280,7 +288,7 @@ function ProposalCard({ part, session, onJump }: { part: ReviewPart; session: Re
 const GATES = new Set(['start', 'check'])
 const GATE_BUTTON: Record<string, { label: string; icon: string; tip: string }> = {
   start: { label: 'Start AI review', icon: 'sparkle', tip: 'Review the parts as planned. It runs on its own until the findings are for you to check.' },
-  check: { label: 'Write new draft and email', icon: 'mail', tip: 'Write the new draft and the email to them, from the review as it now stands' }
+  check: { label: 'Apply & write draft', icon: 'mail', tip: 'Make the changes kept, then write the new draft and the email' }
 }
 
 /** Calls to the AI review from the timeline: the session it returns, or what went wrong. */
@@ -305,7 +313,21 @@ function useRunAct(onChange: (s: ReviewSession) => void) {
  * A gate: waiting, its button inline (going on is the reviewer's decision); passed, kept in the
  * timeline with who passed it and when.
  */
-function Gate({ step, session, onChange, disabled }: { step: PipelineStep; session: ReviewSession; onChange: (s: ReviewSession) => void; disabled?: boolean }) {
+function Gate({
+  step,
+  session,
+  onChange,
+  disabled,
+  questions,
+  onJump
+}: {
+  step: PipelineStep
+  session: ReviewSession
+  onChange: (s: ReviewSession) => void
+  disabled?: boolean
+  questions: { id: string; title: string }[]
+  onJump: (blockId: string) => void
+}) {
   const { busy, error, act } = useRunAct(onChange)
   const waiting = step.status === 'needs-you'
   const passed = step.status === 'done'
@@ -319,7 +341,8 @@ function Gate({ step, session, onChange, disabled }: { step: PipelineStep; sessi
         <div className="tl-body">
           <div className="tl-title">{step.title}</div>
           <div className="tl-detail faint">{step.detail ?? aboutOf(step.id)}</div>
-          <div className="tl-gate-act">
+          {step.id === 'check' && waiting && <CheckReview session={session} onChange={onChange} disabled={disabled} questions={questions} onJump={onJump} />}
+          {!(step.id === 'check' && waiting) && <div className="tl-gate-act">
             {passed ? (
               <span className="tl-gate-passed">
                 <Icon name="check" size={13} stroke={2.4} /> {step.by ? `${step.id === 'start' ? 'Started' : 'Checked'} by ${step.by} · ${when(step.endedAt)}` : 'Passed'}
@@ -329,12 +352,166 @@ function Gate({ step, session, onChange, disabled }: { step: PipelineStep; sessi
                 {busy ? <span className="spinner sm" /> : <Icon name={b?.icon ?? 'next'} size={14} />} {b?.label}
               </button>
             )}
-          </div>
+          </div>}
           {error && <p className="dr-small dr-err">{error}</p>}
         </div>
       </div>
     </li>
   )
+}
+
+/**
+ * The reviewer's check: every change proposed, to keep (ticked) or drop, each with a note to
+ * send it back for another round; the questions the review suggests asking, to tick for that
+ * round; then another round (for what was sent back) or the kept changes made and the draft written.
+ */
+function CheckReview({
+  session,
+  onChange,
+  disabled,
+  questions,
+  onJump
+}: {
+  session: ReviewSession
+  onChange: (s: ReviewSession) => void
+  disabled?: boolean
+  questions: { id: string; title: string }[]
+  onJump: (blockId: string) => void
+}) {
+  const run = session.doc!.pipeline!
+  const d = session.doc!
+  const proposed = (run.parts ?? []).filter((p) => p.proposal?.status === 'pending')
+  const suggested = (run.questions ?? []).filter((q) => !q.asked)
+  const [dropped, setDropped] = useState<Set<string>>(new Set())
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [noting, setNoting] = useState<Set<string>>(new Set())
+  const [ticked, setTicked] = useState<Set<string>>(new Set())
+  const { busy, error, act } = useRunAct(onChange)
+  // Opened: brought into view (it's what's waiting).
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => box.current?.closest('.tl-gate')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), [])
+  const flip = <T,>(set: Set<T>, x: T) => {
+    const next = new Set(set)
+    if (next.has(x)) next.delete(x)
+    else next.add(x)
+    return next
+  }
+  const sentBack = Object.values(notes).filter((n) => n.trim()).length + ticked.size
+  const kept = proposed.filter((p) => !dropped.has(p.id)).length
+  const block = (id: string) => d.blocks.find((b) => b.id === id)
+  const where = (id: string) => (block(id)?.label ? `§${block(id)!.label!.replace(/\.$/, '')}` : 'Paragraph')
+  return (
+    <div className="ck" ref={box}>
+      {proposed.map((part) => {
+        const p = part.proposal!
+        const keep = !dropped.has(part.id)
+        return (
+          <div key={part.id} className={`ck-item ${keep ? '' : 'dropped'}`}>
+            <label className="ck-head">
+              <input type="checkbox" checked={keep} onChange={() => setDropped(flip(dropped, part.id))} />
+              <button className="link-btn tl-part" onClick={(e) => (e.preventDefault(), onJump(part.blockIds[0]))}>
+                {part.title}
+              </button>
+            </label>
+            <p className="ck-summary">{p.summary}</p>
+            {p.wording.map((w, i) => {
+              const b = block(w.blockId)
+              return (
+                <div key={i} className="ck-detail">
+                  <span className="faint">{where(w.blockId)}:</span> <Redline segments={diffSegments(b ? shownText(marksFor(d, b)) : '', w.text)} />
+                </div>
+              )
+            })}
+            {grouped(p.decisions).map((g) => (
+              <div key={`${g.blockId}|${g.outcome}`} className="ck-detail">
+                <span className={`sel-st ${g.outcome}`}>{g.outcome === 'accepted' ? 'Accept' : 'Reject'}</span> {g.count === 1 ? 'their change' : `${g.count} of their changes`} in {where(g.blockId)}
+                <span className="faint">: {g.whys.join(' ')}</span>
+              </div>
+            ))}
+            {p.comment && (
+              <div className="ck-detail">
+                <span className="faint">Comment to them:</span> “{p.comment.text}”
+              </div>
+            )}
+            {(p.replies ?? []).map((r) => (
+              <div key={r.commentId} className="ck-detail">
+                <span className="faint">Reply to their comment:</span> “{r.text}”
+              </div>
+            ))}
+            {noting.has(part.id) ? (
+              <textarea
+                className="ck-note"
+                rows={2}
+                autoFocus
+                placeholder="What should change? It goes back for another round."
+                value={notes[part.id] ?? ''}
+                onChange={(e) => setNotes({ ...notes, [part.id]: e.target.value })}
+              />
+            ) : (
+              <button className="link-btn ck-add-note" onClick={() => setNoting(flip(noting, part.id))}>
+                Send back with a note
+              </button>
+            )}
+          </div>
+        )
+      })}
+      {suggested.length > 0 && (
+        <div className="ck-questions">
+          <div className="dr-mini-h">Worth asking too</div>
+          {suggested.map((q) => {
+            const part = run.parts?.find((p) => p.id === q.partId)
+            const key = `${q.questionId}|${q.partId}`
+            return (
+              <label key={key} className="ck-question">
+                <input type="checkbox" checked={ticked.has(key)} onChange={() => setTicked(flip(ticked, key))} />
+                <span>
+                  <strong>{questions.find((x) => x.id === q.questionId)?.title ?? q.questionId}</strong>
+                  {part && <span className="faint"> on {part.title}</span>}
+                  <span className="faint dr-small ck-why">{q.why}</span>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+      <div className="ck-actions">
+        <button
+          className="btn sm"
+          disabled={busy || disabled || !sentBack}
+          title={sentBack ? 'Review what you sent back again, with your notes and questions, and propose its changes again' : 'Write a note on a change, or tick a question, to send it back'}
+          onClick={() =>
+            act(
+              window.api.pipeline.iterate(session.id, {
+                notes: Object.fromEntries(Object.entries(notes).filter(([, n]) => n.trim())),
+                questions: [...ticked].map((k) => ({ questionId: k.split('|')[0], partId: k.split('|')[1] })),
+                dropped: [...dropped]
+              })
+            )
+          }
+        >
+          Run another round{sentBack ? ` (${sentBack})` : ''}
+        </button>
+        <button className="btn sm primary" disabled={busy || disabled} onClick={() => act(window.api.pipeline.apply(session.id, [...dropped]))}>
+          {busy ? <span className="spinner sm" /> : <Icon name="mail" size={13} />} {kept ? `Apply ${kept} change${kept === 1 ? '' : 's'} & write draft` : 'Write draft and email'}
+        </button>
+      </div>
+      {error && <p className="dr-small dr-err">{error}</p>}
+    </div>
+  )
+}
+
+/** Their changes decided the same way in the same paragraph, together: how many, and the different reasons. */
+function grouped(decisions: { blockId: string; outcome: 'accepted' | 'rejected'; why: string }[]) {
+  const out: { blockId: string; outcome: 'accepted' | 'rejected'; count: number; whys: string[] }[] = []
+  for (const x of decisions) {
+    const g = out.find((y) => y.blockId === x.blockId && y.outcome === x.outcome)
+    if (!g) out.push({ blockId: x.blockId, outcome: x.outcome, count: 1, whys: x.why ? [x.why] : [] })
+    else {
+      g.count++
+      if (x.why && !g.whys.includes(x.why) && g.whys.length < 3) g.whys.push(x.why)
+    }
+  }
+  return out
 }
 
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')

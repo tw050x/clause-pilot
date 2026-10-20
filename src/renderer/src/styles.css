@@ -1267,3 +1267,19 @@ body.past-open .rightbar { z-index: 45; }
 .rightbar-foot .tl-spent { flex: 1; min-width: 0; gap: 3px; }
 .rightbar-foot .tl-spent .dr-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rightbar-foot .bottombar-group:empty { display: none; }
+
+/* The reviewer's check: each proposed change (keep / drop, a note to send it back), the questions to ask, the two ways on. */
+.ck { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.ck-item { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; background: var(--surface); }
+.ck-item.dropped { opacity: 0.55; }
+.ck-item.dropped .ck-summary, .ck-item.dropped .ck-detail { text-decoration: line-through; text-decoration-color: var(--text-3); }
+.ck-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.ck-summary { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.ck-detail { margin-top: 5px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.ck-add-note { margin-top: 6px; font-size: 12px; }
+.ck-note { width: 100%; margin-top: 6px; font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; resize: vertical; box-sizing: border-box; }
+.ck-questions { display: flex; flex-direction: column; gap: 6px; }
+.ck-question { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.ck-question input { margin-top: 2px; }
+.ck-why { display: block; margin-top: 1px; }
+.ck-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

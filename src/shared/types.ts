@@ -841,6 +841,8 @@ export interface Proposal {
   decisions: { blockId: string; seg: number; outcome: 'accepted' | 'rejected'; why: string }[]
   /** A comment to them with it. */
   comment?: { blockId: string; text: string }
+  /** Replies to their comments in the part (by their comment's id): what we did about each. */
+  replies?: { commentId: string; text: string }[]
   status: 'pending' | 'approved' | 'rejected' | 'changes'
   decidedBy?: string
   decidedAt?: string
@@ -926,9 +928,15 @@ export interface PipelineRun {
   steps: PipelineStep[]
   parts?: ReviewPart[]
   /** Other questions (of the reviewer's) the AI suggests asking, and why. */
-  questions?: { questionId: string; partId: string; why: string }[]
+  questions?: { questionId: string; partId: string; why: string; asked?: boolean }[]
   /** The round it's on: 1, then one more each time the reviewer's decisions send parts back. */
   round?: number
   /** Once everything is decided: the cover email to them (the marked-up copy is built from the review as it stands). */
   email?: EmailDraft
+  /**
+   * The comments the AI review made, by paragraph (its comment to them) and by their comment (its
+   * reply): a later round's changes the comment it made before rather than adding another.
+   */
+  aiComments?: Record<string, string>
+  aiReplies?: Record<string, string>
 }

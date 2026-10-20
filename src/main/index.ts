@@ -22,7 +22,7 @@ import { DEFAULT_PROMPTS, TEXT_SYSTEM } from './ai/prompts'
 import { contextFor, contractOf, highlightBlock, paragraphsOf, placesOf, standingOf } from './questions'
 import { setQuick as demoQuick, startDemoServer } from '../../demo-server/server.mjs'
 import { DEMOS, type DemoId, type DemoLanding, type DemoSetup } from '@shared/demos'
-import { DEFAULT_BUDGET, decide as decidePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
+import { DEFAULT_BUDGET, applyChecked, iterate as iteratePipeline, continueReview as continuePipeline, isRunning as pipelineRunning, planReview, runningIds as pipelineIds, stopAll as stopAllPipelines, startReview as startPipeline, stopReview as stopPipeline, type PipelineDeps } from './pipeline'
 import { defaultQuestions, methodOf } from '@shared/questions'
 import { whereOf } from '@shared/numbering'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1272,7 +1272,7 @@ ipcMain.handle('doc:resolveComment', (_e, sessionId: string, commentId: string, 
  * Change the wording of one of our comments or replies in this review. Theirs, and ours from
  * earlier rounds (which come back to us in their file), can't be changed. One history action.
  */
-ipcMain.handle('doc:editComment', (_e, sessionId: string, commentId: string, text: string) => {
+function docEditComment(sessionId: string, commentId: string, text: string) {
   const out = tracked(session(sessionId), undefined, () => {
     const { s, d } = docOf(sessionId)
     const at = d.comments.findIndex((c) => c.id === commentId)
@@ -1288,7 +1288,8 @@ ipcMain.handle('doc:editComment', (_e, sessionId: string, commentId: string, tex
   })
   persist(session(sessionId))
   return out
-})
+}
+ipcMain.handle('doc:editComment', (_e, ...a: Parameters<typeof docEditComment>) => docEditComment(...a))
 
 ipcMain.handle('doc:uncomment', (_e, sessionId: string, commentId: string) => {
   const out = tracked(session(sessionId), undefined, () => {
@@ -1619,7 +1620,22 @@ const pipelineDeps = (): PipelineDeps => ({
       for (const seg of segs) tryTo(`their change in ${blockWhere(s, x.blockId)}`, () => docResolve(s.id, x.blockId, seg, x.outcome, group))
     }
     for (const w of p.wording) tryTo(`the wording of ${blockWhere(s, w.blockId)}`, () => docEdit(s.id, w.blockId, w.text, group))
-    if (p.comment) tryTo('the comment', () => docComment(s.id, { blockId: p.comment!.blockId, quote: '', text: p.comment!.text }, group))
+    // One comment of the AI review's per paragraph, and one reply per comment of theirs: a later
+    // round's changes the one it made before (rather than another saying much the same).
+    const run = s.doc?.pipeline
+    const mine = (id?: string) => (id && s.doc?.comments.some((c) => c.id === id) ? id : undefined)
+    const say = (key: 'aiComments' | 'aiReplies', at: string, text: string, blockId: string, replyTo?: string) => {
+      const before = mine(run?.[key]?.[at])
+      if (before) return docEditComment(s.id, before, text)
+      docComment(s.id, { blockId, quote: '', text, replyTo }, group)
+      const made = s.doc?.comments.at(-1)
+      if (run && made) (run[key] ??= {})[at] = made.id
+    }
+    if (p.comment) tryTo('the comment', () => say('aiComments', p.comment!.blockId, p.comment!.text, p.comment!.blockId))
+    for (const r of p.replies ?? []) {
+      const on = s.doc?.blocks.find((b) => (b.comments ?? []).some((c) => c.id === r.commentId))
+      if (on) tryTo('a reply to their comment', () => say('aiReplies', r.commentId, r.text, on.id, r.commentId))
+    }
     return missed
   }
 })
@@ -1661,11 +1677,20 @@ ipcMain.handle('pipeline:continue', (_e, sessionId: string, budget?: { tokens: n
   return s
 })
 
-ipcMain.handle('pipeline:decide', (_e, sessionId: string, partId: string, outcome: 'approved' | 'rejected' | 'changes', feedback?: string) => {
+/** At the reviewer's check: parts sent back for another round (notes, questions ticked), changes dropped. */
+ipcMain.handle('pipeline:iterate', (_e, sessionId: string, input: { notes: Record<string, string>; questions: { questionId: string; partId: string }[]; dropped: string[] }) => {
   const s = session(sessionId)
-  const part = s.doc?.pipeline?.parts?.find((p) => p.id === partId)
-  decidePipeline(s, pipelineDeps(), partId, outcome, feedback)
-  ws.audit.append(actor(), `review.proposal-${outcome}`, s.id, { part: part?.title, summary: part?.proposal?.summary, feedback })
+  iteratePipeline(s, pipelineDeps(), input)
+  ws.audit.append(actor(), 'review.sent-back', s.id, { parts: Object.keys(input.notes).length, questions: input.questions.length, dropped: input.dropped.length, notes: input.notes })
+  return s
+})
+
+/** At the reviewer's check: the changes kept made to the draft (the dropped ones aren't), then the draft and email. */
+ipcMain.handle('pipeline:apply', (_e, sessionId: string, dropped: string[]) => {
+  const s = session(sessionId)
+  if (alertFor(s.id)?.status === 'open') throw new Error('This contract is on security hold: text in it is addressed to an AI reviewer.')
+  applyChecked(s, pipelineDeps(), dropped)
+  ws.audit.append(actor(), 'review.changes-applied', s.id, { dropped })
   return s
 })
 
