@@ -102,6 +102,25 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   /** A paragraph whose comments were asked for (its comment badge). */
   const [commentsFor, setCommentsFor] = useState<string | null>(null)
   /**
+   * Commented text clicked in the document: that paragraph's comments, in a popover where it was
+   * clicked (as in Word), to read, reply to and resolve.
+   */
+  const [commentPop, setCommentPop] = useState<{ blockId: string; x: number; y: number } | null>(null)
+  const lastPointer = useRef({ x: 0, y: 0 })
+  useEffect(() => {
+    const at = (e: PointerEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY })
+    window.addEventListener('pointerup', at, true)
+    return () => window.removeEventListener('pointerup', at, true)
+  }, [])
+  useEffect(() => setCommentPop(null), [session.id])
+  const showComments = (blockId: string) => {
+    setFocus(blockId)
+    setPicked(null)
+    setHighlight(null)
+    setDraft(null)
+    setCommentPop({ blockId, ...lastPointer.current })
+  }
+  /**
    * A margin marker was clicked: the column shows only what it's for (the questions asked of
    * that text, or the paragraph's comments) until "Show everything" or another click on the page.
    */
@@ -313,12 +332,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
             setSelection((n) => n + 1)
             setOnly('ai')
           }}
-          onShowComments={(id) => {
-            setFocus(id)
-            setCommentsFor(id)
-            setPicked(null)
-            setHighlight(null)
-          }}
+          onShowComments={showComments}
           onShowText={(why) => {
             setLayoutError(why)
             setLayout('text')
@@ -341,12 +355,7 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         act={act}
         onFocusBlock={onFocusBlock}
         onSelectChanges={onSelectChanges}
-        onShowComments={(id) => {
-          setFocus(id)
-          setCommentsFor(id)
-          setPicked(null)
-          setHighlight(null)
-        }}
+        onShowComments={showComments}
         onComment={(blockId, quote) => {
           setFocus(blockId)
           setDraft({ blockId, quote })
@@ -355,6 +364,22 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       </>
       )}
       {panel && createPortal(column, panel)}
+      {commentPop &&
+        (() => {
+          const b = d.blocks.find((x) => x.id === commentPop.blockId)
+          return b ? (
+            <CommentPopover
+              x={commentPop.x}
+              y={commentPop.y}
+              onClose={() => {
+                setCommentPop(null)
+                setDraft(null)
+              }}
+            >
+              <CommentsBlock session={session} b={b} draft={draft} setDraft={setDraft} act={act} />
+            </CommentPopover>
+          ) : null
+        })()}
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
@@ -953,6 +978,50 @@ function ParagraphPanel({
 }
 
 /** A paragraph's comments: theirs (with our replies) and ours, and adding one (on the highlighted text, if any). */
+/**
+ * A paragraph's comments over the page, beside where its commented text was clicked: kept on the
+ * screen, and closed with Escape, a click elsewhere or scrolling the document.
+ */
+function CommentPopover({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ left: x, top: y + 14 })
+  useEffect(() => {
+    // Fitted to the window once its size is known: below the click, or above it if there's no room.
+    const r = box.current?.getBoundingClientRect()
+    if (!r) return
+    const left = Math.max(12, Math.min(x - 24, window.innerWidth - r.width - 12))
+    const top = y + 14 + r.height > window.innerHeight - 12 ? Math.max(12, y - 14 - r.height) : y + 14
+    setPos({ left, top })
+  }, [x, y])
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      const t = e.target as Element
+      // Inside it; or more commented text (which opens its own).
+      if (box.current?.contains(t) || t.closest?.('[data-comment-ids]')) return
+      onClose()
+    }
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const wrap = document.querySelector('.ed-wrap')
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', key)
+    wrap?.addEventListener('scroll', onClose)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', key)
+      wrap?.removeEventListener('scroll', onClose)
+    }
+  }, [onClose])
+  return createPortal(
+    <div className="comment-pop" ref={box} style={pos} role="dialog" aria-label="Comments">
+      <button className="icon-btn comment-pop-x" onClick={onClose} title="Close (Esc)">
+        <Icon name="x" size={14} />
+      </button>
+      {children}
+    </div>,
+    document.body
+  )
+}
+
 function CommentsBlock({
   session,
   b,
@@ -982,8 +1051,9 @@ function CommentsBlock({
     <>
       <div className="dr-mini-h rc-comments-h">
         Comments
-        {!draft && (
-          <button className="btn sm" onClick={() => setDraft(quote ? { blockId: b.id, quote } : { blockId: b.id, replyTo: openTheirs?.id })}>
+        {/* Replies go under the comment they answer; here, a new comment of our own. */}
+        {!draft && (quote || !openTheirs) && (
+          <button className="btn sm" onClick={() => setDraft(quote ? { blockId: b.id, quote } : { blockId: b.id })}>
             <Icon name="chat" size={13} /> {quote ? 'Comment on the highlighted text' : openTheirs ? 'Reply' : 'Add'}
           </button>
         )}

@@ -1299,3 +1299,19 @@ body.past-open .rightbar { z-index: 45; }
   overflow: auto;
   max-height: 60vh;
 }
+
+/* Commented text clicked in the document: its paragraph's comments, beside it. */
+.comment-pop {
+  position: fixed;
+  z-index: 60;
+  width: 380px;
+  max-height: min(480px, calc(100vh - 24px));
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+}
+.comment-pop .rc-comments-h { padding-right: 26px; }
+.comment-pop-x { position: absolute; top: 8px; right: 8px; }
