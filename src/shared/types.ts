@@ -827,6 +827,11 @@ export interface ReviewPart {
   rounds?: number
   /** What the reviewer asked for, when they asked for changes (sent with its next review). */
   feedback?: string
+  /**
+   * Its change as the reviewer approved it, while the part is looked at again for a question they
+   * asked of it: if the new round proposes the same change, it stays approved.
+   */
+  approvedEarlier?: Proposal
 }
 
 /** One proposal for a part: what to change, and why, decided by the reviewer as a whole. */
@@ -853,6 +858,8 @@ export interface Proposal {
   decidedAt?: string
   /** When it was proposed. */
   madeAt?: string
+  /** Approved in an earlier round and proposed the same again (the round it was approved in). */
+  carriedFrom?: number
   /** Made to the draft (after the check). */
   appliedAt?: string
 }

@@ -1353,3 +1353,5 @@ body.past-open .rightbar { z-index: 45; }
 .ck-item.overridden { background: var(--surface-2); padding-top: 7px; padding-bottom: 7px; }
 .ck-item.overridden .tl-part { color: var(--text-2); }
 .ck-badge.muted { color: var(--text-2); background: var(--surface); border: 1px solid var(--border); }
+.ck-changed { margin-top: 6px; padding: 7px 9px; border-radius: 6px; background: color-mix(in srgb, var(--warn, #b45309) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn, #b45309) 25%, var(--border)); }
+.ck-carried { margin: 4px 0 0; }

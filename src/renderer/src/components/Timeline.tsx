@@ -429,7 +429,7 @@ function CheckReview({
   const overridden = all.filter((p) => overrides[p.id]?.kind === 'proposal')
   const waitingOn = all.filter((p) => !overridden.includes(p))
   // Approved in an earlier round and not sent back since: nothing new to look at.
-  const earlier = waitingOn.filter((p) => p.proposal!.status === 'approved' && p.proposal!.round < round)
+  const earlier = waitingOn.filter((p) => p.proposal!.status === 'approved' && (p.proposal!.round < round || !!p.proposal!.carriedFrom))
   const current = waitingOn.filter((p) => !earlier.includes(p))
   const shownParts = (list: ReviewPart[]) => (only ? list.filter((p) => only.has(p.id)) : list)
   // The same question suggested for several parts: one line, asked of all of them if ticked.
@@ -476,8 +476,10 @@ function CheckReview({
           <button className="link-btn tl-part" onClick={() => onJump(part.blockIds[0])} title="Show it in the document">
             {part.title}
           </button>
-          {ok && <span className="ck-badge">{folded ? `Approved in round ${p.round}` : 'Approved'}</span>}
+          {ok && <span className="ck-badge">{folded ? `Approved in round ${p.carriedFrom ?? p.round}` : 'Approved'}</span>}
         </div>
+        {folded && p.carriedFrom && <p className="faint dr-small ck-carried">Looked at again for your question: the same change, so your approval stands.</p>}
+        {!folded && part.approvedEarlier && p.status !== 'approved' && <ChangedSinceApproved part={part} session={session} />}
         <p className="ck-summary">{p.summary}</p>
         {!folded && (
           <>
@@ -624,6 +626,44 @@ function CheckReview({
         </p>
       )}
       {error && <p className="dr-small dr-err">{error}</p>}
+    </div>
+  )
+}
+
+/**
+ * A change the reviewer approved, looked at again for a question they asked, and proposed
+ * differently this time: what they approved, and how this round's differs, to approve again.
+ */
+function ChangedSinceApproved({ part, session }: { part: ReviewPart; session: ReviewSession }) {
+  const was = part.approvedEarlier!
+  const now = part.proposal!
+  const d = session.doc!
+  const where = (id: string) => {
+    const b = d.blocks.find((x) => x.id === id)
+    return b?.label ? `§${b.label.replace(/\.$/, '')}` : 'Paragraph'
+  }
+  const current = (id: string) => {
+    const b = d.blocks.find((x) => x.id === id)
+    return b ? shownText(marksFor(d, b)) : ''
+  }
+  const blocks = [...new Set([...was.wording.map((w) => w.blockId), ...now.wording.map((w) => w.blockId)])]
+  const differs = blocks.filter((id) => (was.wording.find((w) => w.blockId === id)?.text ?? '') !== (now.wording.find((w) => w.blockId === id)?.text ?? ''))
+  const decided = (p: typeof was) => new Set(p.decisions.map((x) => `${x.blockId}:${x.seg}:${x.outcome}`))
+  const a = decided(was)
+  const b = decided(now)
+  const decisionsDiffer = a.size !== b.size || [...a].some((k) => !b.has(k))
+  return (
+    <div className="ck-changed dr-small">
+      <div>
+        <strong>Changed since you approved it in round {was.carriedFrom ?? was.round}</strong> (looked at again for your question). Approve it again if this round’s change is right.
+      </div>
+      {differs.map((id) => (
+        <div key={id} className="ck-detail">
+          <span className="faint">{where(id)}, from what you approved:</span>{' '}
+          <Redline segments={diffSegments(was.wording.find((w) => w.blockId === id)?.text ?? current(id), now.wording.find((w) => w.blockId === id)?.text ?? current(id))} />
+        </div>
+      ))}
+      {decisionsDiffer && <div className="faint">Its decisions on their changes are different too (below).</div>}
     </div>
   )
 }

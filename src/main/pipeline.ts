@@ -404,6 +404,12 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
           deps.persist(s)
           try {
             part.proposal = { ...(await propose(s, part, r, deps, (call) => ask(x, call))), madeAt: now() }
+            // Approved before it was looked at again for a question: the same change still stands approved.
+            const was = part.approvedEarlier
+            if (was && sameEffect(was, part.proposal)) {
+              Object.assign(part.proposal, { status: 'approved', decidedBy: was.decidedBy, decidedAt: was.decidedAt, carriedFrom: was.carriedFrom ?? was.round })
+              part.approvedEarlier = undefined
+            }
             x.status = 'done'
             x.detail = part.proposal.summary
           } catch (e) {
@@ -422,6 +428,8 @@ async function go(s: ReviewSession, run: PipelineRun, deps: PipelineDeps, flag: 
             }
             x.status = 'error'
             x.error = e instanceof Error ? e.message : String(e)
+            // Couldn't be worked out again: the change as the reviewer approved it stands.
+            if (part.approvedEarlier) ((part.proposal = part.approvedEarlier), (part.approvedEarlier = undefined))
           }
           x.endedAt = now()
           deps.persist(s)
@@ -549,6 +557,21 @@ const roundIds = (r: number) =>
     : { review: `review-${r}`, crosscheck: `crosscheck-${r}`, consolidate: `consolidate-${r}`, approve: `approve-${r}` }
 
 /**
+ * Whether two proposals make the same change to the draft: the same wording (as text, ignoring
+ * spacing and case) and the same decisions on their changes. What's said to them (the comment,
+ * replies, the summary) can be worded differently.
+ */
+function sameEffect(a: Proposal, b: Proposal): boolean {
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
+  const key = (p: Proposal) =>
+    JSON.stringify({
+      w: p.wording.map((w) => [w.blockId, norm(w.text)]).sort(),
+      d: p.decisions.map((x) => [x.blockId, x.seg, x.outcome]).sort()
+    })
+  return key(a) === key(b)
+}
+
+/**
  * The reviewer's approvals at a check, as they now stand: the changes ticked approved (kept as
  * approved through later rounds, unless sent back), the rest waiting for them. The suggested
  * questions shown and not ticked are set aside (not offered again).
@@ -579,9 +602,10 @@ export function iterate(
   if (!run?.parts) throw new Error('No review to go on with.')
   if (live.has(s.id)) throw new Error('The review is already running.')
   const { questions } = deps.knowledge()
-  // Sent back wins over approved: the part is looked at again.
-  const sentBack = new Set([...Object.entries(input.notes).filter(([, n]) => n.trim()).map(([id]) => id), ...input.questions.map((q) => q.partId)])
-  settleCheck(run, deps, input.approved.filter((id) => !sentBack.has(id)), input.questions)
+  // A note asks for a change: the part's proposal isn't approved any more. A question only asks
+  // for more to be looked at: the approval is kept, and stands if the new round proposes the same.
+  const noted = new Set(Object.entries(input.notes).filter(([, n]) => n.trim()).map(([id]) => id))
+  settleCheck(run, deps, input.approved.filter((id) => !noted.has(id)), input.questions)
   // What the reviewer asked of each part: their note, and the questions they ticked for it.
   const asked = new Map<string, string[]>()
   for (const [partId, note] of Object.entries(input.notes)) if (note.trim()) asked.set(partId, [note.trim()])
@@ -596,6 +620,7 @@ export function iterate(
   if (!back.length) throw new Error('Write a note on a change, or tick a question, to send back.')
   for (const p of back) {
     p.feedback = asked.get(p.id)!.join('\n')
+    p.approvedEarlier = p.proposal?.status === 'approved' && !p.proposal.appliedAt && !noted.has(p.id) ? { ...p.proposal } : undefined
     if (p.proposal && (p.proposal.status === 'pending' || (p.proposal.status === 'approved' && !p.proposal.appliedAt))) Object.assign(p.proposal, { status: 'changes', decidedBy: deps.actor(), decidedAt: now() })
   }
   const n = (run.round ?? 1) + 1
