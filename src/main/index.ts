@@ -221,6 +221,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin' && existsSync(devIcon)) app.dock?.setIcon(devIcon)
   // The demo workspace's history, made the first time it opens (before the window shows it).
   await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+  settleInterrupted()
   if (demoMode()) void planAll()
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
@@ -511,6 +512,7 @@ ipcMain.handle('mode:set', async (_e, demo: boolean) => {
   ws.audit.append(actor(), demo ? 'mode.demo-on' : 'mode.demo-off', null, {})
   void ensureDemoServer()
   await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+  settleInterrupted()
   if (demoMode()) void planAll()
   win?.webContents.reload()
   return settings()
@@ -532,6 +534,7 @@ ipcMain.handle('workspace:clear', async () => {
   // which are for the team's own workspace, are left alone.
   if (demoMode()) {
     await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+    settleInterrupted()
     void planAll()
     ws.audit.append(actor(), 'workspace.cleared', null, { demo: true })
     win?.webContents.reload()
@@ -757,6 +760,14 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string, ori
  * AI review's first steps, run in the background, so the plan is there when the reviewer starts
  * it. Not for the original we sent, a closed review, one on security hold, or without the AI.
  */
+/**
+ * Runs the app closed on, settled as the workspace opens (not only when each review is next
+ * opened): a plan to be made again, a review stopped (to Continue). So lists show them as they are.
+ */
+function settleInterrupted() {
+  for (const r of ws.store.listSessions()) if ((r.ai?.state === 'planning' || r.ai?.state === 'reviewing') && !pipelineRunning(r.id)) session(r.id)
+}
+
 /** Tell the window the background work changed (it asks for the list again: the header pill, the queue page). */
 const workChanged = () => send('work:changed', null)
 

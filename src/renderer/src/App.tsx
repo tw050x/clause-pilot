@@ -14,7 +14,7 @@ import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { ReviewsView } from './views/ReviewsView'
 import { SecurityView } from './views/SecurityView'
-import { WorkView } from './views/WorkView'
+import { WorkView, forYou } from './views/WorkView'
 import { ContractView, ContractsListView, NewContractView } from './views/ContractView'
 import { OpenContractModal } from './components/OpenContractModal'
 import { AccountPicker } from './components/AccountPicker'
@@ -211,6 +211,8 @@ export function App() {
 
   const pending = nominations.filter((n) => n.status === 'pending').length + proposals.filter((p) => p.status === 'pending').length
   const reviewing = view === 'review' && !!session
+  // Reviews waiting for the reviewer to move them on (not running meanwhile): the header pill counts them.
+  const waitingForYou = forYou(reviews).filter((r) => !jobs.some((j) => j.sessionId === r.id)).length
 
   return (
     <div className={`app ${isMac ? 'mac' : 'win'}`}>
@@ -220,10 +222,11 @@ export function App() {
         </button>
         <div className="spacer" />
         {/* Background work going on: how much, striped as it moves; opens the queue page. */}
-        {jobs.length > 0 && (
-          <button className={`work-pill ${view === 'work' ? 'on' : ''}`} onClick={() => setView('work')} title="See what’s running in the background">
-            Working · {jobs.filter((j) => j.status === 'running').length}
-            {jobs.some((j) => j.status === 'waiting') ? ` + ${jobs.filter((j) => j.status === 'waiting').length} waiting` : ''}
+        {(jobs.length > 0 || waitingForYou > 0) && (
+          <button className={`work-pill ${jobs.length ? 'busy' : ''} ${view === 'work' ? 'on' : ''}`} onClick={() => setView('work')} title="What’s running in the background, and the reviews waiting for you">
+            {[jobs.length ? `Working · ${jobs.filter((j) => j.status === 'running').length}${jobs.some((j) => j.status === 'waiting') ? ` + ${jobs.filter((j) => j.status === 'waiting').length} waiting` : ''}` : '', waitingForYou ? `${waitingForYou} for you` : '']
+              .filter(Boolean)
+              .join(' · ')}
           </button>
         )}
         {!online && (
@@ -373,7 +376,7 @@ export function App() {
             />
           )}
           {view === 'audit' && <AuditView session={session} />}
-          {view === 'work' && <WorkView jobs={jobs} onOpenReview={openSession} />}
+          {view === 'work' && <WorkView jobs={jobs} reviews={reviews} onOpenReview={openSession} />}
           {view === 'settings' && settings && (
             <SettingsView
               settings={settings}
