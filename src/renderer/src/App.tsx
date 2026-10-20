@@ -59,10 +59,16 @@ export function App() {
   useEffect(() => window.api.security.onUpdate(() => refreshAlerts()), [refreshAlerts])
 
   // Live pipeline updates for the open session.
+  // Any review's update (the background planning, say): the lists catch up, at most once a second.
+  const listsDue = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(
     () =>
       window.api.review.onUpdate((s) => {
         setSession((cur) => (cur && cur.id === s.id ? s : cur))
+        listsDue.current ??= setTimeout(() => {
+          listsDue.current = null
+          void refreshReviews()
+        }, 1000)
       }),
     []
   )

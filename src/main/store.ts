@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, readd
 import { join } from 'node:path'
 import { defaultQuestions } from '@shared/questions'
 import { DEFAULT_PROMPTS } from './ai/prompts'
-import type { AiQuestion, Account, ChatConversation, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
+import type { ReviewState, AiQuestion, Account, ChatConversation, ContractRecord, LibraryClause, Nomination, PlaybookPosition, PlaybookProposal, Precedent, ReviewSession, ReviewSummary, SecurityAlert } from '@shared/types'
 
 const SEEDED = ['library.json', 'precedents.json', 'playbook.json', 'accounts.json', 'contracts.json']
 
@@ -150,10 +150,41 @@ export class Store {
           rejected: d ? rejectedCount(d) : decisions.filter((x) => x.decision === 'rejected').length,
           closed: !!s.closed,
           original: s.original || undefined,
-          contractArchived: !!contract?.archived
+          contractArchived: !!contract?.archived,
+          ai: s.original ? undefined : reviewState(s)
         }
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((r, _i, all) => {
+        // Not planned, and won't be: an earlier round (a later draft came), or closed.
+        if (r.ai?.state !== 'not-planned') return r
+        const later = all.filter((x) => x.contractId && x.contractId === r.contractId && (x.version ?? 0) > (r.version ?? 0)).length
+        if (later) return { ...r, ai: { state: 'not-planned', label: 'Earlier round', detail: 'A later draft came; it’s reviewed instead.' } }
+        if (r.closed) return { ...r, ai: { state: 'not-planned', label: 'Closed', detail: 'Closed without an AI review.' } }
+        return r
+      })
   }
 
+}
+
+/** Where a review's AI review stands, for lists (the contract's page, All contracts). */
+export function reviewState(s: ReviewSession): ReviewState {
+  const run = s.doc?.pipeline
+  if (!run) return { state: 'not-planned', label: 'Not planned', detail: 'Planned in the background shortly.' }
+  const parts = (run.parts ?? []).filter((p) => p.depth !== 'skip').length
+  const review = run.steps.filter((x) => /^review(-\d+)?$/.test(x.id)).at(-1)
+  const kids = review?.children ?? []
+  const reviewed = kids.filter((c) => c.status !== 'waiting' && c.status !== 'running').length
+  const changes = (run.parts ?? []).filter((p) => p.proposal?.status === 'approved').length
+  const found = (run.parts ?? []).filter((p) => (p.findings ?? []).some((f) => f.severity !== 'info')).length
+  const atCheck = run.steps.some((x) => x.id === 'check' && x.status === 'needs-you')
+  if (run.status === 'running' && !run.confirmed) return { state: 'planning', label: 'Planning', detail: 'Reading its structure and planning the review.' }
+  if (run.status === 'planned') return { state: 'planned', label: 'Planned', detail: `${parts} part${parts === 1 ? '' : 's'} to review${run.estimate ? `, about ${run.estimate.calls} AI calls` : ''}. Ready to start.` }
+  if (run.status === 'running') return { state: 'reviewing', label: 'AI reviewing', detail: kids.length ? `${reviewed} of ${kids.length} parts reviewed.` : 'Under way.' }
+  if (run.status === 'paused' && atCheck)
+    return { state: 'your-turn', label: 'Your turn', detail: changes ? `${changes} change${changes === 1 ? '' : 's'} made, to check before the new draft.` : found ? `${found} part${found === 1 ? '' : 's'} with findings to look at.` : 'Nothing to change: check, then write the new draft.' }
+  if (run.status === 'paused') return { state: 'paused', label: 'Paused', detail: run.note ?? 'Waiting to go on.' }
+  if (run.status === 'stopped') return { state: 'stopped', label: 'Stopped', detail: run.note ?? 'Stopped before it finished.' }
+  if (run.status === 'error') return { state: 'failed', label: 'Failed', detail: run.note ?? 'Something went wrong.' }
+  return { state: 'done', label: 'Reviewed', detail: run.email ? `${changes} change${changes === 1 ? '' : 's'} made; the new draft and email are ready.` : `${changes} change${changes === 1 ? '' : 's'} made.` }
 }

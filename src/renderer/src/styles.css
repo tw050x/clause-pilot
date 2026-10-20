@@ -1216,3 +1216,12 @@ body.past-open .rightbar { z-index: 45; }
 .quickstart-detail { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
 .quickstart-who { margin: 0; font-size: 11.5px; }
 .quickstart-card .btn { flex-shrink: 0; }
+
+/* A draft's AI review state, in lists (the contract's page, All contracts). */
+.rs-cell { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.rs-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text-2); }
+.rs-pill.planning, .rs-pill.planned, .rs-pill.reviewing { background: var(--processing-tint); color: var(--processing); }
+.rs-pill.your-turn, .rs-pill.paused { background: color-mix(in srgb, #b45309 12%, var(--surface)); color: #92400e; }
+.rs-pill.done { background: var(--exact-tint); color: var(--exact); }
+.rs-pill.failed, .rs-pill.stopped { background: var(--rejected-tint); color: var(--rejected); }
+.rs-detail { font-size: 12px; line-height: 1.4; }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Account, ContractRecord, ReviewSummary } from '@shared/types'
+import type { Account, ContractRecord, ReviewSummary, ReviewState } from '@shared/types'
 import { Icon } from '../lib/icons'
 
 /**
@@ -72,7 +72,7 @@ export function ContractView({
               <tr>
                 <th style={{ width: 130 }}>Version</th>
                 <th>File</th>
-                <th style={{ width: 220 }}>Decisions</th>
+                <th style={{ width: 300 }}>Review</th>
                 <th style={{ width: 190 }}>Uploaded</th>
                 <th style={{ width: 100 }}></th>
               </tr>
@@ -97,9 +97,8 @@ export function ContractView({
                     {v.closed && <span className="pill neutral" style={{ marginLeft: 6 }}>closed</span>}
                   </td>
                   <td>{v.docName}</td>
-                  <td className="muted">
-                    {v.clauses ? `${v.decided} of ${v.clauses} decided` : 'No changes'}
-                    {v.rejected > 0 && <span className="pill rejected" style={{ marginLeft: 6 }}>{v.rejected} rejected</span>}
+                  <td>
+                    <ReviewStateCell state={v.ai} />
                   </td>
                   <td className="muted">{new Date(v.createdAt).toLocaleString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
@@ -211,7 +210,7 @@ export function ContractsListView({
                 <th>Contract</th>
                 <th style={{ width: 120 }}>Type</th>
                 <th style={{ width: 150 }}>Latest version</th>
-                <th style={{ width: 200 }}>Decisions</th>
+                <th style={{ width: 280 }}>Review</th>
                 <th style={{ width: 160 }}>Updated</th>
                 <th style={{ width: 110 }}></th>
               </tr>
@@ -227,10 +226,7 @@ export function ContractsListView({
                     </td>
                     <td className="muted">{c.contractType === 'nda' ? 'NDA' : c.contractType === 'order-form' ? 'Order form' : 'Contract'}</td>
                     <td className="muted">{v ? `Version ${v.version}` : 'No drafts yet'}</td>
-                    <td className="muted">
-                      {v ? (v.clauses ? `${v.decided} of ${v.clauses} decided` : 'No changes') : '–'}
-                      {v && v.rejected > 0 && <span className="pill rejected" style={{ marginLeft: 6 }}>{v.rejected} rejected</span>}
-                    </td>
+                    <td>{v ? <ReviewStateCell state={v.ai} /> : <span className="muted">–</span>}</td>
                     <td className="muted">{v ? new Date(v.createdAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button
@@ -251,5 +247,19 @@ export function ContractsListView({
         </div>
       )}
     </div>
+  )
+}
+
+/** Where a draft's AI review stands: its state, and a line on what's behind it. */
+export function ReviewStateCell({ state }: { state?: ReviewState }) {
+  if (!state) return <span className="muted">–</span>
+  return (
+    <span className="rs-cell">
+      <span className={`rs-pill ${state.state}`}>
+        {(state.state === 'planning' || state.state === 'reviewing') && <span className="spinner tl-spin" />}
+        {state.label}
+      </span>
+      <span className="faint rs-detail">{state.detail}</span>
+    </span>
   )
 }

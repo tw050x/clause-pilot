@@ -221,6 +221,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin' && existsSync(devIcon)) app.dock?.setIcon(devIcon)
   // The demo workspace's history, made the first time it opens (before the window shows it).
   await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+  if (demoMode()) void planAll()
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
@@ -237,14 +238,18 @@ function persist(s: ReviewSession) {
   send('session:update', s)
 }
 
-let persistTimer: NodeJS.Timeout | null = null
+/** Saves waiting, by review (several can be running at once: the demo's plans, say). */
+const persistTimers = new Map<string, NodeJS.Timeout>()
 function emitThrottled(s: ReviewSession) {
   send('session:update', s)
-  if (persistTimer) return
-  persistTimer = setTimeout(() => {
-    persistTimer = null
-    wsFor(s).store.saveSession(s)
-  }, 400)
+  if (persistTimers.has(s.id)) return
+  persistTimers.set(
+    s.id,
+    setTimeout(() => {
+      persistTimers.delete(s.id)
+      wsFor(s).store.saveSession(s)
+    }, 400)
+  )
 }
 
 function session(id: string): ReviewSession {
@@ -265,7 +270,16 @@ const AI_TASK_LIMIT_MS = 4 * 60_000
 function settleStaleRuns(s: ReviewSession) {
   const stale = (s.doc?.aiRuns ?? []).filter((r) => r.status === 'running' && !inFlight.has(r.id))
   for (const r of stale) Object.assign(r, { status: 'error', error: 'Interrupted: the app closed before the answer came back. Ask again.' })
-  if (stale.length) wsFor(s).store.saveSession(s)
+  // An AI review the app closed on: planning is started again (planOnOpen); a review stops, to Continue.
+  const run = s.doc?.pipeline
+  const cut = run?.status === 'running' && !pipelineRunning(s.id)
+  if (cut && !run.confirmed) delete s.doc!.pipeline
+  else if (cut) {
+    run.status = 'stopped'
+    run.note = 'Interrupted: the app closed while it ran. Continue to go on.'
+    for (const st of run.steps.flatMap((x) => [x, ...(x.children ?? [])])) if (st.status === 'running') st.status = 'waiting'
+  }
+  if (stale.length || cut) wsFor(s).store.saveSession(s)
 }
 
 const resolvePath = (p: string) => (isAbsolute(p) ? p : join(appRoot, p))
@@ -390,6 +404,7 @@ ipcMain.handle('demo:quickstart', async (_e, id: QuickStartId): Promise<{ view: 
   const review = async (file: string, contractId: string, origin?: DraftOrigin) => {
     const s = await startReview(ws, demoFile(file), contractId, origin)
     persist(s)
+    planOnOpen(s)
     return s
   }
   const ndaVersions = () => ws.store.versionsOf('ct-demo-brightwater')
@@ -496,6 +511,7 @@ ipcMain.handle('mode:set', async (_e, demo: boolean) => {
   ws.audit.append(actor(), demo ? 'mode.demo-on' : 'mode.demo-off', null, {})
   void ensureDemoServer()
   await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+  if (demoMode()) void planAll()
   win?.webContents.reload()
   return settings()
 })
@@ -516,6 +532,7 @@ ipcMain.handle('workspace:clear', async () => {
   // which are for the team's own workspace, are left alone.
   if (demoMode()) {
     await populateDemoHistory().catch((e) => console.warn('The demo history could not be made:', e))
+    void planAll()
     ws.audit.append(actor(), 'workspace.cleared', null, { demo: true })
     win?.webContents.reload()
     return true
@@ -740,6 +757,34 @@ ipcMain.handle('review:start', async (_e, path: string, contractId?: string, ori
  * AI review's first steps, run in the background, so the plan is there when the reviewer starts
  * it. Not for the original we sent, a closed review, one on security hold, or without the AI.
  */
+/**
+ * Plan every open review (each contract's latest draft) not planned yet, one after another, in the background (the demo's, once
+ * they're made: on its first open, and again after a reset). One opened meanwhile is planned
+ * straight away instead (planOnOpen).
+ */
+let planningAll: Promise<void> | null = null
+function planAll() {
+  planningAll ??= (async () => {
+    await ensureDemoServer()
+    const at = ws
+    const archived = new Set(at.store.contracts().filter((c) => c.archived).map((c) => c.id))
+    const all = at.store.listSessions()
+    // Each contract's latest draft (an earlier round's was done with).
+    const latest = new Map<string, number>()
+    for (const r of all) if (r.contractId) latest.set(r.contractId, Math.max(latest.get(r.contractId) ?? 0, r.version ?? 0))
+    for (const r of all) {
+      if (ws !== at) break
+      if (r.original || r.closed || (r.contractId && (archived.has(r.contractId) || (r.version ?? 0) < (latest.get(r.contractId) ?? 0))) || r.ai?.state !== 'not-planned') continue
+      const s = session(r.id)
+      planOnOpen(s)
+      while (pipelineRunning(s.id)) await new Promise((ok) => setTimeout(ok, 500))
+    }
+  })()
+    .catch((e) => console.warn('Planning the reviews stopped:', e))
+    .finally(() => (planningAll = null))
+  return planningAll
+}
+
 function planOnOpen(s: ReviewSession) {
   if (!s.doc || s.original || s.closed || s.doc.pipeline || pipelineRunning(s.id)) return
   if (alertFor(s.id)?.status === 'open' || provider().kind === 'none') return

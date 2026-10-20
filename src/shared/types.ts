@@ -639,6 +639,15 @@ export interface ReviewSummary {
   original?: boolean
   /** Its contract is archived. */
   contractArchived?: boolean
+  /** Where its AI review stands (planned on upload, then reviewed): for lists. */
+  ai?: ReviewState
+}
+
+/** Where a review's AI review stands, in a word (the state) and a line (what's behind it). */
+export interface ReviewState {
+  state: 'not-planned' | 'planning' | 'planned' | 'reviewing' | 'your-turn' | 'paused' | 'stopped' | 'done' | 'failed'
+  label: string
+  detail: string
 }
 
 // ---- Library promotion queue -----------------------------------------------------
