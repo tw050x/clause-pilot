@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { AiQuestion, AiTaskRun, DocBlock, DocComment, LibraryClause, OurComment, ReviewSession, SecurityAlert } from '@shared/types'
-import { aiSame, authorsOf, changeKey, commentResolved, groupOf, hasOpenChanges, openChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, shownText, stillOpen, theyChanged } from '@shared/changes'
+import { aiSame, changeKey, commentResolved, groupOf, hasOpenChanges, openChanges, intentCandidate, isCleared, markedChecked, marksFor, needsReading, segmentsOf, stillOpen, theyChanged } from '@shared/changes'
 import { Chevron, Icon } from '../lib/icons'
 import { AutoTextarea } from '../lib/AutoTextarea'
 import { EmailModal } from '../components/EmailModal'
@@ -9,7 +9,6 @@ import { RedlineModal } from '../components/RedlineModal'
 import { DocEditor, flashParagraphs, type Highlight, type SelectedChange } from '../components/DocEditor'
 import { WordView } from '../components/WordView'
 import { Timeline } from '../components/Timeline'
-import { GUTTER, paragraphState, plainText, type GutterState } from '../lib/paragraphState'
 import { AiAnswer } from '../components/AiAnswer'
 import { RawModal } from '../components/RawModal'
 import { canRedo, dependents, describe, details, stateAt, type ActionItem } from '@shared/history'
@@ -25,7 +24,7 @@ interface Props {
   panel: HTMLElement | null
   /** The bar under the document and the review column: the review's actions, and Accept / Reject. */
   bar: HTMLElement | null
-  /** The foot of the review column: Accept / Reject for the selected changes, and Show key. */
+  /** The foot of the review column: Accept / Reject for the selected changes. */
   foot: HTMLElement | null
   /** The head of the right sidebar, above its Review / Agent switch: what's being reviewed. */
   head: HTMLElement | null
@@ -81,8 +80,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   /** The right of the bottom bar, where the selection's Accept and Reject go. */
   const [decideSlot, setDecideSlot] = useState<HTMLDivElement | null>(null)
   // The stats and the key to the bars: a dialog over the review column, opened from the bottom bar.
-  const [showKey, setShowKey] = useState(false)
-  const closeKey = useCallback(() => setShowKey(false), [])
   /**
    * Explain changes: hovering a change shows what it is. Off until turned on (it can get in the
    * way), and off again at the next click or key press anywhere but its button.
@@ -170,9 +167,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
   }, [session.id])
   const changed = useMemo(() => d.blocks.filter((b) => stillOpen(d, b)), [d])
   const toRead = d.blocks.filter((b) => needsReading(d, b)).length
-  const decided = Object.keys(d.resolved ?? {}).length
-  const authors = authorsOf(changed.filter((b) => !b.untracked))
-  const untracked = changed.filter((b) => b.untracked).length
   const ourEdits = Object.keys(d.edits).length
   const cleared = d.blocks.filter((b) => b.kind !== 'heading' && !hasOpenChanges(d, b) && d.edits[b.id] === undefined && (isCleared(d, b) || segmentsOf(b).some((x, i) => x.op !== 'same' && d.resolved?.[changeKey(b.id, i)]))).length
   const onHold = alert?.status === 'open'
@@ -316,107 +310,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
     </div>
   )
 
-  // The key: how this draft stands, what each bar means, and what it was compared with.
-  // The key: how this draft stands, what it was compared with, and what each mark on the page means.
-  const states = new Map<GutterState, number>()
-  for (const b of d.blocks) {
-    if (b.kind === 'heading') continue
-    const marks = marksFor(d, b)
-    const { state } = paragraphState(d, b, shownText(marks), marks.length, plainText(d, b))
-    if (state) states.set(state, (states.get(state) ?? 0) + 1)
-  }
-  const KEY = (
-    <>
-      <section className="key-section">
-        <h4>This draft</h4>
-        <div className="rc-stats">
-          <span>
-            <i className="dot theirs" /> {changed.length} paragraph{changed.length === 1 ? '' : 's'} with changes to decide{authors.length ? ` by ${authors.join(', ')}` : ''}
-          </span>
-          {untracked > 0 && (
-            <span>
-              <i className="dot untracked" /> {untracked} of them made without Track Changes
-            </span>
-          )}
-          {decided > 0 && (
-            <span>
-              <i className="dot decided" /> {decided} of their changes accepted or rejected
-            </span>
-          )}
-          {toRead > 0 && (
-            <span>
-              <i className="dot none" /> {toRead} paragraph{toRead === 1 ? '' : 's'} to read
-            </span>
-          )}
-          <span>
-            <i className="dot ours" /> {ourEdits} paragraph{ourEdits === 1 ? '' : 's'} edited by you
-          </span>
-        </div>
-        <p className="faint key-note">
-          {d.baseline
-            ? d.baseline.kind === 'sent'
-              ? d.baseline.version === 0
-                ? 'Compared with the original we sent: anything they changed shows, tracked or not.'
-                : `Compared with what we sent for version ${d.baseline.version}: anything they changed shows, tracked or not.`
-              : `On our paper: compared with our approved wording (${d.baseline.approved} paragraphs match it word for word).`
-            : 'Their paper: nothing is compared with ours, so a paragraph that isn’t word for word our approved wording is there to read. The intent check compares it with the closest of our clauses.'}
-        </p>
-      </section>
-      <section className="key-section">
-        <h4>Beside each paragraph</h4>
-        <p className="faint key-note">The bar says where it stands; the label names a run of paragraphs in the same state.</p>
-        <div className="key-rows">
-          {(Object.keys(GUTTER) as GutterState[]).map((k) => (
-            <div key={k} className="key-row">
-              <i className={`key-bar ${{ unchanged: 'chg-checked', checked: 'chg-checked', same: 'chg-ai todo', decide: 'chg-theirs todo', edited: 'chg-ours', read: 'chg-read todo' }[k]}`} />
-              <span className={`ed-unchanged ${k} key-label`}>{GUTTER[k].label}</span>
-              <span className="key-text">
-                {GUTTER[k].tip}
-                {states.get(k) ? <span className="faint"> ({states.get(k)})</span> : null}
-              </span>
-            </div>
-          ))}
-          <div className="key-row">
-            <i className="key-bar chg-ours todo" />
-            <span className="key-label" />
-            <span className="key-text">Stripes moving up the bar: something still to do there (their changes to decide, even where you’ve edited it, text to read, or the AI’s finding to confirm).</span>
-          </div>
-        </div>
-      </section>
-      <section className="key-section">
-        <h4>In the page</h4>
-        <div className="key-rows">
-          <div className="key-row">
-            <span className="key-sample">
-              <span className="key-ins">added</span> <span className="key-del">removed</span>
-            </span>
-            <span className="key-text">Tracked changes, theirs and yours. Click one to see whose, and to accept or reject theirs.</span>
-          </div>
-          <div className="key-row">
-            <span className="key-sample">
-              <span className="key-comment">commented</span>
-            </span>
-            <span className="key-text">Text a comment is on. Click it to see the comments; select text to add one.</span>
-          </div>
-          <div className="key-row">
-            <span className="key-sample">
-              <span className="key-ask">
-                <Icon name="sparkle" size={12} stroke={2.2} /> 2 Asks
-              </span>
-            </span>
-            <span className="key-text">Text the AI has answered questions about. Hover to see the text; click for the answers.</span>
-          </div>
-          <div className="key-row">
-            <span className="key-sample">
-              <span className="key-ask stale">1 Ask · earlier</span>
-            </span>
-            <span className="key-text">Asked of wording the paragraph no longer has.</span>
-          </div>
-        </div>
-      </section>
-    </>
-  )
-
   return (
     <div className="dr-main">
     <div className="ed-wrap">
@@ -491,13 +384,6 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
       </>
       )}
       {panel && createPortal(column, panel)}
-      {showKey && panel?.parentElement &&
-        createPortal(
-          <KeyDialog onClose={closeKey}>
-            {KEY}
-          </KeyDialog>,
-          panel.parentElement
-        )}
       {emailOpen && <EmailModal session={session} onClose={() => setEmailOpen(false)} onMarkup={() => setRedlineOpen(true)} />}
       {redlineOpen && <RedlineModal session={session} onClose={() => setRedlineOpen(false)} />}
     </div>
@@ -571,43 +457,9 @@ export function DocReview({ session, panel, bar, foot, head, reviewer, onChange,
         createPortal(
           <>
             <div className="bottombar-group" ref={setDecideSlot} />
-            <button className={`btn sm bottombar-key ${showKey ? 'on' : ''}`} onClick={() => setShowKey((v) => !v)} title="What the bars and colours mean, and how this draft stands">
-              {showKey ? 'Hide key' : 'Show key'}
-            </button>
           </>,
           foot
         )}
-    </div>
-  )
-}
-
-/** The key, filling the review column above its foot. Escape, the close button or Hide key closes it. */
-function KeyDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  const panel = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    // A click anywhere but the key (or its Show / Hide key button, which toggles it) closes it.
-    const away = (e: PointerEvent) => {
-      const t = e.target as Element
-      if (panel.current?.contains(t) || t.closest?.('.bottombar-key')) return
-      onClose()
-    }
-    document.addEventListener('keydown', esc)
-    document.addEventListener('pointerdown', away, true)
-    return () => {
-      document.removeEventListener('keydown', esc)
-      document.removeEventListener('pointerdown', away, true)
-    }
-  }, [onClose])
-  return (
-    <div className="key-panel" ref={panel} role="dialog" aria-labelledby="key-title">
-      <div className="key-head">
-        <h3 id="key-title">Key</h3>
-        <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={onClose}>
-          <Icon name="x" size={14} />
-        </button>
-      </div>
-      <div className="key-body">{children}</div>
     </div>
   )
 }
