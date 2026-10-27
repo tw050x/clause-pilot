@@ -1,3 +1,4 @@
+
 # Clause Pilot
 
 A desktop app that takes the reading out of routine contract review. It reads a contract, clears the clauses the legal team has already approved, and gives the lawyer everything they need to decide on the rest: what changed, what we agreed last time, and whether anything in the document quietly undoes the parts that look standard.
@@ -7,6 +8,8 @@ A desktop app that takes the reading out of routine contract review. It reads a 
 The first demo in demo mode: a client's redline of our NDA, reviewed by the AI part by part, the changes checked and approved, and the marked-up copy to send back.
 
 <!-- demo video -->
+
+https://github.com/user-attachments/assets/7e370891-ec8d-4744-97fb-62bff33d8305
 
 ## Run it
 
