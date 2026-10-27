@@ -9,7 +9,7 @@
   {
     "id": "ct-demo-brightwater-order",
     "accountId": "ac-demo-brightwater",
-    "title": "Burp Suite Enterprise order form",
+    "title": "Scanner Suite Enterprise order form",
     "contractType": "order-form",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
@@ -58,7 +58,7 @@
   {
     "id": "ct-demo-northwind-3",
     "accountId": "ac-demo-northwind",
-    "title": "Burp Suite DAST order form",
+    "title": "Scanner Suite DAST order form",
     "contractType": "order-form",
     "createdAt": "2026-10-01T09:00:00.000Z"
   },
@@ -125,7 +125,7 @@
   {
     "id": "ct-demo-initech-3",
     "accountId": "ac-demo-initech",
-    "title": "Burp Suite Professional order form",
+    "title": "Scanner Suite Professional order form",
     "contractType": "order-form",
     "createdAt": "2026-10-01T09:00:00.000Z"
   }

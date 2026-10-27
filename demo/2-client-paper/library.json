@@ -2,7 +2,7 @@
   "format": "clause-pilot/library",
   "version": 1,
   "exportedAt": "2026-10-01T09:00:00.000Z",
-  "exportedBy": "PortSwigger Legal",
+  "exportedBy": "Example Legal",
   "clauses": [
     {
       "id": "nda-purpose",
@@ -207,7 +207,7 @@
       "contractType": "order-form",
       "category": "Order of precedence",
       "title": "Incorporation and precedence",
-      "text": "This Order Form is governed by and incorporates the PortSwigger Licence Terms (the \"Terms\"). In the event of conflict between this Order Form and the Terms, the Terms shall prevail unless this Order Form expressly states that a specific provision of the Terms is varied.",
+      "text": "This Order Form is governed by and incorporates the Example Licence Terms (the \"Terms\"). In the event of conflict between this Order Form and the Terms, the Terms shall prevail unless this Order Form expressly states that a specific provision of the Terms is varied.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -216,7 +216,7 @@
       "contractType": "order-form",
       "category": "Licence",
       "title": "Licence grant",
-      "text": "Subject to payment of the Fees, PortSwigger grants the Customer a non-exclusive, non-transferable licence during the Subscription Term to use the Software for the number of users or agents set out in this Order Form, solely for the Customer's internal business purposes.",
+      "text": "Subject to payment of the Fees, Example grants the Customer a non-exclusive, non-transferable licence during the Subscription Term to use the Software for the number of users or agents set out in this Order Form, solely for the Customer's internal business purposes.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -234,7 +234,7 @@
       "contractType": "order-form",
       "category": "Intellectual property",
       "title": "Intellectual property",
-      "text": "PortSwigger and its licensors own all intellectual property rights in the Software and documentation. Except for the licence expressly granted in this Order Form, no rights are granted to the Customer.",
+      "text": "Example and its licensors own all intellectual property rights in the Software and documentation. Except for the licence expressly granted in this Order Form, no rights are granted to the Customer.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -252,7 +252,7 @@
       "contractType": "order-form",
       "category": "Fees and payment",
       "title": "Fees and payment terms",
-      "text": "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
+      "text": "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. Example may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -261,7 +261,7 @@
       "contractType": "order-form",
       "category": "Fees and payment",
       "title": "Late payment",
-      "text": "If the Customer fails to pay any undisputed amount by the due date, PortSwigger may charge interest at 4% per annum above the Bank of England base rate and, after giving fourteen (14) days' written notice, suspend access to the Software until payment is made.",
+      "text": "If the Customer fails to pay any undisputed amount by the due date, Example may charge interest at 4% per annum above the Bank of England base rate and, after giving fourteen (14) days' written notice, suspend access to the Software until payment is made.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -270,7 +270,7 @@
       "contractType": "order-form",
       "category": "Warranty",
       "title": "Performance warranty",
-      "text": "PortSwigger warrants that the Software will perform materially in accordance with its documentation. The Customer's sole remedy for breach of this warranty is for PortSwigger to use reasonable efforts to correct the non-conformity or, failing that, to refund the Fees paid for the remainder of the Subscription Term.",
+      "text": "Example warrants that the Software will perform materially in accordance with its documentation. The Customer's sole remedy for breach of this warranty is for Example to use reasonable efforts to correct the non-conformity or, failing that, to refund the Fees paid for the remainder of the Subscription Term.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -279,7 +279,7 @@
       "contractType": "order-form",
       "category": "Data protection",
       "title": "Data protection",
-      "text": "Each party shall comply with applicable data protection law. To the extent PortSwigger processes personal data on the Customer's behalf, the parties shall comply with PortSwigger's Data Processing Addendum, which is incorporated by reference.",
+      "text": "Each party shall comply with applicable data protection law. To the extent Example processes personal data on the Customer's behalf, the parties shall comply with Example's Data Processing Addendum, which is incorporated by reference.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -315,7 +315,7 @@
       "contractType": "order-form",
       "category": "Indemnity",
       "title": "IP indemnity",
-      "text": "PortSwigger shall defend the Customer against any third-party claim that the Customer's use of the Software in accordance with this Agreement infringes that third party's UK intellectual property rights, and shall pay any damages finally awarded, provided the Customer promptly notifies PortSwigger, allows PortSwigger sole control of the defence and gives reasonable assistance.",
+      "text": "Example shall defend the Customer against any third-party claim that the Customer's use of the Software in accordance with this Agreement infringes that third party's UK intellectual property rights, and shall pay any damages finally awarded, provided the Customer promptly notifies Example, allows Example sole control of the defence and gives reasonable assistance.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     },
@@ -342,7 +342,7 @@
       "contractType": "order-form",
       "category": "Licence",
       "title": "Licence verification",
-      "text": "On no more than one occasion in any twelve (12) month period and on at least thirty (30) days' written notice, PortSwigger may verify the Customer's compliance with the licence limits in this Order Form. The Customer shall provide reasonable information to enable this.",
+      "text": "On no more than one occasion in any twelve (12) month period and on at least thirty (30) days' written notice, Example may verify the Customer's compliance with the licence limits in this Order Form. The Customer shall provide reasonable information to enable this.",
       "approvedBy": "Legal team",
       "approvedOn": "2026-03-01"
     }

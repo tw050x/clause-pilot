@@ -715,7 +715,7 @@ export interface Settings {
   /** Can resolve security alerts and release a review from security hold. */
   securityReviewer: boolean
   /**
-   * Demo mode (the default): the demo workspace (its own data, seeded with PortSwigger's library,
+   * Demo mode (the default): the demo workspace (its own data, seeded with Example's library,
    * playbook and the demos' accounts and contracts), with the demo server as the AI. Off: the
    * team's own workspace and the AI chosen below.
    */

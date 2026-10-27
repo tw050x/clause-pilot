@@ -10,7 +10,7 @@ const PATTERNS: { label: string; re: RegExp }[] = [
     re: /\b(note to|attention|instructions? (to|for))\b.{0,40}\b(AI|automated|reviewer|model|system)\b|\b(AI|LLM|language model|automated (review|reviewer|system))\b.{0,80}\b(you|please|must|should)\b/i
   },
   { label: 'Instruction-override phrasing', re: /\b(ignore|disregard|override|forget)\b.{0,40}\b(previous|prior|above|earlier|all)\b.{0,20}\b(instruction|prompt|rule|guidance)s?/i },
-  { label: 'Asserts pre-approval', re: /\b(pre-?approved|already approved|has been approved by)\b.{0,60}\b(legal|portswigger|counsel)\b/i },
+  { label: 'Asserts pre-approval', re: /\b(pre-?approved|already approved|has been approved by)\b.{0,60}\b(legal|example|counsel)\b/i },
   { label: 'Asks for classification outcome', re: /\b(classify|mark|treat|report)\b.{0,60}\b(as )?(standard|compliant|approved|acceptable|low risk)\b/i },
   { label: 'Hidden-text markers', re: /[​-‏⁠﻿]/ }
 ]

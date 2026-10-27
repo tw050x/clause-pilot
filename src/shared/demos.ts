@@ -70,7 +70,7 @@ export const DEMOS: DemoDef[] = [
   {
     id: 'order-form',
     title: 'An order form with commercial asks',
-    detail: 'Brightwater redlined our Burp Suite Enterprise order form: longer payment terms, a higher cap, a new security clause. Half decided already.',
+    detail: 'Brightwater redlined our Scanner Suite Enterprise order form: longer payment terms, a higher cap, a new security clause. Half decided already.',
     who: 'Brightwater Robotics · Enterprise order form',
     icon: 'list',
     contracts: ['ct-demo-brightwater-order']

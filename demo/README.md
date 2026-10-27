@@ -2,7 +2,7 @@
 
 Three demos for trying Clause Pilot as a user would: real files opened from your disk.
 
-**Demo mode** (on by default; the switch in the top bar) opens a workspace of its own, already holding PortSwigger's approved clauses and playbook and an account and contract for each demo, with the demo server (started by the app) answering as the AI. Turn it off for your own workspace and your own AI (Claude or a vLLM server); each demo's guide also says how to set it up there.
+**Demo mode** (on by default; the switch in the top bar) opens a workspace of its own, already holding Example's approved clauses and playbook and an account and contract for each demo, with the demo server (started by the app) answering as the AI. Turn it off for your own workspace and your own AI (Claude or a vLLM server); each demo's guide also says how to set it up there.
 
 | Demo | What it shows | Rounds |
 |---|---|---|

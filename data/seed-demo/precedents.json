@@ -94,13 +94,13 @@
     "category": "General",
     "counterparty": "Initech Software",
     "date": "2026-08-19",
-    "text": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
+    "text": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, Example shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
     "outcome": "rejected",
     "notes": "The proposal replaces the one-sided 24-month non-solicitation clause with a mutual 12-month clause that includes a carve-out for general job advertisements, and rejects the counterparty's insertion as drafted.",
     "source": "seed",
     "where": "§5.10",
     "before": "",
-    "inserted": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, PortSwigger shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
+    "inserted": "Non-solicitation. During the term of this Agreement and for twenty-four (24) months after it ends, Example shall not directly or indirectly solicit, employ or engage any employee of Brightwater with whom it has had contact in connection with the Purpose.",
     "response": "countered",
     "ours": [
       "Non-solicitation. During the term of this Agreement and for twelve (12) months after it ends, neither party shall directly or indirectly solicit, employ or engage any employee of the other party with whom it has had contact in connection with the Purpose, provided that this clause shall not apply to general job advertisements or to the hiring of any employee who has responded to such an advertisement."
@@ -112,16 +112,16 @@
     "category": "Term and fees",
     "counterparty": "Acme Analytics",
     "date": "2026-06-10",
-    "text": "The Customer shall pay the Fees within forty-five (45) days of receipt of a valid invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
+    "text": "The Customer shall pay the Fees within forty-five (45) days of receipt of a valid invoice. Fees are exclusive of VAT and other applicable taxes. Example may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
     "outcome": "rejected",
     "notes": "The proposal aligns the payment deadline with our approved 30-day standard while accommodating the counterparty's 45-day AP cycle as a fallback, and confirms the fee-change notice period remains unchanged.",
     "source": "seed",
     "where": "§3.2",
-    "before": "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
+    "before": "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. Example may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date.",
     "inserted": "forty-five (45) days of receipt of a valid",
     "response": "restored",
     "ours": [
-      "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. PortSwigger may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date."
+      "The Customer shall pay the Fees within thirty (30) days of the date of invoice. Fees are exclusive of VAT and other applicable taxes. Example may change the Fees for any renewal term by giving at least sixty (60) days' written notice before the renewal date."
     ]
   },
   {
@@ -130,16 +130,16 @@
     "category": "Warranty and data",
     "counterparty": "Harbourline Hosting",
     "date": "2026-04-22",
-    "text": "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
+    "text": "Example shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
     "outcome": "rejected",
     "notes": "We accept the 48-hour breach notification obligation but add the GDPR 'risk to rights and freedoms' qualifier to avoid over-notification for minor incidents, aligning with our approved data protection stance.",
     "source": "seed",
     "where": "§4.3",
     "before": "",
-    "inserted": "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
+    "inserted": "Example shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data.",
     "response": "countered",
     "ours": [
-      "PortSwigger shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data, provided that such notification shall not be required where the breach is unlikely to result in a risk to the rights and freedoms of natural persons."
+      "Example shall notify the Customer without undue delay, and in any event within forty-eight (48) hours, after becoming aware of any personal data breach affecting the Customer's data, provided that such notification shall not be required where the breach is unlikely to result in a risk to the rights and freedoms of natural persons."
     ]
   },
   {

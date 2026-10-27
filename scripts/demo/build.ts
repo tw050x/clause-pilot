@@ -30,7 +30,7 @@ const DEMOS = [
   { dir: 'demo/4-prompt-injection', contracts: [CORVID_V0, CORVID_V1] }
 ]
 
-const by = 'PortSwigger Legal'
+const by = 'Example Legal'
 const at = '2026-10-01T09:00:00.000Z'
 const library = JSON.stringify({ ...libraryFile(LIBRARY, by), exportedAt: at }, null, 2) + '\n'
 const playbook = JSON.stringify({ ...playbookFile(PLAYBOOK, by), exportedAt: at }, null, 2) + '\n'

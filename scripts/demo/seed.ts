@@ -1,6 +1,6 @@
 /**
  * The demo workspace's starting data (data/seed-demo/): what demo mode opens with the first time,
- * so a demo starts at uploading the draft. PortSwigger's approved clauses and playbook (the same
+ * so a demo starts at uploading the draft. Example's approved clauses and playbook (the same
  * as each demo folder's library.json and playbook.json), and an account and contract for each
  * demo. Written by npm run demo:build (and npm run demo:seed on its own).
  */
@@ -54,7 +54,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
     account: 'Brightwater Robotics',
     contracts: [
       { key: 'brightwater', title: 'Mutual NDA', type: 'nda' },
-      { key: 'brightwater-order', title: 'Burp Suite Enterprise order form', type: 'order-form', history: order('Brightwater', 'Burp-Suite-Enterprise', 3, 'half') }
+      { key: 'brightwater-order', title: 'Scanner Suite Enterprise order form', type: 'order-form', history: order('Brightwater', 'Scanner-Suite-Enterprise', 3, 'half') }
     ]
   },
   {
@@ -83,7 +83,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
       { key: 'northwind', title: 'Logistics Services Agreement', type: 'general', history: [{ file: 'Northwind-Logistics-Services-Agreement.docx', theirs: true, daysAgo: 62, decide: 'all', closed: true }] },
       // Their paper, arrived on Saturday, half read.
       { key: 'northwind-2', title: 'Partner Confidentiality Agreement', type: 'nda', history: [{ file: 'Northwind-Partner-Confidentiality-Agreement.docx', theirs: true, daysAgo: 2, decide: 'half' }] },
-      { key: 'northwind-3', title: 'Burp Suite DAST order form', type: 'order-form', history: order('Northwind', 'Burp-Suite-DAST', 1, 'none') }
+      { key: 'northwind-3', title: 'Scanner Suite DAST order form', type: 'order-form', history: order('Northwind', 'Scanner-Suite-DAST', 1, 'none') }
     ]
   },
   {
@@ -118,7 +118,7 @@ const DEMOS: { account: string; key: string; contracts: SeedContract[] }[] = [
       // Their reseller agreement, on their paper, half read.
       { key: 'initech', title: 'Reseller Agreement', type: 'nda', history: [{ file: 'Initech-Reseller-Agreement.docx', theirs: true, daysAgo: 6, decide: 'half' }] },
       { key: 'initech-2', title: 'Mutual NDA', type: 'nda', history: nda('Initech', [95], 'all', true) },
-      { key: 'initech-3', title: 'Burp Suite Professional order form', type: 'order-form', history: order('Initech', 'Burp-Suite-Professional', 42, 'all', true) }
+      { key: 'initech-3', title: 'Scanner Suite Professional order form', type: 'order-form', history: order('Initech', 'Scanner-Suite-Professional', 42, 'all', true) }
     ]
   }
 ]

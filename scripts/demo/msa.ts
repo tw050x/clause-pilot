@@ -132,7 +132,7 @@ export async function msaDocx(): Promise<Buffer> {
           new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [t('MASTER SERVICES AGREEMENT', { bold: true, size: 32 })] }),
           new Paragraph({ spacing: { after: 160 }, children: [t('This Agreement is dated '), t('14 October 2026', { bold: true }), t(' and is made between:')] }),
           address('(1)', 'Harbourline Hosting Ltd', ['(company number 08812345)', 'Unit 4, Riverside Business Park', 'Bristol BS1 6QR', 'United Kingdom'], '"Harbourline"'),
-          address('(2)', 'PortSwigger Ltd', ['(company number 05876422)', 'Victoria Court, Bexton Road', 'Knutsford WA16 0PF', 'United Kingdom'], 'the "Customer"'),
+          address('(2)', 'Example Ltd', ['(company number 05876422)', 'Victoria Court, Bexton Road', 'Knutsford WA16 0PF', 'United Kingdom'], 'the "Customer"'),
           num(0, [t('DEFINITIONS', { bold: true })]),
           num(1, [t('"Services"', { bold: true }), t(' means the managed hosting and support services described in '), t('Schedule 1', { italics: true }), t('.')]),
           num(1, [t('"Service Credits"', { bold: true }), t(' means the credits set out in the table in clause 3.2.')]),
@@ -178,7 +178,7 @@ export async function msaDocx(): Promise<Buffer> {
             tabStops: [{ type: TabStopType.LEFT, position: 4820 }],
             children: [
               t('Signed for Harbourline Hosting Ltd', { bold: true }),
-              t('\tSigned for PortSwigger Ltd', { bold: true }),
+              t('\tSigned for Example Ltd', { bold: true }),
               t('Name: Jordan Ellis', { break: 1 }),
               t('\tName: ______________________'),
               t('Title: General Counsel', { break: 1 }),

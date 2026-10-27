@@ -12,8 +12,8 @@ There is no second round.
 
 | File | What it is | When you use it |
 |---|---|---|
-| `library.json` | PortSwigger's approved clauses (38) | Setup |
-| `playbook.json` | PortSwigger's standard positions (11) | Setup |
+| `library.json` | Example's approved clauses (38) | Setup |
+| `playbook.json` | Example's standard positions (11) | Setup |
 | `Kestrel-Confidentiality-Agreement-client-paper.docx` | Their agreement | Review |
 
 ## Setup (about 2 minutes)

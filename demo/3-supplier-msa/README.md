@@ -14,8 +14,8 @@ This demo shows a contract reviewed as it looks in Word, pages and all, however 
 
 | File | What it is | When you use it |
 |---|---|---|
-| `library.json` | PortSwigger's approved clauses (38) | Setup |
-| `playbook.json` | PortSwigger's standard positions (11) | Setup |
+| `library.json` | Example's approved clauses (38) | Setup |
+| `playbook.json` | Example's standard positions (11) | Setup |
 | `Harbourline-Master-Services-Agreement.docx` | Their agreement, with their tracked changes | Review |
 
 ## Setup (about 2 minutes)

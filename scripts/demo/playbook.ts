@@ -1,4 +1,4 @@
-// PortSwigger's standard positions (the playbook) for the demos. `npm run demo:build` writes it into each demo folder as playbook.json (import it on the Playbook page).
+// Example's standard positions (the playbook) for the demos. `npm run demo:build` writes it into each demo folder as playbook.json (import it on the Playbook page).
 import type { PlaybookPosition } from '../../src/shared/types'
 
 export const PLAYBOOK: PlaybookPosition[] = [
@@ -24,7 +24,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     appliesTo: ['nda'],
     standard: 'Every confidentiality obligation, restriction and remedy applies equally to both parties.',
     acceptableFallback: 'None. A one-way NDA must be on our one-way template.',
-    redFlags: ['Obligations that bind only PortSwigger', 'Remedies or indemnities available to one party only']
+    redFlags: ['Obligations that bind only Example', 'Remedies or indemnities available to one party only']
   },
   {
     id: 'pb-residuals',
@@ -40,7 +40,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     appliesTo: ['nda', 'order-form'],
     standard: 'No non-solicitation clause.',
     acceptableFallback: 'Mutual, no more than 12 months, limited to staff directly involved, with a carve-out for general job advertisements.',
-    redFlags: ['One-way restriction on PortSwigger', 'Longer than 12 months', 'Liquidated damages or hiring fees', 'No carve-out for general advertising']
+    redFlags: ['One-way restriction on Example', 'Longer than 12 months', 'Liquidated damages or hiring fees', 'No carve-out for general advertising']
   },
   {
     id: 'pb-liability-cap',
@@ -54,7 +54,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     id: 'pb-renewal-pricing',
     title: 'Renewal and pricing',
     appliesTo: ['order-form'],
-    standard: '12-month auto-renewal unless either party gives 30 days\' notice; PortSwigger may change fees for a renewal on 60 days\' notice.',
+    standard: '12-month auto-renewal unless either party gives 30 days\' notice; Example may change fees for a renewal on 60 days\' notice.',
     acceptableFallback: 'Renewal price increases capped at no less than 7% per year; non-renewal notice of up to 60 days.',
     redFlags: ['Price freezes or caps below 7%', 'Customer termination for convenience mid-term', 'Pro-rata refunds on termination for convenience', 'Multi-year lock-in at fixed prices']
   },
@@ -70,7 +70,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     id: 'pb-precedence',
     title: 'Order of precedence',
     appliesTo: ['order-form'],
-    standard: 'The PortSwigger Licence Terms prevail over the Order Form unless the Order Form expressly varies a named provision.',
+    standard: 'The Example Licence Terms prevail over the Order Form unless the Order Form expressly varies a named provision.',
     acceptableFallback: 'Order Form prevails only for commercial details (product, quantity, price, dates).',
     redFlags: ['Order Form or Special Conditions generally prevailing over the Terms', 'Customer purchase-order terms applying']
   },
@@ -78,7 +78,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     id: 'pb-indemnity',
     title: 'Indemnities',
     appliesTo: ['order-form'],
-    standard: 'PortSwigger gives only a UK IP infringement indemnity, subject to notice and control of the defence. No other indemnities.',
+    standard: 'Example gives only a UK IP infringement indemnity, subject to notice and control of the defence. No other indemnities.',
     acceptableFallback: 'IP indemnity extended to US/EU IP rights.',
     redFlags: ['General indemnity for any breach', 'Indemnity for data breaches or security incidents', 'Indemnities outside the liability cap']
   },
@@ -86,7 +86,7 @@ export const PLAYBOOK: PlaybookPosition[] = [
     id: 'pb-data-protection',
     title: 'Data protection',
     appliesTo: ['order-form'],
-    standard: 'PortSwigger\'s Data Processing Addendum applies.',
+    standard: 'Example\'s Data Processing Addendum applies.',
     acceptableFallback: 'Customer DPA only after review by the privacy team.',
     redFlags: ['Customer DPA imposed without review', 'On-site audit rights', 'Unlimited liability for data protection breaches']
   }

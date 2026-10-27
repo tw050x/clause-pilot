@@ -1,6 +1,6 @@
 # Demo 1: our NDA, redlined by the client (two rounds)
 
-PortSwigger sent its standard mutual NDA to **Brightwater Robotics**. Their lawyers redlined it in Word and sent it back. You review their changes and send a response. They reply with a new draft, and you review that too.
+Example sent its standard mutual NDA to **Brightwater Robotics**. Their lawyers redlined it in Word and sent it back. You review their changes and send a response. They reply with a new draft, and you review that too.
 
 This demo shows the app on our own paper. Most of the document is our approved wording and needs no reading, so only the client's changes need a decision. That includes the changes they made without Track Changes.
 
@@ -8,8 +8,8 @@ This demo shows the app on our own paper. Most of the document is our approved w
 
 | File | What it is | When you use it |
 |---|---|---|
-| `library.json` | PortSwigger's approved clauses (38) | Setup |
-| `playbook.json` | PortSwigger's standard positions (11) | Setup |
+| `library.json` | Example's approved clauses (38) | Setup |
+| `playbook.json` | Example's standard positions (11) | Setup |
 | `Brightwater-Mutual-NDA-v0-original-we-sent.docx` | The NDA as we sent it to them | Round 1, as the original |
 | `Brightwater-Mutual-NDA-v1-client-redline.docx` | Their redline of our NDA | Round 1 |
 | `Brightwater-Mutual-NDA-v2-client-response.docx` | Their next draft, replying to what we sent | Round 2 |
